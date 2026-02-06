@@ -52,14 +52,21 @@ detect_arch() {
 # Helper: try to get latest tag robustly
 get_latest_version() {
     GITHUB_REPO="$1"
-    # Try GitHub API first
+    # Try GitHub API releases/latest first
     ver=$(curl -fsSL "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" 2>/dev/null | grep -oP '"tag_name": "\K[^"]+' | head -1 || true)
     if [ -n "$ver" ]; then
         echo "$ver"
         return 0
     fi
 
-    # Fallback: follow redirect from /releases/latest page
+    # Fallback: use tags API to get the most recent tag
+    ver=$(curl -fsSL "https://api.github.com/repos/${GITHUB_REPO}/tags" 2>/dev/null | grep -oP '"name": "\K[^"]+' | head -1 || true)
+    if [ -n "$ver" ]; then
+        echo "$ver"
+        return 0
+    fi
+
+    # Final fallback: follow redirect from /releases/latest page
     redirect=$(curl -fsSLI -o /dev/null -w "%{redirect_url}" "https://github.com/${GITHUB_REPO}/releases/latest" 2>/dev/null || true)
     if [ -n "$redirect" ]; then
         # last path component is the tag
