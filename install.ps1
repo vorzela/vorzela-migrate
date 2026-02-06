@@ -172,8 +172,10 @@ function Install-Vorzela {
     Write-Host ""
     Write-Status "Verifying installation..."
     try {
-        $Version = & $BinaryPath --version 2>$null
-        Write-Success "Vorzela installed successfully! ($Version)"
+        $VersionOutput = & $BinaryPath --version 2>$null
+        # Extract just the version number (last word) from output like "vm version v1.1.0"
+        $Version = ($VersionOutput -split '\s+')[-1]
+        Write-Success "Vorzela installed successfully! ($VersionOutput)"
     }
     catch {
         Write-Warning "Could not verify installation"
