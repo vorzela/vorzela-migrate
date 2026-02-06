@@ -41,6 +41,8 @@ curl -fsSL https://raw.githubusercontent.com/vorzela/vorzela-migrate/main/instal
 iex (New-Object Net.WebClient).DownloadString('https://raw.githubusercontent.com/vorzela/vorzela-migrate/main/install.ps1')
 ```
 
+Note: The installers try to add the install directory to your PATH. On Linux/macOS this updates your shell profile (best effort). On Windows this updates your user PATH. Restart your shell if the `vm` command is not found right away.
+
 For more options and platform notes, see [INSTALL.md](INSTALL.md).
 
 ## Supported Databases

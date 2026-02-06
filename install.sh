@@ -231,12 +231,38 @@ main() {
         if [[ ":$PATH:" == *":${INSTALL_DIR}:"* ]]; then
             print_success "Installation complete!"
         else
-            print_warning "${INSTALL_DIR} is not in your PATH"
-            print_status "Add this line to your shell profile (~/.bash_profile, ~/.zshrc, etc.):"
-            echo ""
-            echo "    export PATH=\"\$HOME/.local/bin:\$PATH\""
-            echo ""
-            print_status "Then run: source ~/.bashrc  (or ~/.zshrc)"
+            PROFILE=""
+            case "$SHELL" in
+                */bash) PROFILE="$HOME/.bashrc";;
+                */zsh) PROFILE="$HOME/.zshrc";;
+            esac
+
+            if [ -z "$PROFILE" ]; then
+                if [ -f "$HOME/.bashrc" ]; then
+                    PROFILE="$HOME/.bashrc"
+                elif [ -f "$HOME/.zshrc" ]; then
+                    PROFILE="$HOME/.zshrc"
+                elif [ -f "$HOME/.profile" ]; then
+                    PROFILE="$HOME/.profile"
+                else
+                    PROFILE="$HOME/.bashrc"
+                fi
+            fi
+
+            if [ ! -f "$PROFILE" ]; then
+                print_status "Creating $PROFILE and adding ${INSTALL_DIR} to PATH"
+                echo "export PATH=\"\$HOME/.local/bin:\$PATH\"" >> "$PROFILE"
+            elif ! grep -qs '\.local/bin' "$PROFILE"; then
+                print_status "Adding ${INSTALL_DIR} to PATH in $PROFILE"
+                echo "" >> "$PROFILE"
+                echo "export PATH=\"\$HOME/.local/bin:\$PATH\"" >> "$PROFILE"
+            else
+                print_status "${INSTALL_DIR} already referenced in $PROFILE"
+            fi
+
+            export PATH="$HOME/.local/bin:$PATH"
+            print_success "Added ${INSTALL_DIR} to PATH"
+            print_status "Restart your shell or run: source $PROFILE"
         fi
     else
         print_success "Installation complete!"
