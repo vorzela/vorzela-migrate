@@ -57,11 +57,10 @@ jobs:
           else
             git log --pretty=format:"- %s (%an)" $PREV_TAG..HEAD > notes.txt
           fi
-          {
-            echo 'body<<RELEASE_NOTES'
-            cat notes.txt
-            echo 'RELEASE_NOTES'
-          } >> $GITHUB_OUTPUT
+          # Safely write multiline output to GITHUB_OUTPUT
+          printf '%s\n' "body<<EOF" >> $GITHUB_OUTPUT
+          cat notes.txt >> $GITHUB_OUTPUT
+          printf '%s\n' "EOF" >> $GITHUB_OUTPUT
 
       - name: Create GitHub Release
         id: create_release
