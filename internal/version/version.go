@@ -9,8 +9,10 @@ import (
 	"time"
 )
 
-const (
-	CurrentVersion = "1.0.2"
+var (
+	// CurrentVersion is injected at build time via -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=vX.Y.Z'"
+	// Default to "dev" when not provided.
+	CurrentVersion = "dev"
 	GitHubAPI      = "https://api.github.com/repos/vorzela/vorzela-migrate/releases/latest"
 	Timeout        = 5 * time.Second
 )
@@ -57,14 +59,20 @@ func CheckForUpdate() (newVersion string, available bool, err error) {
 		return "", false, nil
 	}
 
-	// Remove 'v' prefix if present for comparison
-	currentVer := CurrentVersion
-	latestVer := version
-	if latestVer[0] == 'v' {
-		latestVer = latestVer[1:]
+	// Normalize versions by stripping leading 'v' or 'V'
+	normalize := func(s string) string {
+		if s == "" {
+			return s
+		}
+		if s[0] == 'v' || s[0] == 'V' {
+			return s[1:]
+		}
+		return s
 	}
+	currentVer := normalize(CurrentVersion)
+	latestVer := normalize(version)
 
-	if latestVer != currentVer {
+	if latestVer != "" && currentVer != latestVer {
 		return latestVer, true, nil
 	}
 
