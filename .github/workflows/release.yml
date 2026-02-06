@@ -57,36 +57,22 @@ jobs:
           else
             git log --pretty=format:"- %s (%an)" $PREV_TAG..HEAD > notes.txt
           fi
-          # Safely write multiline output to GITHUB_OUTPUT
-          printf '%s\n' "body<<EOF" >> $GITHUB_OUTPUT
-          cat notes.txt >> $GITHUB_OUTPUT
-          printf '%s\n' "EOF" >> $GITHUB_OUTPUT
 
-      - name: Create GitHub Release
-        id: create_release
-        uses: actions/create-release@v1
-        with:
-          tag_name: ${{ github.ref_name }}
-          release_name: ${{ github.ref_name }}
-          body: ${{ steps.notes.outputs.body }}
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # write multiline output exactly (no quotes, no extra whitespace)
+          echo "body<<EOF" >> "$GITHUB_OUTPUT"
+          cat notes.txt >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
 
-      - name: Upload assets to release
-        env:
-          UPLOAD_URL: ${{ steps.create_release.outputs.upload_url }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install GitHub CLI
         run: |
-          if [ -z "$UPLOAD_URL" ]; then
-            echo "No upload URL from release creation, skipping asset upload"
-            exit 0
-          fi
-          for f in dist/*; do
-            if [ -f "$f" ]; then
-              name=$(basename "$f")
-              echo "Uploading $name"
-              curl -s -X POST -H "Authorization: token $GITHUB_TOKEN" -H "Content-Type: application/octet-stream" --data-binary @$f "$UPLOAD_URL?name=$name"
-            fi
-          done
+          sudo apt-get update
+          sudo apt-get install -y gh
+
+      - name: Create GitHub Release (gh)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          echo "$GITHUB_TOKEN" | gh auth login --with-token
+          # Create release and upload artifacts using notes.txt
+          gh release create "$TAG_NAME" dist/* --title "$TAG_NAME" --notes-file notes.txt --repo "${{ github.repository }}" --prerelease=false
