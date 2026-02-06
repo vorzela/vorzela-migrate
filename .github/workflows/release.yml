@@ -58,11 +58,6 @@ jobs:
             git log --pretty=format:"- %s (%an)" $PREV_TAG..HEAD > notes.txt
           fi
 
-          # write multiline output exactly (no quotes, no extra whitespace)
-          echo "body<<EOF" >> "$GITHUB_OUTPUT"
-          cat notes.txt >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
-
       - name: Install GitHub CLI
         run: |
           sudo apt-get update
