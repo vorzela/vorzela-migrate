@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	CurrentVersion = "1.0.0"
+	CurrentVersion = "1.0.2"
 	GitHubAPI      = "https://api.github.com/repos/vorzela/vorzela-migrate/releases/latest"
 	Timeout        = 5 * time.Second
 )
