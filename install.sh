@@ -49,6 +49,58 @@ detect_arch() {
     esac
 }
 
+# Helper: try to get latest tag robustly
+get_latest_version() {
+    GITHUB_REPO="$1"
+    # Try GitHub API first
+    ver=$(curl -fsSL "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" 2>/dev/null | grep -oP '"tag_name": "\K[^"]+' | head -1 || true)
+    if [ -n "$ver" ]; then
+        echo "$ver"
+        return 0
+    fi
+
+    # Fallback: follow redirect from /releases/latest page
+    redirect=$(curl -fsSLI -o /dev/null -w "%{redirect_url}" "https://github.com/${GITHUB_REPO}/releases/latest" 2>/dev/null || true)
+    if [ -n "$redirect" ]; then
+        # last path component is the tag
+        echo "${redirect##*/}"
+        return 0
+    fi
+
+    return 1
+}
+
+build_from_source() {
+    GITHUB_REPO="$1"
+    INSTALL_DIR="$2"
+    BINARY_PATH="$3"
+
+    if ! command -v go >/dev/null 2>&1; then
+        return 1
+    fi
+
+    tmpdir=$(mktemp -d)
+    print_status "Cloning source to $tmpdir"
+    if ! git clone --depth 1 "https://github.com/${GITHUB_REPO}.git" "$tmpdir" >/dev/null 2>&1; then
+        rm -rf "$tmpdir"
+        return 1
+    fi
+
+    pushd "$tmpdir" >/dev/null
+    print_status "Building from source (this may take a moment)..."
+    if go mod tidy >/dev/null 2>&1 && go build -o vm main.go >/dev/null 2>&1; then
+        mkdir -p "$(dirname "$BINARY_PATH")"
+        mv vm "$BINARY_PATH"
+        chmod +x "$BINARY_PATH"
+        popd >/dev/null
+        rm -rf "$tmpdir"
+        return 0
+    fi
+    popd >/dev/null
+    rm -rf "$tmpdir"
+    return 1
+}
+
 # Main installation
 main() {
     echo ""
@@ -90,38 +142,50 @@ main() {
 
     # Get latest release version
     print_status "Fetching latest release..."
-    LATEST_VERSION=$(curl -sL https://api.github.com/repos/${GITHUB_REPO}/releases/latest | grep -oP '"tag_name": "\K[^"]+' | head -1)
+    LATEST_VERSION=$(get_latest_version "${GITHUB_REPO}" || true)
 
     if [ -z "$LATEST_VERSION" ]; then
-        print_warning "Could not fetch latest version from GitHub, using v1.0.0"
-        LATEST_VERSION="v1.0.0"
+        print_warning "Could not fetch latest version from GitHub"
+    else
+        print_success "Latest version: $LATEST_VERSION"
     fi
-
-    print_success "Latest version: $LATEST_VERSION"
 
     # Create install directory if it doesn't exist
     mkdir -p "$INSTALL_DIR"
 
-    # Download binary
+    # Prepare download path
     DOWNLOAD_URL="${RELEASE_URL}/${LATEST_VERSION}/${BINARY_NAME}"
     BINARY_PATH="${INSTALL_DIR}/vm"
 
-    print_status "Downloading from: $DOWNLOAD_URL"
-
-    if ! curl -fsSL "$DOWNLOAD_URL" -o "$BINARY_PATH"; then
-        print_error "Failed to download binary"
-        print_warning "Note: Pre-built binaries may not be available yet"
-        print_status "Try building from source instead:"
-        print_status "  git clone https://github.com/${GITHUB_REPO}.git"
-        print_status "  cd vorzela-migrate"
-        print_status "  go build -o vc main.go"
-        print_status "  sudo mv vc /usr/local/bin/"
-        exit 1
+    # Try to download if we have a version
+    if [ -n "$LATEST_VERSION" ]; then
+        print_status "Attempting to download: ${DOWNLOAD_URL}"
+        if curl -fsSL "$DOWNLOAD_URL" -o "$BINARY_PATH"; then
+            chmod +x "$BINARY_PATH"
+            print_success "Binary downloaded and made executable"
+        else
+            print_warning "Pre-built binary not available for ${LATEST_VERSION}/${BINARY_NAME}"
+            rm -f "$BINARY_PATH" || true
+        fi
     fi
 
-    # Make binary executable
-    chmod +x "$BINARY_PATH"
-    print_success "Binary downloaded and made executable"
+    # If download failed or no prebuilt, attempt to build from source if go is available
+    if [ ! -x "$BINARY_PATH" ]; then
+        print_status "Attempting to build from source (requires Go)..."
+        if build_from_source "${GITHUB_REPO}" "$INSTALL_DIR" "$BINARY_PATH"; then
+            print_success "Built and installed vm from source"
+        else
+            print_warning "Automatic build failed or Go not installed"
+            print_status "Fallback instructions:"
+            print_status "  1) Install Go (https://go.dev/dl/) and re-run this script"
+            print_status "  2) Or build manually:"
+            print_status "     git clone https://github.com/${GITHUB_REPO}.git"
+            print_status "     cd vorzela-migrate"
+            print_status "     go build -o vm main.go"
+            print_status "     mv vm ${INSTALL_DIR}/vm # or /usr/local/bin"
+            exit 1
+        fi
+    fi
 
     # Add to PATH if needed
     if ! command -v vm &> /dev/null || [ "$(command -v vm)" != "$BINARY_PATH" ]; then
@@ -129,7 +193,7 @@ main() {
         if [[ ":$PATH:" == *":${INSTALL_DIR}:"* ]]; then
             print_success "Installation complete!"
         else
-            print_warning "~/.local/bin is not in your PATH"
+            print_warning "${INSTALL_DIR} is not in your PATH"
             print_status "Add this line to your shell profile (~/.bash_profile, ~/.zshrc, etc.):"
             echo ""
             echo "    export PATH=\"\$HOME/.local/bin:\$PATH\""
@@ -142,8 +206,8 @@ main() {
 
     echo ""
     print_status "Verifying installation..."
-    if $BINARY_PATH --version > /dev/null 2>&1; then
-        VERSION=$($BINARY_PATH --version 2>&1 | head -1)
+    if "$BINARY_PATH" --version > /dev/null 2>&1; then
+        VERSION=$("$BINARY_PATH" --version 2>&1 | head -1)
         print_success "Vorzela installed successfully! ($VERSION)"
     else
         print_warning "Could not verify installation"
