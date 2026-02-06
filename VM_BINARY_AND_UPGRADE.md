@@ -2,13 +2,13 @@
 
 ## Binary Name Change
 
-The Vorzela Migrate binary has been renamed from `vc` to `vm` to better match the project name.
+The Vorzela Migrate binary has been renamed from `vm` to `vm` to better match the project name.
 
 ### Old vs New
 ```bash
 # Old
-./vc --version
-./vc make migration create_users_table
+./vm --version
+./vm make migration create_users_table
 
 # New
 ./vm --version
@@ -155,13 +155,13 @@ This can happen if:
 
 Try again later or upgrade manually from the [GitHub releases page](https://github.com/vorzela/vorzela-migrate/releases).
 
-### Binary is still showing as "vc"
+### Binary is still showing as "vm"
 
-If you upgraded from a version that used `vc`:
+If you upgraded from a version that used `vm`:
 
 1. Remove the old binary
    ```bash
-   rm /usr/local/bin/vc
+   rm /usr/local/bin/vm
    ```
 
 2. Reinstall using the new binary name
@@ -194,7 +194,7 @@ vm upgrade                               # Upgrade to latest version
 ## What's New
 
 ✨ **New in this version:**
-- Binary renamed from `vc` to `vm` (matches project name)
+- Binary renamed from `vm` to `vm` (matches project name)
 - Automatic version update checking
 - New `vm upgrade` command
 - Version notice shown after commands
@@ -203,7 +203,7 @@ vm upgrade                               # Upgrade to latest version
 ## Version History
 
 - **1.0.0** - Initial release with vm binary and upgrade feature
-- Earlier versions used `vc` binary name
+- Earlier versions used `vm` binary name
 
 ## Next Steps
 

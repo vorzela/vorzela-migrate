@@ -44,9 +44,9 @@ MIGRATION_PATH=./migrations
 
 **Then simply:**
 ```bash
-vc migrate
-vc status
-vc rollback
+vm migrate
+vm status
+vm rollback
 ```
 
 ### 📋 Priority System
@@ -55,13 +55,13 @@ Configuration is loaded in this priority order:
 
 1. **CLI Flags** (Highest)
    ```bash
-    vc migrate --dsn "postgres://override/db"
+    vm migrate --dsn "postgres://override/db"
    ```
 
 2. **Environment Variables**
    ```bash
    export DATABASE_URL="postgres://localhost/myapp"
-    vc migrate
+    vm migrate
    ```
 
 3. **`.vorzela` Config File**
@@ -90,18 +90,18 @@ VORZELA_ENV=dev
 ```
 
 ```bash
-vc migrate
+vm migrate
 ```
 
 **Method 2: Environment Variables**
 ```bash
 export DATABASE_URL="postgres://localhost/myapp"
-vc migrate
+vm migrate
 ```
 
 **Method 3: CLI Flags**
 ```bash
-vc migrate --dsn "postgres://localhost/myapp"
+vm migrate --dsn "postgres://localhost/myapp"
 ```
 
 ### ✅ .vorzela Configuration File
@@ -143,7 +143,7 @@ All commands now produce colored output for better readability:
 
 **Migration Execution:**
 ```bash
-$  vc migrate
+$  vm migrate
 ✓ Migrated: 1707123456_create_users_table.sql
 ✓ Migrated: 1707123457_create_posts_table.sql
 ✓ Successfully ran 2 migration(s)
@@ -151,7 +151,7 @@ $  vc migrate
 
 **Status Display:**
 ```bash
-$  vc status
+$  vm status
 🐘 Migration Status [dev]
 ────────────────────────────────────────────────────────────────────────────────
 Migration                          | Status
@@ -166,7 +166,7 @@ Summary: 2 executed, 1 pending
 
 **Error Messages:**
 ```bash
-$  vc migrate
+$  vm migrate
 ✗ database URL is required. Set DATABASE_URL env var, create .vorzela config file, or use --dsn flag
 ```
 
@@ -185,10 +185,10 @@ EOF
 
 **Use anytime:**
 ```bash
-vc make migration create_users_table
-vc migrate
-vc status
-vc rollback
+vm make migration create_users_table
+vm migrate
+vm status
+vm rollback
 ```
 
 ### CI/CD (Environment Variables)
@@ -200,8 +200,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - run: go build -o vc main.go
-      - run:  vc migrate
+      - run: go build -o vm main.go
+      - run:  vm migrate
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           VORZELA_ENV: prod
@@ -213,8 +213,8 @@ jobs:
 # Combined approach
 export VORZELA_ENV=server
 
-vc migrate --dsn "postgres://secure_url/prod_db"
-vc status --dsn "postgres://secure_url/prod_db"
+vm migrate --dsn "postgres://secure_url/prod_db"
+vm status --dsn "postgres://secure_url/prod_db"
 ```
 
 ## Migration Examples
@@ -229,19 +229,19 @@ VORZELA_ENV=dev
 EOF
 
 # Create migration
-vc make migration create_users_table
+vm make migration create_users_table
 
 # Edit migrations/dev/TIMESTAMP_create_users_table.sql
 # Add your SQL
 
 # Run migration
-vc migrate
+vm migrate
 
 # Check status
-vc status
+vm status
 
 # Rollback if needed
-vc rollback
+vm rollback
 ```
 
 ### Example 2: Multiple Environments
@@ -257,7 +257,7 @@ VORZELA_ENV=dev
 export DATABASE_URL="postgres://prod_user:password@prod.db/myapp"
 export VORZELA_ENV=server
 
-vc migrate
+vm migrate
 ```
 
 ### Example 3: Docker
@@ -267,12 +267,12 @@ FROM golang:1.21
 
 WORKDIR /app
 COPY . .
-RUN go build -o vc main.go
+RUN go build -o vm main.go
 
 ENV DATABASE_URL=postgres://db:5432/myapp
 ENV VORZELA_ENV=server
 
-ENTRYPOINT ["./vc", "migrate"]
+ENTRYPOINT ["./vm", "migrate"]
 ```
 
 ## Configuration Files
@@ -356,14 +356,14 @@ VORZELA_ENV=server
 ```bash
 # 1. Create .vorzela
 echo 'DATABASE_URL=postgres://localhost/myapp' > .vorzela
-vc migrate
+vm migrate
 
 # 2. Set environment variable
 export DATABASE_URL="postgres://localhost/myapp"
-vc migrate
+vm migrate
 
 # 3. Use CLI flag
-vc migrate --dsn "postgres://localhost/myapp"
+vm migrate --dsn "postgres://localhost/myapp"
 ```
 
 ### Colors not showing
@@ -374,7 +374,7 @@ vc migrate --dsn "postgres://localhost/myapp"
 - Colors work in most modern terminals
 - Force color output (if supported by terminal):
   ```bash
-  FORCE_COLOR=1  vc migrate
+  FORCE_COLOR=1  vm migrate
   ```
 - Fall back to CLI flag method
 
@@ -398,9 +398,9 @@ vc migrate --dsn "postgres://localhost/myapp"
 
 **Before:**
 ```bash
-vc migrate --dsn "postgres://localhost/myapp"
-vc status --dsn "postgres://localhost/myapp"
-vc rollback --dsn "postgres://localhost/myapp"
+vm migrate --dsn "postgres://localhost/myapp"
+vm status --dsn "postgres://localhost/myapp"
+vm rollback --dsn "postgres://localhost/myapp"
 ```
 
 **After:**
@@ -409,9 +409,9 @@ vc rollback --dsn "postgres://localhost/myapp"
 echo 'DATABASE_URL=postgres://localhost/myapp' > .vorzela
 
 # Use many times
-vc migrate
-vc status
-vc rollback
+vm migrate
+vm status
+vm rollback
 ```
 
 ## Summary

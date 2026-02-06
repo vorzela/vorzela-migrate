@@ -12,7 +12,7 @@ make build
 Or manually:
 ```bash
 go mod tidy
-go build -o vc main.go
+go build -o vm main.go
 ```
 
 ## 2. Setup Database
@@ -27,7 +27,7 @@ export DATABASE_URL="postgres://localhost/myapp"
 ## 3. Create Your First Migration
 
 ```bash
-vc make migration create_users_table
+vm make migration create_users_table
 ```
 
 This creates: `migrations/dev/TIMESTAMP_create_users_table.sql`
@@ -60,7 +60,7 @@ COMMIT;
 ## 5. Run the Migration
 
 ```bash
-vc migrate --dsn $DATABASE_URL
+vm migrate --dsn $DATABASE_URL
 ```
 
 Output:
@@ -72,7 +72,7 @@ Output:
 ## 6. Check Status
 
 ```bash
-vc status --dsn $DATABASE_URL
+vm status --dsn $DATABASE_URL
 ```
 
 Output:
@@ -90,14 +90,14 @@ Summary: 1 executed, 0 pending
 ## 7. Create More Migrations
 
 ```bash
-vc make migration add_posts_table
-vc make migration add_email_verification_to_users
+vm make migration add_posts_table
+vm make migration add_email_verification_to_users
 ```
 
 ## 8. Run All Pending Migrations
 
 ```bash
-vc migrate --dsn $DATABASE_URL
+vm migrate --dsn $DATABASE_URL
 ```
 
 ## Common Commands
@@ -105,43 +105,43 @@ vc migrate --dsn $DATABASE_URL
 ### Create Migrations
 ```bash
 # Dev environment
-vc make migration create_table_name
+vm make migration create_table_name
 
 # Server environment
-vc make migration create_table_name -e server
+vm make migration create_table_name -e server
 ```
 
 ### Run Migrations
 ```bash
-vc migrate --dsn $DATABASE_URL
-vc migrate --dsn $DATABASE_URL --env server
+vm migrate --dsn $DATABASE_URL
+vm migrate --dsn $DATABASE_URL --env server
 ```
 
 ### Check Status
 ```bash
-vc status --dsn $DATABASE_URL
+vm status --dsn $DATABASE_URL
 ```
 
 ### Rollback
 ```bash
 # Last batch
-vc rollback --dsn $DATABASE_URL
+vm rollback --dsn $DATABASE_URL
 
 # Last 3 batches
-vc rollback --dsn $DATABASE_URL --steps 3
+vm rollback --dsn $DATABASE_URL --steps 3
 ```
 
 ### Refresh (rollback all + re-run)
 ```bash
-vc refresh --dsn $DATABASE_URL
+vm refresh --dsn $DATABASE_URL
 ```
 
 ## Make Installation Global
 
 ```bash
 make install
-# Now you can use 'vc' from anywhere
-vc make migration create_users_table
+# Now you can use 'vm' from anywhere
+vm make migration create_users_table
 ```
 
 ## Environment Variables
@@ -172,10 +172,10 @@ export VORZELA_ENV=server
 ## Getting Help
 
 ```bash
-vc --help
-vc make --help
-vc migrate --help
-vc rollback --help
-vc refresh --help
-vc status --help
+vm --help
+vm make --help
+vm migrate --help
+vm rollback --help
+vm refresh --help
+vm status --help
 ```

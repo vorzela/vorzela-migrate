@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Update all documentation to use vm instead of vc
+# Update all documentation to use vm instead of vm
 
 files=(
     "README.md"
@@ -12,17 +12,17 @@ files=(
     "build.sh"
 )
 
-echo "Updating documentation from 'vc' to 'vm'..."
+echo "Updating documentation from 'vm' to 'vm'..."
 
 for file in "${files[@]}"; do
     if [ -f "$file" ]; then
-        # Replace vc command references
+        # Replace vm command references
         sed -i 's/\bvc /vm /g' "$file"
-        sed -i 's/\`vc\`/`vm`/g' "$file"
-        sed -i 's/"vc"/"vm"/g' "$file"
-        sed -i "s/'vc'/'vm'/g" "$file"
-        sed -i 's/^vc /vm /g' "$file"
-        sed -i 's/: vc /: vm /g' "$file"
+        sed -i 's/\`vm\`/`vm`/g' "$file"
+        sed -i 's/"vm"/"vm"/g' "$file"
+        sed -i "s/'vm'/'vm'/g" "$file"
+        sed -i 's/^vm /vm /g' "$file"
+        sed -i 's/: vm /: vm /g' "$file"
         echo "✓ Updated $file"
     fi
 done

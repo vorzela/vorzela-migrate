@@ -4,17 +4,17 @@
 
 ```bash
 # 1. Create migration (with timestamps + templates)
-vc make migration create_users_table
+vm make migration create_users_table
 
 # 2. Run migrations
-vc migrate
+vm migrate
 
 # 3. Check status
-vc status
+vm status
 
 # 4. Rollback if needed
-vc rollback              # Last 1 batch
-vc rollback --steps=all  # All migrations
+vm rollback              # Last 1 batch
+vm rollback --steps=all  # All migrations
 ```
 
 ---
@@ -23,23 +23,23 @@ vc rollback --steps=all  # All migrations
 
 | Command | Purpose | Example |
 |---------|---------|---------|
-| `make` | Create new migration | `vc make migration create_table` |
-| `migrate` | Run pending migrations | `vc migrate` |
-| `rollback` | Rollback migrations | `vc rollback --steps=all` |
-| `fresh` | Rollback all + Re-run (safe) | `vc fresh` |
-| `refresh` | Rollback all + Re-run | `vc refresh` |
-| `status` | Show migration status | `vc status` |
+| `make` | Create new migration | `vm make migration create_table` |
+| `migrate` | Run pending migrations | `vm migrate` |
+| `rollback` | Rollback migrations | `vm rollback --steps=all` |
+| `fresh` | Rollback all + Re-run (safe) | `vm fresh` |
+| `refresh` | Rollback all + Re-run | `vm refresh` |
+| `status` | Show migration status | `vm status` |
 
 ---
 
 ## 🔄 Rollback Options
 
 ```bash
-vc rollback              # Rollback 1 batch (default)
-vc rollback --steps=1    # Rollback 1 batch (explicit)
-vc rollback --steps=2    # Rollback 2 batches
-vc rollback --steps=5    # Rollback 5 batches
-vc rollback --steps=all  # Rollback ALL migrations ⭐ NEW
+vm rollback              # Rollback 1 batch (default)
+vm rollback --steps=1    # Rollback 1 batch (explicit)
+vm rollback --steps=2    # Rollback 2 batches
+vm rollback --steps=5    # Rollback 5 batches
+vm rollback --steps=all  # Rollback ALL migrations ⭐ NEW
 ```
 
 ---
@@ -48,13 +48,13 @@ vc rollback --steps=all  # Rollback ALL migrations ⭐ NEW
 
 ```bash
 # Interactive mode (shows warning + asks for confirmation)
-vc fresh
+vm fresh
 
 # Force mode (skip confirmation)
-vc fresh --force
+vm fresh --force
 
 # Perfect for CI/CD pipelines
-vc fresh --force --env=test
+vm fresh --force --env=test
 ```
 
 ### Why Use `fresh`?
@@ -78,9 +78,9 @@ MIGRATION_PATH=./migrations
 
 Then use without `--dsn` flag:
 ```bash
-vc migrate   # Uses .vorzela
-vc fresh     # Uses .vorzela
-vc status    # Uses .vorzela
+vm migrate   # Uses .vorzela
+vm fresh     # Uses .vorzela
+vm status    # Uses .vorzela
 ```
 
 ---
@@ -118,21 +118,21 @@ COMMIT;
 
 ### Development Workflow
 ```bash
-vc make migration add_email_column
+vm make migration add_email_column
 vim migrations/dev/1707129057_add_email_column.sql
-vc migrate
-vc status
+vm migrate
+vm status
 # Need to redo? 
-vc fresh --force
+vm fresh --force
 ```
 
 ### Testing Workflow
 ```bash
-vc make migration create_test_table
-vc migrate
-vc status
+vm make migration create_test_table
+vm migrate
+vm status
 # Test complete, reset database
-vc fresh --force
+vm fresh --force
 ```
 
 ### Production Workflow
@@ -141,13 +141,13 @@ vc fresh --force
 pg_dump myapp > backup.sql
 
 # Check what will run
-vc status --env=server
+vm status --env=server
 
 # Run migrations
-vc migrate --env=server
+vm migrate --env=server
 
 # Verify
-vc status --env=server
+vm status --env=server
 ```
 
 ---
@@ -177,7 +177,7 @@ vc status --env=server
 
 - Read [NEW_FEATURES.md](NEW_FEATURES.md) for detailed feature docs
 - Read [.vorzela.example](.vorzela.example) for config examples
-- Run `vc <command> --help` for command-specific help
+- Run `vm <command> --help` for command-specific help
 
 ---
 

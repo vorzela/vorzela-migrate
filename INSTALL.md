@@ -32,18 +32,18 @@ vm --help
 
 ### 1. **Download Binary** (Manual)
 Visit the releases page and download the pre-built binary for your OS:
-- **Windows**: `vc.exe`
-- **macOS**: `vc` (Intel or Apple Silicon)
-- **Linux**: `vc`
+- **Windows**: `vm.exe`
+- **macOS**: `vm` (Intel or Apple Silicon)
+- **Linux**: `vm`
 
 ### 2. **Make it Executable & Add to PATH**
 
 #### Windows
 ```bash
-# 1. Download vc.exe
+# 1. Download vm.exe
 # 2. Move to a folder in your PATH, e.g., C:\Program Files\vorzela\
 mkdir "C:\Program Files\vorzela"
-move vc.exe "C:\Program Files\vorzela\"
+move vm.exe "C:\Program Files\vorzela\"
 
 # 3. Add to PATH via System Environment Variables
 # Or use PowerShell:
@@ -142,7 +142,7 @@ git clone https://github.com/vorzela/vorzela-migrate.git
 cd vorzela-migrate
 
 # 2. Build binary
-go build -o vc.exe main.go
+go build -o vm.exe main.go
 
 # 3. Add to PATH
 # Move to C:\Program Files\vorzela\ or add current folder to PATH
@@ -162,7 +162,7 @@ cd vorzela-migrate
 go build -o vm main.go
 
 # 3. Make executable & add to PATH
-chmod +x vc
+chmod +x vm
 sudo mv vm /usr/local/bin/
 
 # 4. Verify
@@ -177,10 +177,10 @@ vm --version
 
 ```bash
 # Homebrew (macOS)
-brew install vorzela/tap/vc
+brew install vorzela/tap/vm
 
 # Windows (Chocolatey)
-choco install vc
+choco install vm
 
 # Linux (Snap)
 snap install vorzela-migrate
@@ -273,14 +273,14 @@ vm status
 
 ## Troubleshooting
 
-### "vc: command not found" (macOS/Linux)
+### "vm: command not found" (macOS/Linux)
 
 **Problem:** Binary not in PATH
 
 **Solution:**
 ```bash
 # Check if binary exists
-which vc
+which vm
 
 # If not found, move to PATH
 sudo mv  vm /usr/local/bin/
@@ -362,10 +362,10 @@ vm status
 
 **Example Setup:**
 ```powershell
-# Download vc.exe
+# Download vm.exe
 # Create folder
 mkdir "C:\Program Files\vorzela"
-move vc.exe "C:\Program Files\vorzela\"
+move vm.exe "C:\Program Files\vorzela\"
 
 # Add to PATH permanently
 [Environment]::SetEnvironmentVariable(
@@ -391,8 +391,8 @@ vm --version
 
 **Example Setup:**
 ```bash
-# Download vc
-chmod +x vc
+# Download vm
+chmod +x vm
 sudo mv vm /usr/local/bin/
 vm --version
 ```
@@ -410,8 +410,8 @@ vm --version
 
 **Example Setup:**
 ```bash
-# Download vc
-chmod +x vc
+# Download vm
+chmod +x vm
 sudo mv vm /usr/local/bin/
 vm --version
 ```
@@ -434,7 +434,7 @@ COPY --from=builder /apvc .
 ENV DATABASE_URL=postgres://db:5432/myapp
 ENV VORZELA_ENV=server
 
-ENTRYPOINT ["./vc"]
+ENTRYPOINT ["./vm"]
 CMD ["status"]
 ```
 
@@ -518,10 +518,10 @@ source ~/.bashrc
 
 | OS | Arch | Status | Binary |
 |----|----|--------|--------|
-| Windows | x86-64 | ✅ | `vc.exe` |
-| macOS | Intel (x86-64) | ✅ | `vc-macos-intel` |
-| macOS | Apple Silicon (ARM64) | ✅ | `vc-macos-arm` |
-| Linux | x86-64 | ✅ | `vc-linux` |
-| Linux | ARM64 | ✅ | `vc-linux-arm` |
+| Windows | x86-64 | ✅ | `vm.exe` |
+| macOS | Intel (x86-64) | ✅ | `vm-macos-intel` |
+| macOS | Apple Silicon (ARM64) | ✅ | `vm-macos-arm` |
+| Linux | x86-64 | ✅ | `vm-linux` |
+| Linux | ARM64 | ✅ | `vm-linux-arm` |
 
 All binaries are fully featured with zero dependencies!

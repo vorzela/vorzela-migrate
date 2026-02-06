@@ -13,10 +13,10 @@
 Think of it as **Laravel migrations, but for Go** - with simple commands like:
 
 ```bash
-vc make migration create_users_table
-vc migrate
-vc status
-vc rollback
+vm make migration create_users_table
+vm migrate
+vm status
+vm rollback
 ```
 
 ---
@@ -25,12 +25,12 @@ vc rollback
 
 ### ✅ Laravel-Style Commands
 ```bash
-vc make migration create_users_table   # Create migration
-vc migrate                               # Run pending migrations
-vc status                                # Show migration status
-vc rollback                              # Rollback migrations
-vc fresh                                 # Reset & re-run (with warnings)
-vc refresh                               # Reset & re-run (no warnings)
+vm make migration create_users_table   # Create migration
+vm migrate                               # Run pending migrations
+vm status                                # Show migration status
+vm rollback                              # Rollback migrations
+vm fresh                                 # Reset & re-run (with warnings)
+vm refresh                               # Reset & re-run (no warnings)
 ```
 
 ### ✅ Enhanced Templates
@@ -41,15 +41,15 @@ All generated migrations include:
 
 ### ✅ Flexible Rollback
 ```bash
-vc rollback              # Last 1 batch (default)
-vc rollback --steps=2    # Last 2 batches
-vc rollback --steps=all  # All migrations
+vm rollback              # Last 1 batch (default)
+vm rollback --steps=2    # Last 2 batches
+vm rollback --steps=all  # All migrations
 ```
 
 ### ✅ Safe Fresh Command
 ```bash
-vc fresh                 # Interactive with warnings
-vc fresh --force         # For CI/CD (no prompts)
+vm fresh                 # Interactive with warnings
+vm fresh --force         # For CI/CD (no prompts)
 ```
 
 ### ✅ Colored Output
@@ -68,10 +68,10 @@ No more `--dsn` every time! Use:
 ### ✅ Strong Naming Conventions
 Clear, descriptive migration names:
 ```bash
-vc make migration create_users_table
-vc make migration add_email_to_users
-vc make migration add_phone_to_customers
-vc make migration create_index_on_users_email
+vm make migration create_users_table
+vm make migration add_email_to_users
+vm make migration add_phone_to_customers
+vm make migration create_index_on_users_email
 ```
 
 Status shows readable names:
@@ -88,9 +88,9 @@ create posts table                | ⏳ Pending
 
 ### For Non-Developers (Easiest)
 Download pre-built binary for your OS:
-- **Windows**: `vc.exe`
-- **macOS**: `vc` (Intel or Apple Silicon)
-- **Linux**: `vc`
+- **Windows**: `vm.exe`
+- **macOS**: `vm` (Intel or Apple Silicon)
+- **Linux**: `vm`
 
 Then add to PATH. See [INSTALL.md](INSTALL.md) for detailed steps.
 
@@ -98,8 +98,8 @@ Then add to PATH. See [INSTALL.md](INSTALL.md) for detailed steps.
 ```bash
 git clone https://github.com/vorzela/vorzela-migrate.git
 cd vorzela-migrate
-go build -o vc main.go
-sudo mv vc /usr/local/bin/
+go build -o vm main.go
+sudo mv vm /usr/local/bin/
 ```
 
 ---
@@ -124,7 +124,7 @@ sudo mv vc /usr/local/bin/
 ```bash
 # Download binary or build from source
 # See INSTALL.md for detailed instructions
-vc --version
+vm --version
 ```
 
 ### 2. Setup Project
@@ -139,7 +139,7 @@ mkdir -p migrations/{dev,server}
 
 ### 3. Create First Migration
 ```bash
-vc make migration create_users_table
+vm make migration create_users_table
 ```
 
 ### 4. Edit & Run
@@ -148,10 +148,10 @@ vc make migration create_users_table
 vim migrations/dev/TIMESTAMP_create_users_table.sql
 
 # Run migration
-vc migrate
+vm migrate
 
 # Check status
-vc status
+vm status
 ```
 
 ---
@@ -162,40 +162,40 @@ vc status
 
 ```bash
 # Table operations
-vc make migration create_users_table
-vc make migration create_posts_table
-vc make migration drop_legacy_users_table
+vm make migration create_users_table
+vm make migration create_posts_table
+vm make migration drop_legacy_users_table
 
 # Column operations
-vc make migration add_email_to_users
-vc make migration add_phone_to_customers
-vc make migration remove_deprecated_field_from_products
+vm make migration add_email_to_users
+vm make migration add_phone_to_customers
+vm make migration remove_deprecated_field_from_products
 
 # Index/Constraint operations
-vc make migration create_index_on_users_email
-vc make migration add_foreign_key_author_id_to_posts
+vm make migration create_index_on_users_email
+vm make migration add_foreign_key_author_id_to_posts
 ```
 
 ### Running Migrations
 
 ```bash
 # Run all pending migrations
-vc migrate
+vm migrate
 
 # Check what will run
-vc status
+vm status
 
 # Rollback if needed
-vc rollback               # Last batch
-vc rollback --steps=2     # Last 2 batches
-vc rollback --steps=all   # Everything
+vm rollback               # Last batch
+vm rollback --steps=2     # Last 2 batches
+vm rollback --steps=all   # Everything
 ```
 
 ### Fresh Database
 
 ```bash
 # Development (with confirmation)
-vc fresh
+vm fresh
 # Output:
 # ⚠️  CAUTION: This will rollback ALL migrations and re-run them
 # ⚠️  This may cause data loss in your database!
@@ -207,7 +207,7 @@ vc fresh
 # ✨ Fresh completed successfully!
 
 # CI/CD (automated)
-vc fresh --force
+vm fresh --force
 ```
 
 ---
@@ -216,40 +216,40 @@ vc fresh --force
 
 ### make
 ```bash
-vc make migration create_users_table
+vm make migration create_users_table
 # Creates: migrations/dev/TIMESTAMP_create_users_table.sql
 # With: CREATE TABLE template, DROP TABLE template
 ```
 
 ### migrate
 ```bash
-vc migrate
+vm migrate
 # Runs all pending migrations
 # Tracks in database migration table
 ```
 
 ### rollback
 ```bash
-vc rollback              # Rollback 1 batch
-vc rollback --steps=1    # Explicit: 1 batch
-vc rollback --steps=2    # Rollback 2 batches
-vc rollback --steps=all  # Rollback all
+vm rollback              # Rollback 1 batch
+vm rollback --steps=1    # Explicit: 1 batch
+vm rollback --steps=2    # Rollback 2 batches
+vm rollback --steps=all  # Rollback all
 ```
 
 ### fresh
 ```bash
-vc fresh                 # Interactive (asks for confirmation)
-vc fresh --force         # Skip confirmation (for automation)
+vm fresh                 # Interactive (asks for confirmation)
+vm fresh --force         # Skip confirmation (for automation)
 ```
 
 ### refresh
 ```bash
-vc refresh               # Rollback all + re-run (no warnings)
+vm refresh               # Rollback all + re-run (no warnings)
 ```
 
 ### status
 ```bash
-vc status                # Shows executed & pending migrations
+vm status                # Shows executed & pending migrations
 # Output includes readable migration names!
 ```
 
@@ -287,12 +287,12 @@ internal/                   # Internal packages
 
 1. **CLI Flags** (highest)
    ```bash
-    vc migrate --dsn "postgres://override/db"
+    vm migrate --dsn "postgres://override/db"
    ```
 
 2. **Environment Variables**
    ```bash
-   DATABASE_URL=postgres://localhost/myapp  vc migrate
+   DATABASE_URL=postgres://localhost/myapp  vm migrate
    ```
 
 3. **`.vorzela` Config File**
@@ -377,11 +377,11 @@ add_unique_constraint_to_users_email
 
 | OS | Binary | Status |
 |----|--------|--------|
-| Windows | vc.exe | ✅ Full support |
-| macOS (Intel) | vc-macos-intel | ✅ Full support |
-| macOS (Apple Silicon) | vc-macos-arm | ✅ Full support |
-| Linux (x86-64) | vc-linux | ✅ Full support |
-| Linux (ARM64) | vc-linux-arm | ✅ Full support |
+| Windows | vm.exe | ✅ Full support |
+| macOS (Intel) | vm-macos-intel | ✅ Full support |
+| macOS (Apple Silicon) | vm-macos-arm | ✅ Full support |
+| Linux (x86-64) | vm-linux | ✅ Full support |
+| Linux (ARM64) | vm-linux-arm | ✅ Full support |
 | Docker | vorzela:latest | ✅ Full support |
 
 All platforms include **zero external dependencies** when using pre-built binaries!
@@ -402,8 +402,8 @@ All platforms include **zero external dependencies** when using pre-built binari
 
 1. **Use strong naming conventions**
    ```bash
-    vc make migration add_email_to_users  # Good!
-    vc make migration update_table        # Bad!
+    vm make migration add_email_to_users  # Good!
+    vm make migration update_table        # Bad!
    ```
 
 2. **Create `.vorzela` file**
@@ -419,22 +419,22 @@ All platforms include **zero external dependencies** when using pre-built binari
 
 4. **Check before running**
    ```bash
-    vc status        # See what will run
-    vc migrate       # Run migrations
-    vc status        # Verify they ran
+    vm status        # See what will run
+    vm migrate       # Run migrations
+    vm status        # Verify they ran
    ```
 
 5. **Backup before destructive ops**
    ```bash
    pg_dump myapp > backup.sql
-    vc fresh
+    vm fresh
    ```
 
 ---
 
 ## 🐛 Troubleshooting
 
-**"vc: command not found"**
+**"vm: command not found"**
 - Add to PATH (see INSTALL.md)
 
 **"database URL is required"**

@@ -42,10 +42,10 @@
    - **.vorzela.example**: Removed `VORZELA_ENV=dev` line, cleaned up comments
 
 6. **Verified Build & Testing**
-   - ✅ `go build -o vc .` successful
-   - ✅ `vc make migration create_users_table` creates file in migrations/ (not migrations/dev)
+   - ✅ `go build -o vm .` successful
+   - ✅ `vm make migration create_users_table` creates file in migrations/ (not migrations/dev)
    - ✅ Test migration file generated with correct template
-   - ✅ `vc --version` returns 1.0.0
+   - ✅ `vm --version` returns 1.0.0
    - ✅ All 6 commands working without --env flag
 
 ## Code Changes Summary
@@ -129,7 +129,7 @@
 
 **Before**: 
 ```
-vc make migration create_users -e dev
+vm make migration create_users -e dev
 migrations/
 ├── dev/
 │   └── timestamp_create_users.sql
@@ -139,7 +139,7 @@ migrations/
 
 **After**:
 ```
-vc make migration create_users
+vm make migration create_users
 migrations/
 └── timestamp_create_users.sql
 ```

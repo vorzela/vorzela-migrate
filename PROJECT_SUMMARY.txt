@@ -13,28 +13,28 @@ STATUS: ✅ Complete and Production-Ready
 
 1. Build:
    $ make build
-   $ go build -o vc main.go
+   $ go build -o vm main.go
 
 2. Create a migration:
-   $ ./vc make migration create_users_table
+   $ ./vm make migration create_users_table
 
 3. Run migrations:
    $ export DATABASE_URL="postgres://localhost/myapp"
-   $ ./vc migrate --dsn $DATABASE_URL
+   $ ./vm migrate --dsn $DATABASE_URL
 
 4. Install globally:
    $ make install
-   $ vc make migration create_posts_table
+   $ vm make migration create_posts_table
 
 ================================================================================
                            AVAILABLE COMMANDS
 ================================================================================
 
-$ ./vc make migration <name>           Create a new migration file
-$ ./vc migrate --dsn <dsn>             Run all pending migrations
-$ ./vc rollback --dsn <dsn>            Rollback last batch
-$ ./vc refresh --dsn <dsn>             Rollback all + re-run
-$ ./vc status --dsn <dsn>              Show migration status
+$ ./vm make migration <name>           Create a new migration file
+$ ./vm migrate --dsn <dsn>             Run all pending migrations
+$ ./vm rollback --dsn <dsn>            Rollback last batch
+$ ./vm refresh --dsn <dsn>             Rollback all + re-run
+$ ./vm status --dsn <dsn>              Show migration status
 
 Environment flags:
   -e, --env dev|server                 Environment (default: dev)
@@ -93,29 +93,29 @@ vorzela-migrate/
 ================================================================================
 
 ✅ Create migrations with simple commands
-   $ ./vc make migration create_users_table
+   $ ./vm make migration create_users_table
 
 ✅ Run pending migrations with transaction safety
-   $ ./vc migrate --dsn $DATABASE_URL
+   $ ./vm migrate --dsn $DATABASE_URL
 
 ✅ Rollback migrations with batch tracking
-   $ ./vc rollback --dsn $DATABASE_URL
+   $ ./vm rollback --dsn $DATABASE_URL
 
 ✅ Refresh (rollback all and re-run)
-   $ ./vc refresh --dsn $DATABASE_URL
+   $ ./vm refresh --dsn $DATABASE_URL
 
 ✅ Show migration status
-   $ ./vc status --dsn $DATABASE_URL
+   $ ./vm status --dsn $DATABASE_URL
 
 ✅ Environment-specific migrations (dev/server)
-   $ ./vc make migration name -e server
+   $ ./vm make migration name -e server
 
 ✅ Warning system for missing sections
    (Warns about missing UP/DOWN sections)
 
 ✅ Global CLI tool support
    $ make install
-   $ vc make migration anywhere
+   $ vm make migration anywhere
 
 ✅ Comprehensive error handling
    (Detailed error messages and guidance)
@@ -188,26 +188,26 @@ Version Information:
 ================================================================================
 
 Development Workflow:
-  1. $ ./vc make migration create_users_table
+  1. $ ./vm make migration create_users_table
   2. Edit migrations/dev/timestamp_create_users_table.sql
-  3. $ ./vc migrate --dsn $DATABASE_URL
-  4. $ ./vc status --dsn $DATABASE_URL
+  3. $ ./vm migrate --dsn $DATABASE_URL
+  4. $ ./vm status --dsn $DATABASE_URL
   5. Repeat for more migrations
 
 Testing Workflow:
   1. $ createdb test_db
-  2. $ DATABASE_URL=postgres://localhost/test_db ./vc migrate
+  2. $ DATABASE_URL=postgres://localhost/test_db ./vm migrate
   3. $ psql test_db -c "\dt"
-  4. $ DATABASE_URL=postgres://localhost/test_db ./vc rollback
+  4. $ DATABASE_URL=postgres://localhost/test_db ./vm rollback
   5. $ dropdb test_db
 
 Production Deployment:
-  1. $ DATABASE_URL="prod_connection_string" ./vc migrate --env server
-  2. $ DATABASE_URL="prod_connection_string" ./vc status --env server
+  1. $ DATABASE_URL="prod_connection_string" ./vm migrate --env server
+  2. $ DATABASE_URL="prod_connection_string" ./vm status --env server
   3. Monitor database
 
 Complete Reset (Testing):
-  1. $ DATABASE_URL=postgres://localhost/test_db ./vc refresh
+  1. $ DATABASE_URL=postgres://localhost/test_db ./vm refresh
   2. All tables dropped and recreated
 
 ================================================================================
@@ -217,19 +217,19 @@ Complete Reset (Testing):
 Build the tool:
   $ make build
   or
-  $ go build -o vc main.go
+  $ go build -o vm main.go
 
 Run locally:
-  $ ./vc make migration create_users_table
-  $ ./vc migrate --dsn $DATABASE_URL
+  $ ./vm make migration create_users_table
+  $ ./vm migrate --dsn $DATABASE_URL
 
 Install globally:
   $ make install
-  $ vc make migration create_users_table  (works from anywhere)
+  $ vm make migration create_users_table  (works from anywhere)
 
 Verify installation:
-  $ vc --version
-  $ vc --help
+  $ vm --version
+  $ vm --help
 
 ================================================================================
                          DATABASE REQUIREMENTS
@@ -269,28 +269,28 @@ VORZELA_ENV
 
 Code Files:
   - 1 main entry point
-  - 5 CLI command files
+   $ go build -o vm main.go
   - 2 database/internal files
   - 4 migration logic files
-  Total: 12 Go files
+   $ ./vm make migration create_users_table
 
 Documentation:
   - 8 comprehensive documentation files
-  - ~4000+ lines of documentation
+   $ ./vm migrate --dsn $DATABASE_URL
   - Examples and guides included
 
 Package Dependencies:
-  - 2 direct dependencies
+   $ vm make migration create_posts_table
   - 10+ transitive dependencies
 
 Size:
   - Binary: ~15MB (compiled)
   - Source: ~50KB
-
-================================================================================
-                         TESTED & VERIFIED
-================================================================================
-
+$ ./vm make migration <name>           Create a new migration file
+$ ./vm migrate --dsn <dsn>             Run all pending migrations
+$ ./vm rollback --dsn <dsn>            Rollback last batch
+$ ./vm refresh --dsn <dsn>             Rollback all + re-run
+$ ./vm status --dsn <dsn>              Show migration status
 ✅ Build: Successfully compiles with Go 1.25.6
 ✅ Commands: All 5 commands tested and working
 ✅ Migration Creation: Works for dev and server environments
@@ -307,7 +307,7 @@ Size:
 3. Run migrations against your database
 4. Set up for production use
 5. Integrate with your CI/CD pipeline
-
+  4. $ DATABASE_URL=postgres://localhost/test_db ./vm rollback
 For more details, see the documentation files listed above.
 
 ================================================================================
@@ -329,12 +329,12 @@ Ready to contribute?
 
 ================================================================================
                          VERSION INFORMATION
-================================================================================
-
+  $ ./vm make migration create_users_table
+  $ ./vm migrate --dsn $DATABASE_URL
 Version: 1.0.0
 Release Date: February 5, 2026
 Status: Stable / Production Ready
-License: MIT
+  $ vm make migration create_users_table  (works from anywhere)
 
 Go Version Required: 1.21+
 PostgreSQL Version Required: 13+
@@ -345,7 +345,7 @@ PostgreSQL Version Required: 13+
 
 Your Laravel-inspired migration tool is ready to use!
 
-Start with: ./vc --help
+Start with: ./vm --help
 Then read: QUICKSTART.md
 
 Happy migrating! 🚀

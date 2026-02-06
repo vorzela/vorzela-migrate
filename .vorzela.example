@@ -33,40 +33,40 @@ DATABASE_URL=postgres://localhost:5432/myapp
 #    Pattern: action_details_target
 #    
 #    Table Operations:
-#    $ vc make migration create_users_table
-#    $ vc make migration create_posts_table
-#    $ vc make migration drop_legacy_data_table
+#    $ vm make migration create_users_table
+#    $ vm make migration create_posts_table
+#    $ vm make migration drop_legacy_data_table
 #    
 #    Column Operations (STRONG NAMING):
-#    $ vc make migration add_email_to_users
-#    $ vc make migration add_phone_to_customers
-#    $ vc make migration remove_deprecated_field_from_products
-#    $ vc make migration rename_user_name_to_full_name
+#    $ vm make migration add_email_to_users
+#    $ vm make migration add_phone_to_customers
+#    $ vm make migration remove_deprecated_field_from_products
+#    $ vm make migration rename_user_name_to_full_name
 #    
 #    Indexes & Constraints:
-#    $ vc make migration create_index_on_users_email
-#    $ vc make migration add_foreign_key_author_id_to_posts
+#    $ vm make migration create_index_on_users_email
+#    $ vm make migration add_foreign_key_author_id_to_posts
 #    
 #    Generated file: migrations/1707129045_create_users_table.sql
 #    Includes: Timestamp, CREATE/DROP templates, default columns (id, created_at, updated_at)
 
 # 2. RUN MIGRATIONS (execute pending migrations)
-#    $ vc migrate
+#    $ vm migrate
 
 # 3. ROLLBACK (with flexible options)
-#    $ vc rollback              # Rollback last 1 migration batch
-#    $ vc rollback --steps=2    # Rollback last 2 migration batches
-#    $ vc rollback --steps=all  # Rollback ALL migrations
+#    $ vm rollback              # Rollback last 1 migration batch
+#    $ vm rollback --steps=2    # Rollback last 2 migration batches
+#    $ vm rollback --steps=all  # Rollback ALL migrations
 
 # 4. FRESH (Rollback ALL + Re-run with confirmation warning)
-#    $ ./vc fresh                 # Shows warning, asks for confirmation
-#    $ ./vc fresh --force         # Skip confirmation (use with caution!)
+#    $ ./vm fresh                 # Shows warning, asks for confirmation
+#    $ ./vm fresh --force         # Skip confirmation (use with caution!)
 
 # 5. REFRESH (Rollback ALL + Re-run without confirmation)
-#    $ ./vc refresh
+#    $ ./vm refresh
 
 # 6. STATUS (show which migrations have been executed)
-#    $ ./vc status
+#    $ ./vm status
 
 # =============================================================================
 # GENERATED MIGRATION FILE EXAMPLE (timestamps & create/drop templates)

@@ -22,7 +22,7 @@ All migration operations now use colors for better readability:
 
 **Running migrations:**
 ```bash
-$  vc migrate
+$  vm migrate
 ✓ Migrated: 1707123456_create_users_table.sql
 ✓ Migrated: 1707123457_create_posts_table.sql
 ✓ Successfully ran 2 migration(s)
@@ -30,7 +30,7 @@ $  vc migrate
 
 **Checking status:**
 ```bash
-$  vc status
+$  vm status
 🐘 Migration Status [dev]
 ────────────────────────────────────────────────────────────────────────────────
 Migration                                | Status
@@ -51,9 +51,9 @@ Summary: 2 executed, 1 pending
 
 **Before:**
 ```bash
-vc migrate --dsn "postgres://localhost/myapp"
-vc status --dsn "postgres://localhost/myapp"
-vc rollback --dsn "postgres://localhost/myapp"
+vm migrate --dsn "postgres://localhost/myapp"
+vm status --dsn "postgres://localhost/myapp"
+vm rollback --dsn "postgres://localhost/myapp"
 ```
 
 **After:**
@@ -65,22 +65,22 @@ VORZELA_ENV=dev
 EOF
 
 # Then use many times
-vc migrate
-vc status
-vc rollback
+vm migrate
+vm status
+vm rollback
 ```
 
 ### Configuration Methods (Priority Order)
 
 1. **CLI Flags** (Highest)
    ```bash
-    vc migrate --dsn "postgres://override/db"
+    vm migrate --dsn "postgres://override/db"
    ```
 
 2. **Environment Variables**
    ```bash
    export DATABASE_URL="postgres://localhost/myapp"
-    vc migrate
+    vm migrate
    ```
 
 3. **.vorzela Config File**
@@ -139,7 +139,7 @@ SOME_API_KEY=secret123
 ```bash
 export DATABASE_URL="postgres://prod_user:password@prod_server:5432/myapp"
 export VORZELA_ENV=server
-vc migrate
+vm migrate
 ```
 
 ---
@@ -157,22 +157,22 @@ EOF
 
 ### 2. Create Migration
 ```bash
-vc make migration create_users_table
+vm make migration create_users_table
 ```
 
 ### 3. Run Migration
 ```bash
-vc migrate
+vm migrate
 ```
 
 ### 4. Check Status
 ```bash
-vc status
+vm status
 ```
 
 ### 5. Rollback (if needed)
 ```bash
-vc rollback
+vm rollback
 ```
 
 **That's it!** No `--dsn` flag needed anywhere.
@@ -190,9 +190,9 @@ VORZELA_ENV=dev
 EOF
 
 # Use many times
-vc migrate
-vc status
-vc rollback
+vm migrate
+vm status
+vm rollback
 ```
 
 ### Production (Environment Variables)
@@ -201,14 +201,14 @@ vc rollback
 export DATABASE_URL="postgres://prod_user:password@prod_server:5432/myapp"
 export VORZELA_ENV=server
 
-vc migrate
-vc status
+vm migrate
+vm status
 ```
 
 ### One-Off Commands (CLI Flags)
 ```bash
 # Still works, but less common now
-vc migrate --dsn "postgres://temporary/db" --env server
+vm migrate --dsn "postgres://temporary/db" --env server
 ```
 
 ---
@@ -269,7 +269,7 @@ All command files (`cmd/*.go`) now:
 
 **✓ Old way still works:**
 ```bash
-vc migrate --dsn "postgres://localhost/myapp"
+vm migrate --dsn "postgres://localhost/myapp"
 ```
 
 **✓ New way is easier:**
@@ -278,7 +278,7 @@ vc migrate --dsn "postgres://localhost/myapp"
 echo 'DATABASE_URL=postgres://localhost/myapp' > .vorzela
 
 # Then use without --dsn
-vc migrate
+vm migrate
 ```
 
 **✓ All methods supported:**

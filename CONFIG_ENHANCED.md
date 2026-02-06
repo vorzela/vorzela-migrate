@@ -6,15 +6,15 @@ The Vorzela migration tool supports three configuration methods with clear prior
 
 ### 1. CLI Flags (Highest Priority)
 ```bash
-vc migrate --dsn "postgres://localhost/myapp" --env dev
-vc migrate -d "postgres://localhost/myapp" -e server
+vm migrate --dsn "postgres://localhost/myapp" --env dev
+vm migrate -d "postgres://localhost/myapp" -e server
 ```
 
 ### 2. Environment Variables
 ```bash
 export DATABASE_URL="postgres://localhost/myapp"
 export VORZELA_ENV=dev
-vc migrate
+vm migrate
 ```
 
 ### 3. Configuration File (Lowest Priority)
@@ -27,7 +27,7 @@ MIGRATION_PATH=./migrations
 
 Then simply run:
 ```bash
-vc migrate
+vm migrate
 ```
 
 ## Configuration Priority (Highest to Lowest)
@@ -44,13 +44,13 @@ vc migrate
 
 ```bash
 # Required DSN when not configured elsewhere
-vc migrate --dsn $DATABASE_URL
+vm migrate --dsn $DATABASE_URL
 
 # Specify environment
-vc migrate --dsn $DATABASE_URL --env server
+vm migrate --dsn $DATABASE_URL --env server
 
 # Specify migration path
-vc migrate --dsn $DATABASE_URL --path ./db/migrations
+vm migrate --dsn $DATABASE_URL --path ./db/migrations
 ```
 
 ### Using Environment Variables (Recommended for CI/CD)
@@ -60,9 +60,9 @@ vc migrate --dsn $DATABASE_URL --path ./db/migrations
 export DATABASE_URL="postgres://localhost/myapp"
 export VORZELA_ENV=dev
 
-vc migrate
-vc status
-vc rollback
+vm migrate
+vm status
+vm rollback
 ```
 
 ### Using .vorzela Config File (Recommended for Local Development)
@@ -85,9 +85,9 @@ MIGRATION_PATH=./migrations
 
 ```bash
 # After creating .vorzela file, simply run:
-vc migrate
-vc status
-vc rollback
+vm migrate
+vm status
+vm rollback
 
 # No --dsn flag needed!
 ```
@@ -134,13 +134,13 @@ DATABASE_URL=postgres://user:password@localhost:5432/myapp
 ### Usage
 ```bash
 # Uses .vorzela configuration by default
-vc migrate
+vm migrate
 
 # Override with environment variable
-DATABASE_URL=postgres://prod/myapp vc migrate --env server
+DATABASE_URL=postgres://prod/myapp vm migrate --env server
 
 # Override with flag (highest priority)
-vc migrate --dsn "postgres://override/myapp"
+vm migrate --dsn "postgres://override/myapp"
 ```
 
 ## Environment-Specific Configuration
@@ -155,12 +155,12 @@ VORZELA_ENV=dev
 ```bash
 export DATABASE_URL="postgres://prod-user:pass@prod-server:5432/myapp"
 export VORZELA_ENV=server
-vc migrate
+vm migrate
 ```
 
 ### Staging (CLI Flags)
 ```bash
-vc migrate \
+vm migrate \
   --dsn "postgres://staging-user:pass@staging:5432/myapp" \
   --env server
 ```
@@ -186,7 +186,7 @@ postgres://user:password@prod-server:5432/myapp?sslmode=require
 
 **With multiple options:**
 ```
-postgres://user:password@host:5432/myapp?sslmode=require&connect_timeout=5&application_name=vc
+postgres://user:password@host:5432/myapp?sslmode=require&connect_timeout=5&application_name=vm
 ```
 
 ## Configuration for CI/CD
@@ -199,8 +199,8 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - uses: actions/setup-go@v2
-      - run: go build -o vc main.go
-      - run: vc migrate
+      - run: go build -o vm main.go
+      - run: vm migrate
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           VORZELA_ENV: dev
@@ -213,12 +213,12 @@ FROM golang:1.21
 WORKDIR /app
 COPY . .
 
-RUN go build -o vc main.go
+RUN go build -o vm main.go
 
 ENV DATABASE_URL=postgres://db:5432/myapp
 ENV VORZELA_ENV=server
 
-ENTRYPOINT ["./vc"]
+ENTRYPOINT ["./vm"]
 ```
 
 ### Kubernetes
@@ -226,7 +226,7 @@ ENTRYPOINT ["./vc"]
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: vc-config
+  name: vm-config
 data:
   DATABASE_URL: "postgres://db-service:5432/myapp"
   VORZELA_ENV: "server"
@@ -283,7 +283,7 @@ data:
 
 **Before:**
 ```bash
-vc migrate --dsn "postgres://localhost/myapp" --env dev
+vm migrate --dsn "postgres://localhost/myapp" --env dev
 ```
 
 **After:**
@@ -293,7 +293,7 @@ echo 'DATABASE_URL=postgres://localhost/myapp' > .vorzela
 echo 'VORZELA_ENV=dev' >> .vorzela
 
 # Now just run:
-vc migrate
+vm migrate
 ```
 
 ### From .env to .vorzela
@@ -304,7 +304,7 @@ vc migrate
 DATABASE_URL=postgres://localhost/myapp
 VORZELA_ENV=dev
 
-vc migrate  # Loads from .env
+vm migrate  # Loads from .env
 ```
 
 **After:**
@@ -313,7 +313,7 @@ vc migrate  # Loads from .env
 DATABASE_URL=postgres://localhost/myapp
 VORZELA_ENV=dev
 
-vc migrate  # Loads from .vorzela
+vm migrate  # Loads from .vorzela
 ```
 
 ## Troubleshooting Configuration
@@ -325,15 +325,15 @@ vc migrate  # Loads from .vorzela
 **Solution:** Set via one of these methods:
 ```bash
 # 1. CLI flag
-vc migrate --dsn "postgres://localhost/myapp"
+vm migrate --dsn "postgres://localhost/myapp"
 
 # 2. Environment variable
 export DATABASE_URL="postgres://localhost/myapp"
-vc migrate
+vm migrate
 
 # 3. .vorzela file
 echo 'DATABASE_URL=postgres://localhost/myapp' > .vorzela
-vc migrate
+vm migrate
 ```
 
 ### "Can't find .vorzela file"
@@ -397,7 +397,7 @@ DATABASE_URL=postgres://user:password@localhost/myapp
 
 | Method | Priority | Use Case | Example |
 |--------|----------|----------|---------|
-| CLI Flags | Highest | One-off commands | `vc migrate --dsn $URL` |
+| CLI Flags | Highest | One-off commands | `vm migrate --dsn $URL` |
 | Env Vars | High | CI/CD, Docker | `export DATABASE_URL=...` |
 | .vorzela | Medium | Local development | `DATABASE_URL=postgres://...` |
 | .env | Low | Local secrets | Added to .gitignore |

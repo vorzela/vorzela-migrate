@@ -38,7 +38,7 @@ function Install-Vorzela {
     Write-Status "Detected Architecture: Windows ($Arch)"
 
     # Determine binary name
-    $BinaryName = "vc-windows-$Arch.exe"
+    $BinaryName = "vm-windows-$Arch.exe"
     $InstallDir = "C:\Program Files\vorzela"
     $GitHubRepo = "vorzela/vorzela-migrate"
     $ReleaseUrl = "https://github.com/$GitHubRepo/releases/download"
@@ -74,7 +74,7 @@ function Install-Vorzela {
 
     # Download binary
     $DownloadUrl = "$ReleaseUrl/$LatestRelease/$BinaryName"
-    $BinaryPath = "$InstallDir\vc.exe"
+    $BinaryPath = "$InstallDir\vm.exe"
 
     Write-Status "Downloading from: $DownloadUrl"
     try {
@@ -88,8 +88,8 @@ function Install-Vorzela {
         Write-Status "Try building from source instead:"
         Write-Status "  git clone https://github.com/$GitHubRepo.git"
         Write-Status "  cd vorzela-migrate"
-        Write-Status "  go build -o vc.exe main.go"
-        Write-Status "  Move-Item vc.exe 'C:\Program Files\vorzela\vc.exe'"
+        Write-Status "  go build -o vm.exe main.go"
+        Write-Status "  Move-Item vm.exe 'C:\Program Files\vorzela\vm.exe'"
         exit 1
     }
 
@@ -131,19 +131,19 @@ function Install-Vorzela {
     }
     catch {
         Write-Warning "Could not verify installation"
-        Write-Status "Try running: vc --version"
+        Write-Status "Try running: vm --version"
     }
 
     Write-Host ""
     Write-Status "Quick start:"
-    Write-Host "    vc --version" -ForegroundColor White
-    Write-Host "    vc --help" -ForegroundColor White
+    Write-Host "    vm --version" -ForegroundColor White
+    Write-Host "    vm --help" -ForegroundColor White
     Write-Host ""
 
     Write-Status "Next steps:"
     Write-Host "    1. Read INSTALL.md for setup instructions" -ForegroundColor White
     Write-Host "    2. Create .vorzela config in your project" -ForegroundColor White
-    Write-Host "    3. Create migration: vc make migration create_users_table" -ForegroundColor White
+    Write-Host "    3. Create migration: vm make migration create_users_table" -ForegroundColor White
     Write-Host "    4. Read QUICK_REFERENCE.md for examples" -ForegroundColor White
     Write-Host ""
 

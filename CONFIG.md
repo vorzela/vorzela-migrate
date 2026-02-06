@@ -74,9 +74,9 @@ modify_posts_content_nullable
 
 ### 1. One Concern Per Migration
 ```bash
-✓ Good: vc make migration create_users_table
-✓ Good: vc make migration add_email_verification_to_users
-✗ Bad:  vc make migration create_users_and_posts_tables
+✓ Good: vm make migration create_users_table
+✓ Good: vm make migration add_email_verification_to_users
+✗ Bad:  vm make migration create_users_and_posts_tables
 ```
 
 ### 2. Always Use Transactions
@@ -163,16 +163,16 @@ createdb myapp_test
 
 # Run migrations
 export DATABASE_URL="postgres://localhost/myapp_test"
-vc migrate --env dev
+vm migrate --env dev
 
 # Check status
-vc status --env dev
+vm status --env dev
 
 # Rollback for testing
-vc rollback --env dev
+vm rollback --env dev
 
 # Refresh for complete test
-vc refresh --env dev
+vm refresh --env dev
 
 # Cleanup
 dropdb myapp_test
@@ -215,8 +215,8 @@ If a rollback fails:
 ### Different Migrations Per Environment
 Create separate migration files for dev and server:
 ```bash
-vc make migration setup_test_data -e dev
-vc make migration add_audit_table -e server
+vm make migration setup_test_data -e dev
+vm make migration add_audit_table -e server
 ```
 
 ## Workflow Example
@@ -224,29 +224,29 @@ vc make migration add_audit_table -e server
 ```bash
 # Start development
 export DATABASE_URL="postgres://localhost/myapp"
-vc make migration create_users_table
+vm make migration create_users_table
 
 # Edit migrations/dev/1234567890_create_users_table.sql
 # Add your table schema
 
 # Run migrations
-vc migrate --env dev
+vm migrate --env dev
 
 # Check status
-vc status --env dev
+vm status --env dev
 
 # Create next migration
-vc make migration add_posts_table
+vm make migration add_posts_table
 
 # Test rollback
-vc rollback --env dev
+vm rollback --env dev
 
 # Refresh everything
-vc refresh --env dev
+vm refresh --env dev
 
 # Deploy to production
 export DATABASE_URL="postgres://prod-host/myapp"
-vc migrate --env server
+vm migrate --env server
 ```
 
 ## CI/CD Integration
@@ -281,10 +281,10 @@ jobs:
           go-version: 1.21
 
       - name: Build
-        run: go build -o vc main.go
+        run: go build -o vm main.go
 
       - name: Run migrations
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/myapp_test
-        run: vc migrate --env dev
+        run: vm migrate --env dev
 ```

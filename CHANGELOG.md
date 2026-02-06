@@ -6,11 +6,11 @@ All notable changes to Vorzela Migration Tool are documented in this file.
 
 ### Added
 - Initial release of Vorzela Migration Tool
-- `vc make migration` command for creating new migrations
-- `vc migrate` command for running pending migrations
-- `vc rollback` command for rolling back executed migrations
-- `vc refresh` command for rolling back and re-running all migrations
-- `vc status` command for showing migration status
+- `vm make migration` command for creating new migrations
+- `vm migrate` command for running pending migrations
+- `vm rollback` command for rolling back executed migrations
+- `vm refresh` command for rolling back and re-running all migrations
+- `vm status` command for showing migration status
 - Environment support (dev/server) with separate migration directories
 - Batch-based migration tracking
 - Transaction-wrapped SQL execution

@@ -29,39 +29,39 @@ Use **clear, descriptive names** for your migrations. This makes your code self-
 
 **Table Operations:**
 ```
-vc make migration create_users_table
-vc make migration create_posts_table
-vc make migration create_order_items_table
-vc make migration drop_legacy_data_table
+vm make migration create_users_table
+vm make migration create_posts_table
+vm make migration create_order_items_table
+vm make migration drop_legacy_data_table
 ```
 
 **Column Operations:**
 ```
-vc make migration add_email_to_users
-vc make migration add_phone_to_customers
-vc make migration add_status_to_orders
-vc make migration remove_deprecated_field_from_products
-vc make migration rename_user_name_to_full_name
+vm make migration add_email_to_users
+vm make migration add_phone_to_customers
+vm make migration add_status_to_orders
+vm make migration remove_deprecated_field_from_products
+vm make migration rename_user_name_to_full_name
 ```
 
 **Index Operations:**
 ```
-vc make migration create_index_on_users_email
-vc make migration create_unique_index_on_orders_tracking_id
-vc make migration drop_index_on_posts_author_id
+vm make migration create_index_on_users_email
+vm make migration create_unique_index_on_orders_tracking_id
+vm make migration drop_index_on_posts_author_id
 ```
 
 **Constraint Operations:**
 ```
-vc make migration add_foreign_key_user_id_to_posts
-vc make migration add_unique_constraint_to_users_email
-vc make migration add_check_constraint_age_to_users
+vm make migration add_foreign_key_user_id_to_posts
+vm make migration add_unique_constraint_to_users_email
+vm make migration add_check_constraint_age_to_users
 ```
 
 **Multiple Operations:**
 ```
-vc make migration create_categories_table_and_add_to_products
-vc make migration add_audit_columns_to_orders
+vm make migration create_categories_table_and_add_to_products
+vm make migration add_audit_columns_to_orders
 ```
 
 ---
@@ -69,12 +69,12 @@ vc make migration add_audit_columns_to_orders
 ## ❌ DON'T DO THIS (Weak Naming)
 
 ```
-vc make migration update_table          # Too vague
-vc make migration fix_database          # Not descriptive
-vc make migration changes               # Meaningless
-vc make migration migration1            # No context
-vc make migration temp_fix              # Temporary = bad
-vc make migration random123             # Unmaintainable
+vm make migration update_table          # Too vague
+vm make migration fix_database          # Not descriptive
+vm make migration changes               # Meaningless
+vm make migration migration1            # No context
+vm make migration temp_fix              # Temporary = bad
+vm make migration random123             # Unmaintainable
 ```
 
 ---
@@ -85,14 +85,14 @@ vc make migration random123             # Unmaintainable
 
 **Good progression:**
 ```bash
-vc make migration create_users_table
-vc make migration create_posts_table
-vc make migration create_comments_table
-vc make migration add_slug_to_posts
-vc make migration add_published_at_to_posts
-vc make migration add_author_id_to_comments
-vc make migration create_index_on_posts_slug
-vc make migration add_cascade_delete_to_comments
+vm make migration create_users_table
+vm make migration create_posts_table
+vm make migration create_comments_table
+vm make migration add_slug_to_posts
+vm make migration add_published_at_to_posts
+vm make migration add_author_id_to_comments
+vm make migration create_index_on_posts_slug
+vm make migration add_cascade_delete_to_comments
 ```
 
 **Generated files:**
@@ -129,29 +129,29 @@ Summary: 7 executed, 1 pending
 ### Example 2: E-commerce Platform
 
 ```bash
-vc make migration create_customers_table
-vc make migration create_products_table
-vc make migration create_orders_table
-vc make migration create_order_items_table
-vc make migration add_inventory_to_products
-vc make migration add_status_to_orders
-vc make migration add_tracking_number_to_orders
-vc make migration create_unique_index_on_customers_email
-vc make migration create_foreign_key_customer_id_to_orders
+vm make migration create_customers_table
+vm make migration create_products_table
+vm make migration create_orders_table
+vm make migration create_order_items_table
+vm make migration add_inventory_to_products
+vm make migration add_status_to_orders
+vm make migration add_tracking_number_to_orders
+vm make migration create_unique_index_on_customers_email
+vm make migration create_foreign_key_customer_id_to_orders
 ```
 
 ### Example 3: SaaS Application
 
 ```bash
-vc make migration create_organizations_table
-vc make migration create_users_table
-vc make migration create_memberships_table
-vc make migration add_organization_id_to_users
-vc make migration add_role_to_memberships
-vc make migration create_api_keys_table
-vc make migration add_api_key_id_to_organizations
-vc make migration create_audit_logs_table
-vc make migration add_deleted_at_to_organizations
+vm make migration create_organizations_table
+vm make migration create_users_table
+vm make migration create_memberships_table
+vm make migration add_organization_id_to_users
+vm make migration add_role_to_memberships
+vm make migration create_api_keys_table
+vm make migration add_api_key_id_to_organizations
+vm make migration create_audit_logs_table
+vm make migration add_deleted_at_to_organizations
 ```
 
 ---
@@ -181,54 +181,54 @@ vc make migration add_deleted_at_to_organizations
 ### 1. **Be Specific**
 ```bash
 # Good
-vc make migration add_email_to_users
+vm make migration add_email_to_users
 
 # Bad
-vc make migration add_field
-vc make migration add_column
+vm make migration add_field
+vm make migration add_column
 ```
 
 ### 2. **Include Table Names**
 ```bash
 # Good
-vc make migration add_status_to_orders
-vc make migration add_category_to_products
+vm make migration add_status_to_orders
+vm make migration add_category_to_products
 
 # Bad
-vc make migration add_status
-vc make migration add_category
+vm make migration add_status
+vm make migration add_category
 ```
 
 ### 3. **Use Complete Names**
 ```bash
 # Good
-vc make migration create_order_items_table
+vm make migration create_order_items_table
 
 # Bad
-vc make migration create_items_table
-vc make migration create_order_table_items
+vm make migration create_items_table
+vm make migration create_order_table_items
 ```
 
 ### 4. **One Logical Change Per Migration**
 ```bash
 # Good - logical grouping
-vc make migration add_email_and_phone_to_users
+vm make migration add_email_and_phone_to_users
 
 # Better - separate concerns
-vc make migration add_email_to_users
-vc make migration add_phone_to_users
+vm make migration add_email_to_users
+vm make migration add_phone_to_users
 ```
 
 ### 5. **Use Snake Case (lowercase_with_underscores)**
 ```bash
 # Good
-vc make migration create_user_profiles_table
-vc make migration add_birth_date_to_users
+vm make migration create_user_profiles_table
+vm make migration add_birth_date_to_users
 
 # Bad
-vc make migration CreateUserProfilesTable
-vc make migration AddBirthDateToUsers
-vc make migration create_user_profiles_TABLE
+vm make migration CreateUserProfilesTable
+vm make migration AddBirthDateToUsers
+vm make migration create_user_profiles_TABLE
 ```
 
 ---
@@ -338,14 +338,14 @@ Keep related migrations in the same batch:
 
 ```bash
 # These will be in the same batch if run together
-vc make migration create_users_table
-vc make migration create_posts_table
-vc make migration create_comments_table
-vc make migration add_indexes_to_posts
-vc make migration add_foreign_keys_to_comments
+vm make migration create_users_table
+vm make migration create_posts_table
+vm make migration create_comments_table
+vm make migration add_indexes_to_posts
+vm make migration add_foreign_keys_to_comments
 
 # Then run all at once
-vc migrate
+vm migrate
 
 # Status will show: Batch 1 (5 migrations)
 ```
@@ -356,17 +356,17 @@ Run dependent migrations separately:
 
 ```bash
 # Step 1: Create base tables
-vc make migration create_users_table
-vc migrate
+vm make migration create_users_table
+vm migrate
 
 # Step 2: Create related tables
-vc make migration create_posts_table
-vc make migration add_author_id_to_posts
-vc migrate
+vm make migration create_posts_table
+vm make migration add_author_id_to_posts
+vm migrate
 
 # Step 3: Add indexes
-vc make migration create_indexes
-vc migrate
+vm make migration create_indexes
+vm migrate
 ```
 
 ---
@@ -419,10 +419,10 @@ add_full_text_search_to_posts
 
 ## Checking Migration Names
 
-Use `vc status` to verify your migration names are clear:
+Use `vm status` to verify your migration names are clear:
 
 ```bash
-vc status
+vm status
 
 # Output should be readable and self-documenting:
 # ✓ 1707120000_create_users_table.sql

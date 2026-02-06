@@ -20,7 +20,7 @@ go version
 **Solution**:
 ```bash
 go mod tidy
-go build -o vc main.go
+go build -o vm main.go
 ```
 
 #### "cannot find module"
@@ -30,7 +30,7 @@ go build -o vc main.go
 ```bash
 go mod download
 go mod verify
-go build -o vc main.go
+go build -o vm main.go
 ```
 
 ---
@@ -110,7 +110,7 @@ ls migrations/server/
 
 Use a different name if needed:
 ```bash
-vc make migration create_users_table_v2
+vm make migration create_users_table_v2
 ```
 
 #### "invalid migration name"
@@ -123,11 +123,11 @@ vc make migration create_users_table_v2
 
 **Solutions**:
 ```bash
-✓ vc make migration create_users_table
-✓ vc make migration add_email_column
-✗ vc make migration Create Users Table  # Spaces not allowed
-✗ vc make migration create-users-table  # Dashes not allowed
-✗ vc make migration createUsersTable    # Uppercase not allowed
+✓ vm make migration create_users_table
+✓ vm make migration add_email_column
+✗ vm make migration Create Users Table  # Spaces not allowed
+✗ vm make migration create-users-table  # Dashes not allowed
+✗ vm make migration createUsersTable    # Uppercase not allowed
 ```
 
 #### "No UP section found in migration"
@@ -178,7 +178,7 @@ COMMIT;
 
 **Solution**: Check status first:
 ```bash
-vc status --dsn $DATABASE_URL
+vm status --dsn $DATABASE_URL
 ```
 
 #### "failed to rollback migration"
@@ -250,9 +250,9 @@ vc status --dsn $DATABASE_URL
 
 **Solution**: Only use 'dev' or 'server':
 ```bash
-vc migrate --env dev        # ✓ Correct
-vc migrate --env server     # ✓ Correct
-vc migrate --env production # ✗ Invalid
+vm migrate --env dev        # ✓ Correct
+vm migrate --env server     # ✓ Correct
+vm migrate --env production # ✗ Invalid
 ```
 
 #### "Wrong environment migrations running"
@@ -261,11 +261,11 @@ vc migrate --env production # ✗ Invalid
 **Solution**: Specify correct environment:
 ```bash
 # Check current
-vc status --dsn $DATABASE_URL
+vm status --dsn $DATABASE_URL
 
 # Run correct environment
-vc migrate --dsn $DATABASE_URL --env dev
-vc migrate --dsn $DATABASE_URL --env server
+vm migrate --dsn $DATABASE_URL --env dev
+vm migrate --dsn $DATABASE_URL --env server
 ```
 
 ---
@@ -351,7 +351,7 @@ make install
    ```
 3. Check migrations status:
    ```bash
-   vc status --dsn $DATABASE_URL
+   vm status --dsn $DATABASE_URL
    ```
 
 #### "Migration table corrupted"
@@ -378,14 +378,14 @@ make install
 Create a simple debug wrapper:
 ```bash
 #!/bin/bash
-# debug-vc.sh
+# debug-vm.sh
 set -x  # Enable command tracing
-vc "$@"
+vm "$@"
 ```
 
 Run with:
 ```bash
-./debug-vc.sh migrate --dsn $DATABASE_URL
+./debug-vm.sh migrate --dsn $DATABASE_URL
 ```
 
 #### Check PostgreSQL logs
@@ -445,7 +445,7 @@ psql $DATABASE_URL -f migrations/dev/your_migration.sql
 
 # 6. Check file permissions
 ls -la migrations/
-ls -la ./vc
+ls -la ./vm
 ```
 
 Include output of these when reporting issues.

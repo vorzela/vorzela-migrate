@@ -169,7 +169,7 @@ type MigrationFile struct {
 ### Creating a Migration
 
 ```
-User Command: vc make migration create_users_table
+User Command: vm make migration create_users_table
                         ↓
             Parse command and arguments
                         ↓
@@ -187,7 +187,7 @@ User Command: vc make migration create_users_table
 ### Running Migrations
 
 ```
-User Command: vc migrate --dsn <dsn>
+User Command: vm migrate --dsn <dsn>
                         ↓
         database.Connect(dsn)
           ↓
@@ -213,7 +213,7 @@ User Command: vc migrate --dsn <dsn>
 ### Rolling Back Migrations
 
 ```
-User Command: vc rollback --dsn <dsn> --steps 1
+User Command: vm rollback --dsn <dsn> --steps 1
                         ↓
         database.Connect(dsn)
           ↓
@@ -306,7 +306,7 @@ Note: No `environment` column needed with single-folder design
 
 Migrations are organized into batches:
 
-- **Batch Number**: Incremented for each `vc migrate` run
+- **Batch Number**: Incremented for each `vm migrate` run
 - **Batch Grouping**: All migrations in a batch can be rolled back together
 - **Flexible Rollback**: `--steps N` rolls back last N batches
 
@@ -426,9 +426,9 @@ createdb test_db  # For PostgreSQL
 mysql -e "CREATE DATABASE test_db;"  # For MySQL
 
 # Run migrations
-DATABASE_URL="postgres://localhost/test_db" vc migrate
+DATABASE_URL="postgres://localhost/test_db" vm migrate
 # OR  
-DATABASE_URL="mysql://root@localhost/test_db" vc migrate
+DATABASE_URL="mysql://root@localhost/test_db" vm migrate
 
 # Verify schema
 psql test_db -c "\dt"  # For PostgreSQL
@@ -436,8 +436,8 @@ psql test_db -c "\dt"  # For PostgreSQL
 mysql test_db -e "SHOW TABLES;"  # For MySQL
 
 # Test rollback
-vc rollback
-vc status
+vm rollback
+vm status
 
 # Clean up
 dropdb test_db  # For PostgreSQL

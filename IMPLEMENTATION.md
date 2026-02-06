@@ -7,11 +7,11 @@ You now have a fully-functional, Laravel-inspired database migration tool for Go
 ## ✅ What's Included
 
 ### Core Features
-- ✅ Create migrations with simple commands: `vc make migration create_table_name`
-- ✅ Run migrations: `vc migrate --dsn <dsn>`
-- ✅ Rollback migrations with batch tracking: `vc rollback`
-- ✅ Refresh (rollback all + re-run): `vc refresh`
-- ✅ Migration status overview: `vc status`
+- ✅ Create migrations with simple commands: `vm make migration create_table_name`
+- ✅ Run migrations: `vm migrate --dsn <dsn>`
+- ✅ Rollback migrations with batch tracking: `vm rollback`
+- ✅ Refresh (rollback all + re-run): `vm refresh`
+- ✅ Migration status overview: `vm status`
 - ✅ Environment-specific migrations (dev/server)
 - ✅ Warning system for missing migration sections
 - ✅ Global CLI tool support
@@ -59,12 +59,12 @@ vorzela-migrate/
 ```bash
 cd vorzela-migrate
 make build
-# Or: go build -o vc main.go
+# Or: go build -o vm main.go
 ```
 
 ### 2. Create a Migration
 ```bash
-vc make migration create_users_table
+vm make migration create_users_table
 ```
 
 ### 3. Edit Migration
@@ -73,24 +73,24 @@ Edit `migrations/dev/TIMESTAMP_create_users_table.sql` and add your SQL
 ### 4. Run Migrations
 ```bash
 export DATABASE_URL="postgres://localhost/myapp"
-vc migrate --dsn $DATABASE_URL
+vm migrate --dsn $DATABASE_URL
 ```
 
 ### 5. Install Globally (Optional)
 ```bash
 make install
-# Now use from anywhere: vc make migration create_posts_table
+# Now use from anywhere: vm make migration create_posts_table
 ```
 
 ## 📋 Available Commands
 
 | Command | Purpose | Example |
 |---------|---------|---------|
-| `make migration <name>` | Create migration file | `vc make migration create_users_table` |
-| `migrate` | Run pending migrations | `vc migrate --dsn $DATABASE_URL` |
-| `rollback [--steps N]` | Rollback migrations | `vc rollback --dsn $DATABASE_URL --steps 1` |
-| `refresh` | Rollback all + re-run | `vc refresh --dsn $DATABASE_URL` |
-| `status` | Show migration status | `vc status --dsn $DATABASE_URL` |
+| `make migration <name>` | Create migration file | `vm make migration create_users_table` |
+| `migrate` | Run pending migrations | `vm migrate --dsn $DATABASE_URL` |
+| `rollback [--steps N]` | Rollback migrations | `vm rollback --dsn $DATABASE_URL --steps 1` |
+| `refresh` | Rollback all + re-run | `vm refresh --dsn $DATABASE_URL` |
+| `status` | Show migration status | `vm status --dsn $DATABASE_URL` |
 
 ## 🎯 Key Features Explained
 
@@ -101,14 +101,14 @@ Just like Laravel:
 php artisan make:migration create_users_table
 
 # Vorzela
-vc make migration create_users_table
+vm make migration create_users_table
 ```
 
 ### 2. Environment-Specific Migrations
 Separate migrations for different environments:
 ```bash
-vc make migration seed_test_data -e dev
-vc make migration add_audit_table -e server
+vm make migration seed_test_data -e dev
+vm make migration add_audit_table -e server
 ```
 
 Migrations are stored in separate directories:
@@ -143,22 +143,22 @@ Failures cause automatic rollback - no partial executions.
 ### Create and Run Migrations
 ```bash
 # Create migration
-vc make migration create_users_table
+vm make migration create_users_table
 
 # Edit migrations/dev/TIMESTAMP_create_users_table.sql
 # Add your SQL
 
 # Run it
-vc migrate --dsn $DATABASE_URL
+vm migrate --dsn $DATABASE_URL
 
 # Check status
-vc status --dsn $DATABASE_URL
+vm status --dsn $DATABASE_URL
 
 # Need to undo?
-vc rollback --dsn $DATABASE_URL
+vm rollback --dsn $DATABASE_URL
 
 # Complete reset
-vc refresh --dsn $DATABASE_URL
+vm refresh --dsn $DATABASE_URL
 ```
 
 ### Testing Migrations
@@ -167,13 +167,13 @@ vc refresh --dsn $DATABASE_URL
 createdb myapp_test
 
 # Run migrations
-DATABASE_URL="postgres://localhost/myapp_test" vc migrate
+DATABASE_URL="postgres://localhost/myapp_test" vm migrate
 
 # Verify schema
 psql myapp_test -c "\dt"
 
 # Test rollback
-vc rollback --dsn "postgres://localhost/myapp_test"
+vm rollback --dsn "postgres://localhost/myapp_test"
 
 # Cleanup
 dropdb myapp_test
@@ -255,7 +255,7 @@ The tool includes example migrations:
 Use these to test the tool's functionality:
 ```bash
 createdb test_db
-DATABASE_URL="postgres://localhost/test_db" vc migrate --path migrations/dev
+DATABASE_URL="postgres://localhost/test_db" vm migrate --path migrations/dev
 ```
 
 ## 🚢 Deployment
@@ -263,13 +263,13 @@ DATABASE_URL="postgres://localhost/test_db" vc migrate --path migrations/dev
 ### Development
 ```bash
 export DATABASE_URL="postgres://localhost:5432/myapp"
-vc migrate --env dev
+vm migrate --env dev
 ```
 
 ### Staging/Production
 ```bash
 export DATABASE_URL="postgres://user:pass@prod:5432/myapp"
-vc migrate --env server
+vm migrate --env server
 ```
 
 ### CI/CD (GitHub Actions)
@@ -349,9 +349,9 @@ COMMIT;
 Your migration tool is complete and ready to use. Start with:
 
 ```bash
-vc --help
-vc make migration create_users_table
-vc status --dsn $DATABASE_URL
+vm --help
+vm make migration create_users_table
+vm status --dsn $DATABASE_URL
 ```
 
 Happy migrating! 🚀
