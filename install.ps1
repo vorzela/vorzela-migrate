@@ -59,7 +59,7 @@ function Install-Vorzela {
 
     # Get latest release version
     Write-Status "Fetching latest release..."
-    # Try GitHub API first
+    # Try GitHub API releases/latest first
     try {
         $LatestRelease = (Invoke-RestMethod -Uri "https://api.github.com/repos/$GitHubRepo/releases/latest" -ErrorAction Stop).tag_name
     }
@@ -67,7 +67,20 @@ function Install-Vorzela {
         $LatestRelease = $null
     }
 
-    # Fallback: follow redirect from /releases/latest to capture tag
+    # Fallback: try tags API to get the most recent tag
+    if (-not $LatestRelease) {
+        try {
+            $Tags = Invoke-RestMethod -Uri "https://api.github.com/repos/$GitHubRepo/tags" -ErrorAction Stop
+            if ($Tags -and $Tags.Count -gt 0) {
+                $LatestRelease = $Tags[0].name
+            }
+        }
+        catch {
+            $LatestRelease = $null
+        }
+    }
+
+    # Final fallback: follow redirect from /releases/latest to capture tag
     if (-not $LatestRelease) {
         try {
             $resp = Invoke-WebRequest -Uri "https://github.com/$GitHubRepo/releases/latest" -Method Head -MaximumRedirection 0 -ErrorAction Stop
