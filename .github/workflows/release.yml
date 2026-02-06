@@ -9,8 +9,8 @@ jobs:
   build_and_release:
     name: Build and upload release assets
     runs-on: ubuntu-latest
-        permissions:
-          contents: write
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
