@@ -33,41 +33,47 @@ jobs:
         run: |
           GOOS=darwin GOARCH=arm64 go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=${{ github.ref_name }}'" -o dist/vm-macos-arm64 main.go || echo "darwin/arm64 build skipped"
 
+      - name: Generate release notes
+        id: notes
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          git fetch --tags --prune
+          PREV_TAG=$(git tag --sort=-creatordate | grep -v "^${TAG_NAME}$" | head -n1 || true)
+          if [ -z "$PREV_TAG" ]; then
+            git log --pretty=format:"- %s (%an)" -n 50 > notes.txt
+          else
+            git log --pretty=format:"- %s (%an)" $PREV_TAG..HEAD > notes.txt
+          fi
+          echo "body<<EOF" >> $GITHUB_OUTPUT
+          cat notes.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
       - name: Create GitHub Release
         id: create_release
         uses: actions/create-release@v1
         with:
           tag_name: ${{ github.ref_name }}
           release_name: ${{ github.ref_name }}
-          body: Release ${{ github.ref_name }}
+          body: ${{ steps.notes.outputs.body }}
           draft: false
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload linux asset
-        if: steps.create_release.outputs.upload_url != ''
-        uses: actions/upload-release-asset@v1
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: dist/vm-linux-amd64
-          asset_name: vm-linux-amd64
-          asset_content_type: application/octet-stream
-
-      - name: Upload macOS amd64 asset
-        if: steps.create_release.outputs.upload_url != '' && (exists('dist/vm-macos-amd64') || true)
-        uses: actions/upload-release-asset@v1
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: dist/vm-macos-amd64
-          asset_name: vm-macos-amd64
-          asset_content_type: application/octet-stream
-
-      - name: Upload macOS arm64 asset
-        if: steps.create_release.outputs.upload_url != '' && (exists('dist/vm-macos-arm64') || true)
-        uses: actions/upload-release-asset@v1
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: dist/vm-macos-arm64
-          asset_name: vm-macos-arm64
-          asset_content_type: application/octet-stream
+      - name: Upload assets to release
+        env:
+          UPLOAD_URL: ${{ steps.create_release.outputs.upload_url }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -z "$UPLOAD_URL" ]; then
+            echo "No upload URL from release creation, skipping asset upload"
+            exit 0
+          fi
+          for f in dist/*; do
+            if [ -f "$f" ]; then
+              name=$(basename "$f")
+              echo "Uploading $name"
+              curl -s -X POST -H "Authorization: token $GITHUB_TOKEN" -H "Content-Type: application/octet-stream" --data-binary @$f "$UPLOAD_URL?name=$name"
+            fi
+          done
