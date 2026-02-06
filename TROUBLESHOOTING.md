@@ -272,13 +272,13 @@ vc migrate --dsn $DATABASE_URL --env server
 
 ### Global Installation Issues
 
-#### "vc command not found after install"
+#### "vm command not found after install"
 **Problem**: Binary not in PATH after installation
 
 **Solution**:
 ```bash
 # Verify binary exists
-ls -la /usr/local/bin/vc
+ls -la /usr/local/bin/vm
 
 # Add to PATH (if needed)
 export PATH="/usr/local/bin:$PATH"
@@ -288,12 +288,12 @@ echo 'export PATH="/usr/local/bin:$PATH"' >> ~/.bashrc
 source ~/.bashrc
 ```
 
-#### "Permission denied when running vc"
+#### "Permission denied when running vm"
 **Problem**: Executable doesn't have run permission
 
 **Solution**:
 ```bash
-chmod +x /usr/local/bin/vc
+chmod +x /usr/local/bin/vm
 # Or via make
 make install
 ```

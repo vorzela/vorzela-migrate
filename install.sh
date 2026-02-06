@@ -76,12 +76,12 @@ main() {
     # Determine binary name
     if [ "$OS" == "macos" ]; then
         if [ "$ARCH" == "arm64" ]; then
-            BINARY_NAME="vc-macos-arm64"
+            BINARY_NAME="vm-macos-arm64"
         else
-            BINARY_NAME="vc-macos-amd64"
+            BINARY_NAME="vm-macos-amd64"
         fi
     else
-        BINARY_NAME="vc-linux-${ARCH}"
+        BINARY_NAME="vm-linux-${ARCH}"
     fi
 
     INSTALL_DIR="${HOME}/.local/bin"
@@ -104,7 +104,7 @@ main() {
 
     # Download binary
     DOWNLOAD_URL="${RELEASE_URL}/${LATEST_VERSION}/${BINARY_NAME}"
-    BINARY_PATH="${INSTALL_DIR}/vc"
+    BINARY_PATH="${INSTALL_DIR}/vm"
 
     print_status "Downloading from: $DOWNLOAD_URL"
 
@@ -124,7 +124,7 @@ main() {
     print_success "Binary downloaded and made executable"
 
     # Add to PATH if needed
-    if ! command -v vc &> /dev/null || [ "$(command -v vc)" != "$BINARY_PATH" ]; then
+    if ! command -v vm &> /dev/null || [ "$(command -v vm)" != "$BINARY_PATH" ]; then
         # Check if ~/.local/bin is in PATH
         if [[ ":$PATH:" == *":${INSTALL_DIR}:"* ]]; then
             print_success "Installation complete!"
@@ -151,13 +151,13 @@ main() {
 
     echo ""
     print_status "Quick start:"
-    echo "    vc --version"
-    echo "    vc --help"
+    echo "    vm --version"
+    echo "    vm --help"
     echo ""
     print_status "Next steps:"
     echo "    1. Read INSTALL.md for platform-specific setup"
     echo "    2. Create .vorzela config in your project"
-    echo "    3. Create your first migration: vc make migration create_users_table"
+    echo "    3. Create your first migration: vm make migration create_users_table"
     echo "    4. Read QUICK_REFERENCE.md for examples"
     echo ""
 }

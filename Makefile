@@ -5,8 +5,8 @@ help:
 	@echo "=================================="
 	@echo ""
 	@echo "Build and Install:"
-	@echo "  make build       - Build the vc binary"
-	@echo "  make install     - Build and install vc to /usr/local/bin"
+	@echo "  make build       - Build the vm binary"
+	@echo "  make install     - Build and install vm to /usr/local/bin"
 	@echo "  make clean       - Remove built binary"
 	@echo ""
 	@echo "Development:"
@@ -19,20 +19,20 @@ help:
 	@echo ""
 
 build:
-	@echo "Building vc binary..."
+	@echo "Building vm binary..."
 	@go mod tidy
-	@go build -o vc main.go
-	@echo "✓ Build successful! Binary: ./vc"
+	@go build -o vm main.go
+	@echo "✓ Build successful! Binary: ./vm"
 
 install: build
-	@echo "Installing vc to /usr/local/bin..."
-	@sudo cp vc /usr/local/bin/vc
-	@sudo chmod +x /usr/local/bin/vc
-	@echo "✓ Installation successful! You can now use 'vc' from anywhere"
+	@echo "Installing vm to /usr/local/bin..."
+	@sudo cp vm /usr/local/bin/vm
+	@sudo chmod +x /usr/local/bin/vm
+	@echo "✓ Installation successful! You can now use 'vm' from anywhere"
 
 clean:
 	@echo "Cleaning up..."
-	@rm -f vc
+	@rm -f vm
 	@echo "✓ Cleaned"
 
 dev-migration:

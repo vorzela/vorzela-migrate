@@ -127,15 +127,15 @@ vm refresh --dsn "postgres://user:pass@localhost:5432/db"
 
 ## Global Installation
 
-To make `vc` available globally:
+To make `vm` available globally:
 
 ```bash
 # Build the binary
 go build -o vm main.go
 
 # Copy to a location in your PATH
-sudo cp vm /usr/local/bin/vc
-chmod +x /usr/local/bin/vc
+sudo cp vm /usr/local/bin/vm
+chmod +x /usr/local/bin/vm
 
 # Now you can use from anywhere
 vm make migration create_table_name_table

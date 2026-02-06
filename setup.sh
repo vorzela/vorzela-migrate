@@ -30,7 +30,7 @@ mkdir -p migrations
 echo "✓ Directory created"
 
 # Set permissions
-chmod +x vc
+chmod +x vm
 echo "✓ Permissions set"
 
 echo ""
