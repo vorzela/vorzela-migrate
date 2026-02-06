@@ -27,6 +27,22 @@ go mod download
 go build -o vm main.go
 ```
 
+### Installers (Recommended)
+
+**Linux/macOS (bash):**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/vorzela/vorzela-migrate/main/install.sh | bash
+```
+
+**Windows (PowerShell):**
+
+```powershell
+iex (New-Object Net.WebClient).DownloadString('https://raw.githubusercontent.com/vorzela/vorzela-migrate/main/install.ps1')
+```
+
+For more options and platform notes, see [INSTALL.md](INSTALL.md).
+
 ## Supported Databases
 
 - **PostgreSQL** 10+ (via pgx v5)
