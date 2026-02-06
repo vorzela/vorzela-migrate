@@ -115,6 +115,12 @@ The tool is production-ready and can be used for managing PostgreSQL database mi
 
 No migration needed for 1.0.0 as this is the initial release.
 
+## [1.1.0] - 2026-02-06
+
+- Experimental Cassandra/Scylla support: added a minimal `gocql`-based adapter and connection helper. (Note: `Query`/`QueryRow` and full migration semantics for CQL are intentionally marked as experimental; review migrations before applying.)
+- Installer improvements: `install.sh` and `install.ps1` now attempt to detect the repository tag when building from source and fall back to `dev` when no tag is found.
+- README updated to document the new experimental support and bump the project to v1.1.0.
+
 ---
 
 ## Deprecations
