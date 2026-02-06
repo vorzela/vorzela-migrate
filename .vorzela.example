@@ -1,0 +1,100 @@
+# Vorzela Migration Tool Configuration
+# This file is optional. You can also use environment variables or CLI flags.
+# Priority: CLI flags > Environment variables > .vorzela file > .env file
+
+# Database Configuration
+# =============================================================================
+# PostgreSQL (Default):
+#   DATABASE_URL=postgres://user:password@localhost:5432/myapp
+#
+# MySQL/MariaDB (URL style):
+#   DATABASE_URL=mysql://user:password@localhost:3306/myapp
+#
+# MySQL/MariaDB (DSN style):
+#   DATABASE_URL=user:password@tcp(localhost:3306)/myapp
+#
+# Vorzela auto-detects the database type from the DSN.
+# =============================================================================
+
+DATABASE_URL=postgres://localhost:5432/myapp
+
+# For MySQL example, uncomment the line below instead:
+# DATABASE_URL=mysql://user:password@localhost:3306/myapp
+
+# Migration files path (optional)
+# Default: ./migrations
+# MIGRATION_PATH=./migrations
+# =============================================================================
+# COMMAND USAGE EXAMPLES
+# =============================================================================
+
+# 1. CREATE NEW MIGRATION (with strong naming conventions!)
+#    
+#    Pattern: action_details_target
+#    
+#    Table Operations:
+#    $ vc make migration create_users_table
+#    $ vc make migration create_posts_table
+#    $ vc make migration drop_legacy_data_table
+#    
+#    Column Operations (STRONG NAMING):
+#    $ vc make migration add_email_to_users
+#    $ vc make migration add_phone_to_customers
+#    $ vc make migration remove_deprecated_field_from_products
+#    $ vc make migration rename_user_name_to_full_name
+#    
+#    Indexes & Constraints:
+#    $ vc make migration create_index_on_users_email
+#    $ vc make migration add_foreign_key_author_id_to_posts
+#    
+#    Generated file: migrations/1707129045_create_users_table.sql
+#    Includes: Timestamp, CREATE/DROP templates, default columns (id, created_at, updated_at)
+
+# 2. RUN MIGRATIONS (execute pending migrations)
+#    $ vc migrate
+
+# 3. ROLLBACK (with flexible options)
+#    $ vc rollback              # Rollback last 1 migration batch
+#    $ vc rollback --steps=2    # Rollback last 2 migration batches
+#    $ vc rollback --steps=all  # Rollback ALL migrations
+
+# 4. FRESH (Rollback ALL + Re-run with confirmation warning)
+#    $ ./vc fresh                 # Shows warning, asks for confirmation
+#    $ ./vc fresh --force         # Skip confirmation (use with caution!)
+
+# 5. REFRESH (Rollback ALL + Re-run without confirmation)
+#    $ ./vc refresh
+
+# 6. STATUS (show which migrations have been executed)
+#    $ ./vc status
+
+# =============================================================================
+# GENERATED MIGRATION FILE EXAMPLE (timestamps & create/drop templates)
+# =============================================================================
+#
+# File: 1707129045_create_users_table.sql
+#
+# -- Migration: CREATE_USERS_TABLE
+# -- Created at: 2026-02-05 10:30:45
+# -- Environment: dev/server
+#
+# -- ⬆ Up (Run when migrating forward)
+# BEGIN;
+#
+# CREATE TABLE IF NOT EXISTS create_users_table (
+#     id SERIAL PRIMARY KEY,
+#     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+#     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+# );
+#
+# -- DROP TABLE Example (Uncomment if needed)
+# -- DROP TABLE IF EXISTS create_users_table CASCADE;
+#
+# COMMIT;
+#
+# -- ⬇ Down (Run when rolling back)
+# BEGIN;
+#
+# DROP TABLE IF EXISTS create_users_table CASCADE;
+#
+# COMMIT;

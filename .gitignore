@@ -1,0 +1,11 @@
+vc
+*.out
+*.so
+*.a
+vendor/
+.DS_Store
+.env
+.env.local
+*.log
+migrations/*/
+!migrations/.gitkeep

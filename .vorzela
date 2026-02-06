@@ -1,0 +1,4 @@
+# Vorzela Migration Configuration File
+DATABASE_URL=postgres://localhost:5432/vorzela_test
+VORZELA_ENV=dev
+MIGRATION_PATH=./migrations
