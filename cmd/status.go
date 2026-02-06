@@ -53,7 +53,7 @@ var StatusCommand = &cli.Command{
 		defer db.Close()
 
 		// Get migration status
-		if err := migration.ShowStatus(db, cfg.MigrationPath); err != nil {
+		if err := migration.ShowStatus(db, cfg.MigrationPath, cfg.DatabaseURL); err != nil {
 			output.Error("Failed to show status: %v", err)
 			return fmt.Errorf("failed to show status: %w", err)
 		}

@@ -10,7 +10,7 @@ import (
 )
 
 // ShowStatus displays migration status
-func ShowStatus(db db.DB, migrationPath string) error {
+func ShowStatus(conn db.DB, migrationPath string, dsn string) error {
 	// Get all migration files
 	files, err := getMigrationFiles(migrationPath)
 	if err != nil {
@@ -18,7 +18,8 @@ func ShowStatus(db db.DB, migrationPath string) error {
 	}
 
 	// Get executed migrations
-	executed, err := getExecutedMigrations(db)
+	dialect := DetectDialect(dsn)
+	executed, err := getExecutedMigrations(conn, dialect)
 	if err != nil {
 		return fmt.Errorf("failed to get executed migrations: %w", err)
 	}

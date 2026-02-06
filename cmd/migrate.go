@@ -59,7 +59,7 @@ var MigrateCommand = &cli.Command{
 		}
 
 		// Run pending migrations
-		count, err := migration.RunMigrations(db, cfg.MigrationPath)
+		count, err := migration.RunMigrations(db, cfg.MigrationPath, cfg.DatabaseURL)
 		if err != nil {
 			output.Error("Migration failed: %v", err)
 			return fmt.Errorf("migration failed: %w", err)

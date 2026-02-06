@@ -59,7 +59,7 @@ var RefreshCommand = &cli.Command{
 		}
 
 		output.Info("Rolling back all migrations...")
-		rollbackCount, err := migration.RollbackAllMigrations(db, cfg.MigrationPath)
+		rollbackCount, err := migration.RollbackAllMigrations(db, cfg.MigrationPath, cfg.DatabaseURL)
 		if err != nil {
 			output.Error("Rollback failed: %v", err)
 			return fmt.Errorf("rollback failed: %w", err)
@@ -67,7 +67,7 @@ var RefreshCommand = &cli.Command{
 		output.Success("Rolled back %d migration(s)", rollbackCount)
 
 		output.Info("Running all migrations...")
-		migrateCount, err := migration.RunMigrations(db, cfg.MigrationPath)
+		migrateCount, err := migration.RunMigrations(db, cfg.MigrationPath, cfg.DatabaseURL)
 		if err != nil {
 			output.Error("Migration failed: %v", err)
 			return fmt.Errorf("migration failed: %w", err)

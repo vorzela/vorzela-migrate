@@ -62,7 +62,7 @@ var RollbackCommand = &cli.Command{
 		var count int
 		if stepsStr == "all" {
 			// Rollback all migrations
-			count, err = migration.RollbackAllMigrations(db, cfg.MigrationPath)
+			count, err = migration.RollbackAllMigrations(db, cfg.MigrationPath, cfg.DatabaseURL)
 			if err != nil {
 				output.Error("Rollback failed: %v", err)
 				return fmt.Errorf("rollback failed: %w", err)
@@ -75,7 +75,7 @@ var RollbackCommand = &cli.Command{
 				steps = 1
 			}
 
-			count, err = migration.RollbackMigrations(db, cfg.MigrationPath, steps)
+			count, err = migration.RollbackMigrations(db, cfg.MigrationPath, steps, cfg.DatabaseURL)
 			if err != nil {
 				output.Error("Rollback failed: %v", err)
 				return fmt.Errorf("rollback failed: %w", err)

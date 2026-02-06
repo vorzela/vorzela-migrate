@@ -117,9 +117,13 @@ No migration needed for 1.0.0 as this is the initial release.
 
 ## [1.1.0] - 2026-02-06
 
-- Experimental Cassandra/Scylla support: added a minimal `gocql`-based adapter and connection helper. (Note: `Query`/`QueryRow` and full migration semantics for CQL are intentionally marked as experimental; review migrations before applying.)
+- **Cassandra/Scylla support** - Full dialect-aware migration execution:
+  - `vm migrate`, `vm status`, `vm rollback`, `vm refresh` all work with Cassandra/Scylla via `cassandra://` and `scylla://` DSN URLs.
+  - Built-in Cassandra-specific migrations table with batch partition key and migration clustering key for deterministic rollbacks.
+  - `vm make migration --dialect cassandra` generates CQL-style migration templates.
+  - Unit tests added for dialect detection and Cassandra migrations table schema.
 - Installer improvements: `install.sh` and `install.ps1` now attempt to detect the repository tag when building from source and fall back to `dev` when no tag is found.
-- README updated to document the new experimental support and bump the project to v1.1.0.
+- README updated to document new database support and bump the project to v1.1.0.
 
 ---
 

@@ -11,6 +11,7 @@ import (
 // CreateMigrationOptions defines options for migration creation
 type CreateMigrationOptions struct {
 	SoftDelete bool
+	Dialect    string
 }
 
 // CreateMigration creates a new migration file (backward compatible)
@@ -90,20 +91,43 @@ func extractTableName(migrationName string) string {
 
 // generateMigrationTemplate generates a migration template
 func generateMigrationTemplate(name string, opts CreateMigrationOptions) string {
+	// Support different templates depending on dialect
+	timestamp := time.Now().Format("2006-01-02 15:04:05")
 	upperName := strings.ToUpper(name)
 	tableName := extractTableName(name)
-	timestamp := time.Now().Format("2006-01-02 15:04:05")
 
-	columns := `    id SERIAL PRIMARY KEY,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`
+	switch strings.ToLower(opts.Dialect) {
+	case "cassandra", "scylla":
+		return fmt.Sprintf(`-- Migration: %s
+-- Created at: %s
 
-	if opts.SoftDelete {
-		columns += `,
-    deleted_at TIMESTAMP DEFAULT NULL`
-	}
+-- ⬆ Up (Run when migrating forward)
+-- CQL example: create keyspace and table
+-- CREATE KEYSPACE IF NOT EXISTS my_keyspace WITH replication = {'class': 'SimpleStrategy', 'replication_factor': '1'};
+-- USE my_keyspace;
 
-	return fmt.Sprintf(`-- Migration: %s
+-- CREATE TABLE IF NOT EXISTS %s (
+--   id uuid PRIMARY KEY,
+--   name text,
+--   email text
+-- );
+
+-- ⬇ Down (Run when rolling back)
+-- USE my_keyspace;
+-- DROP TABLE IF EXISTS %s;
+-- DROP KEYSPACE IF EXISTS my_keyspace;
+`, upperName, timestamp, tableName, tableName)
+	default:
+		columns := `    id SERIAL PRIMARY KEY,
+	created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+	updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`
+
+		if opts.SoftDelete {
+			columns += `,
+	deleted_at TIMESTAMP DEFAULT NULL`
+		}
+
+		return fmt.Sprintf(`-- Migration: %s
 -- Created at: %s
 
 -- ⬆ Up (Run when migrating forward)
@@ -122,4 +146,5 @@ DROP TABLE IF EXISTS %s CASCADE;
 
 COMMIT;
 `, upperName, timestamp, tableName, columns, tableName)
+	}
 }

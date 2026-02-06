@@ -90,7 +90,7 @@ var FreshCommand = &cli.Command{
 
 		// Rollback all migrations
 		output.Warning("\nRolling back all migrations...")
-		rollbackCount, err := migration.RollbackAllMigrations(db, cfg.MigrationPath)
+		rollbackCount, err := migration.RollbackAllMigrations(db, cfg.MigrationPath, cfg.DatabaseURL)
 		if err != nil {
 			output.Error("Rollback failed: %v", err)
 			return fmt.Errorf("rollback failed: %w", err)
@@ -99,7 +99,7 @@ var FreshCommand = &cli.Command{
 
 		// Re-run all migrations
 		output.Warning("Re-running all migrations...")
-		migrateCount, err := migration.RunMigrations(db, cfg.MigrationPath)
+		migrateCount, err := migration.RunMigrations(db, cfg.MigrationPath, cfg.DatabaseURL)
 		if err != nil {
 			output.Error("Migration failed: %v", err)
 			return fmt.Errorf("migration failed: %w", err)

@@ -32,6 +32,7 @@ go build -o vm main.go
 - **PostgreSQL** 10+ (via pgx v5)
 - **MySQL** 5.7+ (via go-sql-driver/mysql)
 - **MariaDB** 10.3+ (via go-sql-driver/mysql)
+- **Cassandra/Scylla** (experimental, via gocql) - dialect-aware migration execution; all `migrate`, `status`, `rollback`, `refresh` commands supported
 
 Database type is automatically detected from the DSN URL.
 
@@ -61,12 +62,17 @@ vm rollback
 ### Create a new migration
 
 ```bash
+# PostgreSQL/MySQL (default)
 vm make migration create_users_table
 vm make migration add_email_to_users
 vm make migration create_posts_table
+
+# Cassandra/Scylla (CQL template)
+vm make migration create_keyspace_and_table --dialect cassandra
 ```
 
 The migration file will be created in the `migrations/` directory with a timestamp prefix.
+Use `--dialect cassandra` to generate a CQL-style template instead of SQL.
 
 ### Run migrations
 
@@ -97,6 +103,11 @@ vm migrate --dsn "postgres://user:pass@localhost:5432/db"
 MySQL:
 ```bash
 vm migrate --dsn "mysql://user:pass@localhost:3306/db"
+```
+
+Cassandra/Scylla:
+```bash
+vm migrate --dsn "cassandra://host1,host2:9042/keyspace"
 ```
 
 ### Check migration status
