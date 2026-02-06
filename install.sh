@@ -74,6 +74,7 @@ build_from_source() {
     GITHUB_REPO="$1"
     INSTALL_DIR="$2"
     BINARY_PATH="$3"
+    BUILD_VERSION="$4"
 
     if ! command -v go >/dev/null 2>&1; then
         return 1
@@ -88,8 +89,23 @@ build_from_source() {
 
     pushd "$tmpdir" >/dev/null
     print_status "Building from source (this may take a moment)..."
-    if go mod tidy >/dev/null 2>&1 && go build -o vm main.go >/dev/null 2>&1; then
+    LDFLAGS=""
+    if [ -n "$BUILD_VERSION" ]; then
+        LDFLAGS="-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=${BUILD_VERSION}'"
+    fi
+    if go mod tidy >/dev/null 2>&1 && go build -ldflags "$LDFLAGS" -o vm main.go >/dev/null 2>&1; then
         mkdir -p "$(dirname "$BINARY_PATH")"
+
+        # Backup existing binary if present
+        if command -v vm &>/dev/null; then
+            EXISTING=$(command -v vm)
+            if [ -f "$EXISTING" ]; then
+                ts=$(date +%s)
+                mv "$EXISTING" "${EXISTING}.bak.${ts}" 2>/dev/null || true
+                print_status "Backed up existing binary to ${EXISTING}.bak.${ts}"
+            fi
+        fi
+
         mv vm "$BINARY_PATH"
         chmod +x "$BINARY_PATH"
         popd >/dev/null
@@ -172,7 +188,7 @@ main() {
     # If download failed or no prebuilt, attempt to build from source if go is available
     if [ ! -x "$BINARY_PATH" ]; then
         print_status "Attempting to build from source (requires Go)..."
-        if build_from_source "${GITHUB_REPO}" "$INSTALL_DIR" "$BINARY_PATH"; then
+        if build_from_source "${GITHUB_REPO}" "$INSTALL_DIR" "$BINARY_PATH" "$LATEST_VERSION"; then
             print_success "Built and installed vm from source"
         else
             print_warning "Automatic build failed or Go not installed"
@@ -206,9 +222,18 @@ main() {
 
     echo ""
     print_status "Verifying installation..."
+    # Verify installation and check version
     if "$BINARY_PATH" --version > /dev/null 2>&1; then
         VERSION=$("$BINARY_PATH" --version 2>&1 | head -1)
         print_success "Vorzela installed successfully! ($VERSION)"
+        # If we have a latest version and it mismatches, warn
+        if [ -n "$LATEST_VERSION" ]; then
+            # normalize
+            norm() { echo "$1" | sed -E 's/^v|V//'; }
+            if [ "$(norm "$VERSION")" != "$(norm "$LATEST_VERSION")" ]; then
+                print_warning "Installed binary version ($VERSION) does not match expected $LATEST_VERSION"
+            fi
+        fi
     else
         print_warning "Could not verify installation"
     fi
