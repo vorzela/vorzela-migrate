@@ -25,6 +25,10 @@ jobs:
         run: |
           GOOS=linux GOARCH=amd64 go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=${{ github.ref_name }}'" -o dist/vm-linux-amd64 main.go
 
+      - name: Build linux/arm64
+        run: |
+          GOOS=linux GOARCH=arm64 go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=${{ github.ref_name }}'" -o dist/vm-linux-arm64 main.go
+
       - name: Build darwin/amd64 (optional)
         run: |
           GOOS=darwin GOARCH=amd64 go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=${{ github.ref_name }}'" -o dist/vm-macos-amd64 main.go || echo "darwin/amd64 build skipped"
@@ -32,6 +36,14 @@ jobs:
       - name: Build darwin/arm64 (optional)
         run: |
           GOOS=darwin GOARCH=arm64 go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=${{ github.ref_name }}'" -o dist/vm-macos-arm64 main.go || echo "darwin/arm64 build skipped"
+
+      - name: Build windows/amd64
+        run: |
+          GOOS=windows GOARCH=amd64 go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=${{ github.ref_name }}'" -o dist/vm-windows-amd64.exe main.go
+
+      - name: Build windows/386
+        run: |
+          GOOS=windows GOARCH=386 go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=${{ github.ref_name }}'" -o dist/vm-windows-386.exe main.go
 
       - name: Generate release notes
         id: notes
@@ -45,9 +57,11 @@ jobs:
           else
             git log --pretty=format:"- %s (%an)" $PREV_TAG..HEAD > notes.txt
           fi
-          echo "body<<EOF" >> $GITHUB_OUTPUT
-          cat notes.txt >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          {
+            echo 'body<<RELEASE_NOTES'
+            cat notes.txt
+            echo 'RELEASE_NOTES'
+          } >> $GITHUB_OUTPUT
 
       - name: Create GitHub Release
         id: create_release
