@@ -13,5 +13,10 @@ func Connect(dsn string) (db.DB, error) {
 		return db.ConnectMySQL(dsn)
 	}
 
+	// Cassandra/Scylla support: cassandra:// or scylla:// prefixes
+	if strings.HasPrefix(dsn, "cassandra://") || strings.HasPrefix(dsn, "scylla://") {
+		return db.ConnectCassandra(dsn)
+	}
+
 	return db.ConnectPostgres(dsn)
 }

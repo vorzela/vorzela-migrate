@@ -89,10 +89,25 @@ build_from_source() {
 
     pushd "$tmpdir" >/dev/null
     print_status "Building from source (this may take a moment)..."
-    LDFLAGS=""
-    if [ -n "$BUILD_VERSION" ]; then
-        LDFLAGS="-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=${BUILD_VERSION}'"
+
+    # If no build version was provided, try to detect the latest tag from the cloned repo
+    if [ -z "$BUILD_VERSION" ]; then
+        tag=""
+        if git -C "$tmpdir" describe --tags --abbrev=0 >/dev/null 2>&1; then
+            tag=$(git -C "$tmpdir" describe --tags --abbrev=0 2>/dev/null || true)
+        fi
+        if [ -n "$tag" ]; then
+            BUILD_VERSION="$tag"
+        fi
     fi
+
+    # Fallback to 'dev' if we still don't have a version
+    if [ -z "$BUILD_VERSION" ]; then
+        BUILD_VERSION="dev"
+    fi
+
+    LDFLAGS="-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=${BUILD_VERSION}'"
+
     if go mod tidy >/dev/null 2>&1 && go build -ldflags "$LDFLAGS" -o vm main.go >/dev/null 2>&1; then
         mkdir -p "$(dirname "$BINARY_PATH")"
 

@@ -1,13 +1,14 @@
-# Vorzela Migration Tool
+# Vorzela Migration Tool (v1.1.0)
 
-A Laravel-inspired database migration tool for Go with support for PostgreSQL and MySQL/MariaDB. Simple, powerful, and easy to use.
+A Laravel-inspired database migration tool for Go with support for PostgreSQL, MySQL/MariaDB and experimental Cassandra/Scylla support. Simple, powerful, and easy to use.
 
 ## ✨ Features
 
 - 🎨 **Colorized Output** - Beautiful, easy-to-read colored terminal output
 - ⚙️ **Multiple Configuration Methods** - `.vorzela` config files, `.env` files, or environment variables
 - 🚀 **No DSN Flag Required** - Use config files instead of repeating `--dsn` flag
-- 🐘 **Multi-Database Support** - PostgreSQL and MySQL/MariaDB with automatic detection
+ - 🐘 **Multi-Database Support** - PostgreSQL and MySQL/MariaDB with automatic detection
+ - 🪨 **Cassandra/Scylla (experimental)** - Basic connection support via `gocql`; migrations for CQL require manual review
 - � **Batch Tracking** - Organized rollback with batch numbers
 - 🔒 **Transaction Safety** - All-or-nothing migration execution
 - ⚠️ **Warning System** - Alerts for missing migration sections

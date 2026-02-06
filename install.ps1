@@ -59,33 +59,66 @@ function Install-Vorzela {
 
     # Get latest release version
     Write-Status "Fetching latest release..."
+    # Try GitHub API first
     try {
-        $LatestRelease = (Invoke-RestMethod -Uri "https://api.github.com/repos/$GitHubRepo/releases/latest" -ErrorAction SilentlyContinue).tag_name
-        if (-not $LatestRelease) {
-            Write-Warning "Could not fetch latest version, using v1.0.0"
-            $LatestRelease = "v1.0.0"
-        }
-        Write-Success "Latest version: $LatestRelease"
+        $LatestRelease = (Invoke-RestMethod -Uri "https://api.github.com/repos/$GitHubRepo/releases/latest" -ErrorAction Stop).tag_name
     }
     catch {
-        Write-Warning "Could not fetch latest version, using v1.0.0"
-        $LatestRelease = "v1.0.0"
+        $LatestRelease = $null
+    }
+
+    # Fallback: follow redirect from /releases/latest to capture tag
+    if (-not $LatestRelease) {
+        try {
+            $resp = Invoke-WebRequest -Uri "https://github.com/$GitHubRepo/releases/latest" -Method Head -MaximumRedirection 0 -ErrorAction Stop
+            if ($resp.Headers.Location) {
+                $LatestRelease = ($resp.Headers.Location.TrimEnd('/')).Split('/')[-1]
+            }
+        }
+        catch {
+            # Some PowerShell versions throw on redirect; try to extract Location from the exception response
+            try {
+                $loc = $_.Exception.Response.Headers['Location']
+                if ($loc) {
+                    $LatestRelease = ($loc.TrimEnd('/')).Split('/')[-1]
+                }
+            }
+            catch { $null = $null }
+        }
+    }
+
+    if (-not $LatestRelease) {
+        Write-Warning "Could not fetch latest version from GitHub; will attempt to download if available."
+    }
+    else {
+        Write-Success "Latest version: $LatestRelease"
     }
 
     # Download binary
     $DownloadUrl = "$ReleaseUrl/$LatestRelease/$BinaryName"
     $BinaryPath = "$InstallDir\vm.exe"
 
-    Write-Status "Downloading from: $DownloadUrl"
-    try {
-        # Try using Invoke-WebRequest (PowerShell 3.0+)
-        Invoke-WebRequest -Uri $DownloadUrl -OutFile $BinaryPath -UseBasicParsing -ErrorAction Stop
-        Write-Success "Binary downloaded successfully"
+    if ($LatestRelease) {
+        Write-Status "Downloading from: $DownloadUrl"
+        try {
+            # Try using Invoke-WebRequest (PowerShell 3.0+)
+            Invoke-WebRequest -Uri $DownloadUrl -OutFile $BinaryPath -UseBasicParsing -ErrorAction Stop
+            Write-Success "Binary downloaded successfully"
+        }
+        catch {
+            Write-Warning "Failed to download binary for $LatestRelease/$BinaryName"
+            Write-Warning "Pre-built binaries may not be available for your platform or release"
+            Write-Status "Try building from source instead:"
+            Write-Status "  git clone https://github.com/$GitHubRepo.git"
+            Write-Status "  cd vorzela-migrate"
+            if ($LatestRelease) { Write-Status "  git checkout $LatestRelease" }
+            Write-Status "  go build -o vm.exe main.go"
+            Write-Status "  Move-Item vm.exe 'C:\Program Files\vorzela\vm.exe'"
+            exit 1
+        }
     }
-    catch {
-        Write-Error "Failed to download binary"
-        Write-Warning "Note: Pre-built binaries may not be available yet"
-        Write-Status "Try building from source instead:"
+    else {
+        Write-Warning "No release tag detected. Try building from source:"
         Write-Status "  git clone https://github.com/$GitHubRepo.git"
         Write-Status "  cd vorzela-migrate"
         Write-Status "  go build -o vm.exe main.go"
