@@ -246,11 +246,13 @@ main() {
     print_status "Verifying installation..."
     # Verify installation and check version
     if "$BINARY_PATH" --version > /dev/null 2>&1; then
-        VERSION=$("$BINARY_PATH" --version 2>&1 | head -1)
-        print_success "Vorzela installed successfully! ($VERSION)"
+        VERSION_OUTPUT=$("$BINARY_PATH" --version 2>&1 | head -1)
+        # Extract just the version number (last field) from output like "vm version v1.1.0"
+        VERSION=$(echo "$VERSION_OUTPUT" | awk '{print $NF}')
+        print_success "Vorzela installed successfully! ($VERSION_OUTPUT)"
         # If we have a latest version and it mismatches, warn
         if [ -n "$LATEST_VERSION" ]; then
-            # normalize
+            # normalize by removing leading v/V
             norm() { echo "$1" | sed -E 's/^v|V//'; }
             if [ "$(norm "$VERSION")" != "$(norm "$LATEST_VERSION")" ]; then
                 print_warning "Installed binary version ($VERSION) does not match expected $LATEST_VERSION"
