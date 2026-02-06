@@ -27,12 +27,12 @@ var MakeCommand = &cli.Command{
 	},
 	Action: func(c *cli.Context) error {
 		if c.NArg() < 1 {
-			return fmt.Errorf("migration name is required. Usage: vc make migration <name>")
+			return fmt.Errorf("migration name is required. Usage: vm make migration <name>")
 		}
 
 		args := c.Args().Slice()
 		if len(args) < 2 || args[0] != "migration" {
-			return fmt.Errorf("usage: vc make migration <migration_name>")
+			return fmt.Errorf("usage: vm make migration <migration_name>")
 		}
 
 		migrationName := args[1]

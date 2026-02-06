@@ -54,11 +54,11 @@ dist: clean
 
 dev-migration:
 	@if [ -z "$(NAME)" ]; then echo "Error: NAME is required. Usage: make dev-migration NAME=create_my_table"; exit 1; fi
-	@./vc make migration $(NAME) -e dev
+	@./vm make migration $(NAME) -e dev
 
 server-migration:
 	@if [ -z "$(NAME)" ]; then echo "Error: NAME is required. Usage: make server-migration NAME=create_my_table"; exit 1; fi
-	@./vc make migration $(NAME) -e server
+	@./vm make migration $(NAME) -e server
 
 fmt:
 	@echo "Formatting code..."

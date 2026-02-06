@@ -1,0 +1,73 @@
+name: Build and publish release assets
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build_and_release:
+    name: Build and upload release assets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+
+      - name: Create dist directory
+        run: mkdir -p dist
+
+      - name: Build linux/amd64
+        run: |
+          GOOS=linux GOARCH=amd64 go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=${{ github.ref_name }}'" -o dist/vm-linux-amd64 main.go
+
+      - name: Build darwin/amd64 (optional)
+        run: |
+          GOOS=darwin GOARCH=amd64 go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=${{ github.ref_name }}'" -o dist/vm-macos-amd64 main.go || echo "darwin/amd64 build skipped"
+
+      - name: Build darwin/arm64 (optional)
+        run: |
+          GOOS=darwin GOARCH=arm64 go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=${{ github.ref_name }}'" -o dist/vm-macos-arm64 main.go || echo "darwin/arm64 build skipped"
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: actions/create-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+          release_name: ${{ github.ref_name }}
+          body: Release ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload linux asset
+        if: steps.create_release.outputs.upload_url != ''
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: dist/vm-linux-amd64
+          asset_name: vm-linux-amd64
+          asset_content_type: application/octet-stream
+
+      - name: Upload macOS amd64 asset
+        if: steps.create_release.outputs.upload_url != '' && (exists('dist/vm-macos-amd64') || true)
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: dist/vm-macos-amd64
+          asset_name: vm-macos-amd64
+          asset_content_type: application/octet-stream
+
+      - name: Upload macOS arm64 asset
+        if: steps.create_release.outputs.upload_url != '' && (exists('dist/vm-macos-arm64') || true)
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: dist/vm-macos-arm64
+          asset_name: vm-macos-arm64
+          asset_content_type: application/octet-stream
