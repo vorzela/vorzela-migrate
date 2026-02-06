@@ -1,4 +1,5 @@
 vm
+dist/
 *.out
 *.so
 *.a

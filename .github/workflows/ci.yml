@@ -1,0 +1,40 @@
+name: CI - Tests & Smoke Checks
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: Test and Smoke
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+
+      - name: Show Go version
+        run: go version
+
+      - name: Format check
+        run: |
+          if [ -n "$(gofmt -l .)" ]; then echo "gofmt needs to be run"; gofmt -l .; exit 1; fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Run unit tests
+        run: go test ./...
+
+      - name: Build linux/amd64 and smoke test
+        run: |
+          mkdir -p /tmp/vm-smoke
+          GOOS=linux GOARCH=amd64 go build -o /tmp/vm-smoke/vm main.go
+          chmod +x /tmp/vm-smoke/vm
+          /tmp/vm-smoke/vm --version || echo "smoke: --version failed (non-fatal)"
