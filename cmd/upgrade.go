@@ -27,27 +27,8 @@ var UpgradeCommand = &cli.Command{
 
 		output.Info(fmt.Sprintf("Upgrading from %s to %s...", version.CurrentVersion, newVersion))
 
-		// Determine the upgrade method based on OS
-		upgraded := false
-
-		// Try brew on macOS
-		if runtime.GOOS == "darwin" {
-			if cmdExists("brew") {
-				upgraded = tryBrew()
-			}
-		}
-
-		// Try apt on Linux
-		if !upgraded && runtime.GOOS == "linux" {
-			if cmdExists("apt-get") {
-				upgraded = tryApt()
-			}
-		}
-
-		// Fallback: download and install script
-		if !upgraded {
-			upgraded = tryScriptInstall()
-		}
+		// Use the install script directly since vm is distributed via GitHub releases
+		upgraded := tryScriptInstall()
 
 		if upgraded {
 			output.Success("Upgrade completed! Run 'vm --version' to verify")
@@ -59,40 +40,9 @@ var UpgradeCommand = &cli.Command{
 	},
 }
 
-// cmdExists checks if a command is available in PATH
-func cmdExists(cmd string) bool {
-	_, err := exec.LookPath(cmd)
-	return err == nil
-}
-
-// tryBrew attempts to upgrade using Homebrew
-func tryBrew() bool {
-	output.Info("Attempting upgrade via Homebrew...")
-	cmd := exec.Command("brew", "install", "--upgrade", "vorzela/vorzela/vorzela-migrate")
-	if err := cmd.Run(); err != nil {
-		return false
-	}
-	return true
-}
-
-// tryApt attempts to upgrade using apt-get
-func tryApt() bool {
-	output.Info("Attempting upgrade via apt...")
-	cmd := exec.Command("sudo", "apt-get", "update")
-	if err := cmd.Run(); err != nil {
-		return false
-	}
-
-	cmd = exec.Command("sudo", "apt-get", "install", "-y", "vorzela-migrate")
-	if err := cmd.Run(); err != nil {
-		return false
-	}
-	return true
-}
-
 // tryScriptInstall attempts to upgrade using the installation script
 func tryScriptInstall() bool {
-	output.Info("Attempting upgrade via download script...")
+	output.Info("Downloading and installing latest version...")
 
 	var scriptURL string
 	if runtime.GOOS == "windows" {
