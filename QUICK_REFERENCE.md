@@ -68,19 +68,19 @@ vm fresh --force --env=test
 
 ## 📁 Config Setup (Optional but Recommended)
 
-Create `.vorzela` in project root:
+Create `.vm` in project root:
 
 ```ini
 DATABASE_URL=postgres://localhost:5432/myapp
-VORZELA_ENV=dev
+VM_ENV=dev
 MIGRATION_PATH=./migrations
 ```
 
 Then use without `--dsn` flag:
 ```bash
-vm migrate   # Uses .vorzela
-vm fresh     # Uses .vorzela
-vm status    # Uses .vorzela
+vm migrate   # Uses .vm
+vm fresh     # Uses .vm
+vm status    # Uses .vm
 ```
 
 ---
@@ -176,7 +176,7 @@ vm status --env=server
 ## 📚 More Information
 
 - Read [NEW_FEATURES.md](NEW_FEATURES.md) for detailed feature docs
-- Read [.vorzela.example](.vorzela.example) for config examples
+- Read [.vm.example](.vm.example) for config examples
 - Run `vm <command> --help` for command-specific help
 
 ---

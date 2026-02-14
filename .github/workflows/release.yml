@@ -52,12 +52,16 @@ jobs:
         env:
           TAG_NAME: ${{ github.ref_name }}
         run: |
-          git fetch --tags --prune
-          PREV_TAG=$(git tag --sort=-creatordate | grep -v "^${TAG_NAME}$" | head -n1 || true)
+          git fetch --tags --force
+          PREV_TAG=$(git tag --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | grep -v "^${TAG_NAME}$" | head -n1 || true)
           if [ -z "$PREV_TAG" ]; then
-            git log --pretty=format:"- %s (%an)" -n 50 > notes.txt
+            echo "## Changes in ${TAG_NAME}" > notes.txt
+            echo "" >> notes.txt
+            git log --pretty=format:"- %s (%an)" -n 50 >> notes.txt
           else
-            git log --pretty=format:"- %s (%an)" $PREV_TAG..HEAD > notes.txt
+            echo "## Changes since ${PREV_TAG}" > notes.txt
+            echo "" >> notes.txt
+            git log --pretty=format:"- %s (%an)" $PREV_TAG..HEAD >> notes.txt
           fi
 
       - name: Install GitHub CLI

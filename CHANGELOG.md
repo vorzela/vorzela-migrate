@@ -2,6 +2,34 @@
 
 All notable changes to Vorzela Migration Tool are documented in this file.
 
+## [1.1.1] - 2026-02-14
+
+### Fixed
+- **Configuration System**: Fixed `vm make migration` command to respect `MIGRATION_PATH` from `.vm` config file (previously ignored due to default flag value overriding config)
+- **Cassandra/Scylla Keyspace Handling**: Complete rewrite of Cassandra connection flow:
+  -  Automatically creates keyspace if it doesn't exist during connection
+  - Proper keyspace initialization with SimpleStrategy replication
+  - Keyspace is now required in DSN (format: `cassandra://host1,host2/keyspace`)
+  - Fixed Query() and QueryRow() implementation for proper migration tracking
+  - Status, rollback, and refresh commands now work correctly with Cassandra
+- **Configuration File Naming**: Renamed `.vorzela` to `.vm` throughout the project for consistency
+  - Configuration file is now `.vm` instead of `.vorzela`
+  - Example file renamed to `.vm.example`
+  - All documentation updated to reflect new naming
+  - Legacy `.vorzela` files will still work but `.vm` is  recommended
+- **Environment Variables**: Renamed `VORZELA_ENV` to `VM_ENV` throughout codebase and documentation
+
+### Changed
+- Configuration file now uses `.vm` extension instead of `.vorzela`
+- Error messages now reference `.vm` config file instead of `.vorzela`
+- All markdown documentation updated to use new naming conventions
+
+### Technical Details
+- cassandra.go: Implemented `cassandraRows` and `cassandraRow` structs for proper Query/QueryRow support
+- cassandra.go: Added automatic keyspace creation during connection
+- config.go: Updated comments and error messages to reference `.vm` files
+- Renamed `loadVorzelaConfig()` function name kept for backward compatibility but now loads `.vm` files
+
 ## [1.0.0] - 2026-02-05
 
 ### Added

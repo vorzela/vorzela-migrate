@@ -60,10 +60,10 @@ Vorzela supports PostgreSQL, MySQL, and MariaDB. The database type is **auto-det
 postgres://user:password@host:port/database
 ```
 
-**Example `.vorzela` config:**
+**Example `.vm` config:**
 ```ini
 DATABASE_URL=postgres://user:mypass@localhost:5432/myapp
-VORZELA_ENV=dev
+VM_ENV=dev
 ```
 
 ### MySQL / MariaDB
@@ -78,10 +78,10 @@ mysql://user:password@localhost:3306/database
 user:password@tcp(localhost:3306)/database
 ```
 
-**Example `.vorzela` config:**
+**Example `.vm` config:**
 ```ini
 DATABASE_URL=mysql://user:mypass@localhost:3306/myapp
-VORZELA_ENV=dev
+VM_ENV=dev
 ```
 
 ### Connection String Equivalents
@@ -195,28 +195,28 @@ yay -S vorzela-migrate
 
 ### 1. **Create Configuration File**
 
-Create `.vorzela` in your project root:
+Create `.vm` in your project root:
 
 ```bash
 # Windows (PowerShell)
 @"
 DATABASE_URL=postgres://localhost:5432/myapp
-VORZELA_ENV=dev
+VM_ENV=dev
 MIGRATION_PATH=./migrations
-"@ | Out-File -Encoding utf8 .vorzela
+"@ | Out-File -Encoding utf8 .vm
 
 # macOS/Linux (Bash)
-cat > .vorzela << EOF
+cat > .vm << EOF
 DATABASE_URL=postgres://localhost:5432/myapp
-VORZELA_ENV=dev
+VM_ENV=dev
 MIGRATION_PATH=./migrations
 EOF
 ```
 
-Or manually create `.vorzela` file with:
+Or manually create `.vm` file with:
 ```ini
 DATABASE_URL=postgres://localhost:5432/myapp
-VORZELA_ENV=dev
+VM_ENV=dev
 MIGRATION_PATH=./migrations
 ```
 
@@ -315,9 +315,9 @@ vm --version
 
 **Solution:**
 ```bash
-# 1. Check .vorzela file exists
-cat .vorzela
-# or on Windows: type .vorzela
+# 1. Check .vm file exists
+cat .vm
+# or on Windows: type .vm
 
 # 2. Check DATABASE_URL format
 # Should be: postgres://user:password@host:port/database
@@ -432,7 +432,7 @@ FROM alpine:latest
 WORKDIR /app
 COPY --from=builder /apvc .
 ENV DATABASE_URL=postgres://db:5432/myapp
-ENV VORZELA_ENV=server
+ENV VM_ENV=server
 
 ENTRYPOINT ["./vm"]
 CMD ["status"]
@@ -456,7 +456,7 @@ docker run vorzela status
 DATABASE_URL=postgres://user:password@host:port/database
 
 # Environment type (dev or server)
-VORZELA_ENV=dev
+VM_ENV=dev
 
 # Path to migrations directory
 MIGRATION_PATH=./migrations

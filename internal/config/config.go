@@ -24,7 +24,7 @@ func LoadConfig(dsnOverride, pathOverride string) (*Config, error) {
 	// Load .env file if it exists (doesn't error if file doesn't exist)
 	_ = godotenv.Load()
 
-	// Load .vorzela config file if it exists
+	// Load .vm config file if it exists
 	if err := loadVorzelaConfig(cfg); err != nil {
 		return nil, err
 	}
@@ -51,10 +51,10 @@ func LoadConfigWithOverrides(dsnOverride, envOverride, pathOverride string) (*Co
 	return LoadConfig(dsnOverride, pathOverride)
 }
 
-// loadVorzelaConfig loads configuration from .vorzela file
+// loadVorzelaConfig loads configuration from .vm file
 func loadVorzelaConfig(cfg *Config) error {
 	// Check current directory
-	if err := loadVorzelaFile(".vorzela", cfg); err == nil {
+	if err := loadVorzelaFile(".vm", cfg); err == nil {
 		return nil
 	}
 
@@ -70,7 +70,7 @@ func loadVorzelaConfig(cfg *Config) error {
 			break // Reached root
 		}
 
-		if err := loadVorzelaFile(filepath.Join(dir, ".vorzela"), cfg); err == nil {
+		if err := loadVorzelaFile(filepath.Join(dir, ".vm"), cfg); err == nil {
 			return nil
 		}
 
@@ -80,7 +80,7 @@ func loadVorzelaConfig(cfg *Config) error {
 	return nil // Config file is optional
 }
 
-// loadVorzelaFile loads a specific .vorzela file
+// loadVorzelaFile loads a specific .vm file
 func loadVorzelaFile(filepath string, cfg *Config) error {
 	content, err := os.ReadFile(filepath)
 	if err != nil {
@@ -119,7 +119,7 @@ func loadVorzelaFile(filepath string, cfg *Config) error {
 // Validate validates the configuration
 func (c *Config) Validate() error {
 	if c.DatabaseURL == "" {
-		return fmt.Errorf("database URL is required. Set DATABASE_URL env var, create .vorzela config file, or use --dsn flag")
+		return fmt.Errorf("database URL is required. Set DATABASE_URL env var, create .vm config file, or use --dsn flag")
 	}
 
 	return nil

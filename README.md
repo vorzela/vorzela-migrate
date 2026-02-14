@@ -5,7 +5,7 @@ A Laravel-inspired database migration tool for Go with support for PostgreSQL, M
 ## ✨ Features
 
 - 🎨 **Colorized Output** - Beautiful, easy-to-read colored terminal output
-- ⚙️ **Multiple Configuration Methods** - `.vorzela` config files, `.env` files, or environment variables
+- ⚙️ **Multiple Configuration Methods** - `.vm` config files, `.env` files, or environment variables
 - 🚀 **No DSN Flag Required** - Use config files instead of repeating `--dsn` flag
  - 🐘 **Multi-Database Support** - PostgreSQL and MySQL/MariaDB with automatic detection
  - 🪨 **Cassandra/Scylla (experimental)** - Basic connection support via `gocql`; migrations for CQL require manual review
@@ -58,7 +58,7 @@ Database type is automatically detected from the DSN URL.
 
 ### Quick Start (No --dsn Needed!)
 
-Create `.vorzela` file:
+Create `.vm` file:
 
 **PostgreSQL:**
 ```ini
@@ -94,7 +94,7 @@ Use `--dialect cassandra` to generate a CQL-style template instead of SQL.
 
 ### Run migrations
 
-**Option 1: Using .vorzela config file** (Recommended for local development)
+**Option 1: Using .vm config file** (Recommended for local development)
 ```bash
 vm migrate
 ```
@@ -204,7 +204,7 @@ COMMIT;
 
 ### Three Ways to Configure
 
-**1. Configuration File (.vorzela)** - Recommended for local development
+**1. Configuration File (.vm)** - Recommended for local development
 ```ini
 DATABASE_URL=postgres://localhost:5432/myapp
 MIGRATION_PATH=./migrations
@@ -223,7 +223,7 @@ vm migrate --dsn "postgres://user:pass@localhost:5432/db"
 ### Priority (Highest to Lowest)
 1. CLI flags (`--dsn`, `--path`)
 2. Environment variables (`DATABASE_URL`)
-3. `.vorzela` config file
+3. `.vm` config file
 4. `.env` file
 5. Default values
 

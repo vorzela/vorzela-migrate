@@ -55,7 +55,7 @@ vorzela-migrate/
 ├── ARCHITECTURE.md                  # This file
 ├── install.sh                       # Auto-install script (macOS/Linux)
 ├── install.ps1                      # Auto-install script (Windows)
-└── .vorzela.example                 # Example config file
+└── .vm.example                 # Example config file
 ```
 
 ## Core Components
@@ -74,7 +74,7 @@ The CLI layer uses `urfave/cli` v2 for command-line parsing:
 
 **Design**:
 - No `--env` flag (single migrations folder for all environments)
-- DSN from CLI flags, environment variables, or `.vorzela` config file
+- DSN from CLI flags, environment variables, or `.vm` config file
 - Database type auto-detected from DSN URL scheme
 - Batch tracking for organized rollback
 
@@ -273,7 +273,7 @@ Vorzela supports three configuration methods with clear priority:
 
 1. **CLI Flags** (highest priority) - `--dsn`, `--path`
 2. **Environment Variables** - `DATABASE_URL`, `MIGRATION_PATH`
-3. **Config Files** - `.vorzela` or `.env` (lowest priority)
+3. **Config Files** - `.vm` or `.env` (lowest priority)
 
 **DSN URL Schemes**:
 - PostgreSQL: `postgres://user:pass@host:port/dbname` or `postgresql://...`

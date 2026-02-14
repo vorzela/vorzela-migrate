@@ -151,7 +151,7 @@ vm make migration create_users_table
 export DATABASE_URL="postgres://user:password@localhost:5432/database"
 
 # Optional (defaults to 'dev')
-export VORZELA_ENV=server
+export VM_ENV=server
 ```
 
 ## Tips

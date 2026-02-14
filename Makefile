@@ -1,5 +1,8 @@
 .PHONY: build clean install help test dist
 
+# Detect version from git tags, fallback to "dev"
+VERSION ?= $(shell git describe --tags --abbrev=0 2>/dev/null || echo dev)
+
 help:
 	@echo "Vorzela Migration Tool - Commands"
 	@echo "=================================="
@@ -19,9 +22,9 @@ help:
 	@echo ""
 
 build:
-	@echo "Building vm binary..."
+	@echo "Building vm binary (version: $(VERSION))..."
 	@go mod tidy
-	@go build -o vm main.go
+	@go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=$(VERSION)'" -o vm main.go
 	@echo "✓ Build successful! Binary: ./vm"
 
 install: build
@@ -36,8 +39,7 @@ clean:
 	@echo "✓ Cleaned"
 
 # Build prebuilt binaries for common platforms and place them in dist/
-# Usage: make dist VERSION=v1.0.3
-VERSION ?= $(shell git describe --tags --abbrev=0 2>/dev/null || echo dev)
+# Usage: make dist
 DIST_DIR := dist
 
 .PHONY: dist

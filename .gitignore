@@ -7,6 +7,7 @@ vendor/
 .DS_Store
 .env
 .env.local
+.vm
 *.log
 migrations/*/
 !migrations/.gitkeep
