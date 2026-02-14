@@ -2,6 +2,25 @@
 
 All notable changes to Vorzela Migration Tool are documented in this file.
 
+## [1.1.2] - 2026-02-14
+
+### Removed
+- **Cassandra/Scylla Support**: Removed experimental Cassandra/Scylla support to focus on SQL databases (PostgreSQL, MySQL, MariaDB)
+  - Cassandra requires fundamentally different query patterns (CQL vs SQL)
+  - SQL-style migrations (BEGIN/COMMIT, SERIAL, CASCADE) don't translate to Cassandra
+  - Removed cassandra.go, all Cassandra dialect handling, and CQL templates
+  - Removed `--dialect` flag from `vm make migration` command
+  - Cleaned up documentation to focus on PostgreSQL and MySQL/MariaDB only
+
+### Why This Change?
+Cassandra uses a completely different query language (CQL) and data model than SQL databases. Supporting both SQL and CQL in the same migration tool would require:
+- Separate template systems
+- Different transaction handling (Cassandra has no transactions)
+- Different schema management approaches
+- Complex dialect detection and routing
+
+Instead of maintaining incomplete/experimental Cassandra support, we're focusing on excellent PostgreSQL and MySQL/MariaDB support.
+
 ## [1.1.1] - 2026-02-14
 
 ### Fixed

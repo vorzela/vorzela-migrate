@@ -283,14 +283,7 @@ func getExecutedMigrations(conn db.DB, dialect Dialect) ([]Migration, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	var rows db.Rows
-	var err error
-
-	if dialect == Cassandra {
-		rows, err = conn.Query(ctx, "SELECT migration, batch, executed_at FROM migrations")
-	} else {
-		rows, err = conn.Query(ctx, "SELECT id, migration, batch FROM migrations ORDER BY batch, id")
-	}
+	rows, err := conn.Query(ctx, "SELECT id, migration, batch FROM migrations ORDER BY batch, id")
 	if err != nil {
 		return nil, err
 	}
@@ -299,18 +292,9 @@ func getExecutedMigrations(conn db.DB, dialect Dialect) ([]Migration, error) {
 	var migrations []Migration
 	for rows.Next() {
 		var mig Migration
-		if dialect == Cassandra {
-			// Cassandra returns migration, batch, executed_at
-			err := rows.Scan(&mig.Migration, &mig.Batch, &mig.ExecutedAt)
-			if err != nil {
-				return nil, err
-			}
-			mig.ID = 0
-		} else {
-			err := rows.Scan(&mig.ID, &mig.Migration, &mig.Batch)
-			if err != nil {
-				return nil, err
-			}
+		err := rows.Scan(&mig.ID, &mig.Migration, &mig.Batch)
+		if err != nil {
+			return nil, err
 		}
 		migrations = append(migrations, mig)
 	}
@@ -322,12 +306,6 @@ func recordMigration(conn db.DB, filename string, batch int, dialect Dialect) er
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	if dialect == Cassandra {
-		// Use positional placeholders compatible with gocql
-		query := "INSERT INTO migrations (migration, batch, executed_at) VALUES (?, ?, ?)"
-		return conn.Exec(ctx, query, filename, batch, time.Now())
-	}
-
 	query := "INSERT INTO migrations (migration, batch) VALUES ($1, $2)"
 	return conn.Exec(ctx, query, filename, batch)
 }
@@ -336,41 +314,12 @@ func removeMigrationRecord(conn db.DB, mig Migration, dialect Dialect) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	if dialect == Cassandra {
-		// Delete by migration name
-		return conn.Exec(ctx, "DELETE FROM migrations WHERE migration = ?", mig.Migration)
-	}
-
 	return conn.Exec(ctx, "DELETE FROM migrations WHERE id = $1", mig.ID)
 }
 
 func getNextBatchNumber(conn db.DB, dialect Dialect) (int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-
-	if dialect == Cassandra {
-		// Cassandra: compute max batch in application
-		rows, err := conn.Query(ctx, "SELECT batch FROM migrations")
-		if err != nil {
-			return 1, err
-		}
-		defer rows.Close()
-
-		maxBatch := 0
-		for rows.Next() {
-			var b int
-			if err := rows.Scan(&b); err != nil {
-				return 1, err
-			}
-			if b > maxBatch {
-				maxBatch = b
-			}
-		}
-		if err := rows.Err(); err != nil {
-			return 1, err
-		}
-		return maxBatch + 1, nil
-	}
 
 	var batch int
 	row := conn.QueryRow(ctx, "SELECT COALESCE(MAX(batch), 0) + 1 FROM migrations")

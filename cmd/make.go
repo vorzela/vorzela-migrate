@@ -20,10 +20,6 @@ var MakeCommand = &cli.Command{
 			Value:   "./migrations",
 			Usage:   "path to migrations directory",
 		},
-		&cli.StringFlag{
-			Name:  "dialect",
-			Usage: "database dialect for template (postgres|mysql|cassandra)",
-		},
 		&cli.BoolFlag{
 			Name:    "soft-delete",
 			Aliases: []string{"sd"},
@@ -41,7 +37,6 @@ var MakeCommand = &cli.Command{
 		}
 
 		migrationName := args[1]
-		dialect := c.String("dialect")
 		softDelete := c.Bool("soft-delete")
 
 		// Only use path flag if explicitly set by user
@@ -62,7 +57,6 @@ var MakeCommand = &cli.Command{
 		// Create migration file
 		if err := migration.CreateMigrationWithOptions(migrationName, migrationPath, migration.CreateMigrationOptions{
 			SoftDelete: softDelete,
-			Dialect:    dialect,
 		}); err != nil {
 			output.Error(err.Error())
 			return err

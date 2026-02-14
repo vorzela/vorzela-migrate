@@ -9,5 +9,5 @@ vendor/
 .env.local
 .vm
 *.log
-migrations/*/
+migrations/*
 !migrations/.gitkeep

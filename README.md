@@ -1,6 +1,5 @@
 # Vorzela Migration Tool (v1.1.1)
 
-A Laravel-inspired database migration tool for Go with support for PostgreSQL, MySQL/MariaDB and experimental Cassandra/Scylla support. Simple, powerful, and easy to use.
 
 ## ✨ Features
 
@@ -8,7 +7,6 @@ A Laravel-inspired database migration tool for Go with support for PostgreSQL, M
 - ⚙️ **Multiple Configuration Methods** - `.vm` config files, `.env` files, or environment variables
 - 🚀 **No DSN Flag Required** - Use config files instead of repeating `--dsn` flag
  - 🐘 **Multi-Database Support** - PostgreSQL and MySQL/MariaDB with automatic detection
- - 🪨 **Cassandra/Scylla (experimental)** - Basic connection support via `gocql`; migrations for CQL require manual review
 - � **Batch Tracking** - Organized rollback with batch numbers
 - 🔒 **Transaction Safety** - All-or-nothing migration execution
 - ⚠️ **Warning System** - Alerts for missing migration sections
@@ -50,7 +48,6 @@ For more options and platform notes, see [INSTALL.md](INSTALL.md).
 - **PostgreSQL** 10+ (via pgx v5)
 - **MySQL** 5.7+ (via go-sql-driver/mysql)
 - **MariaDB** 10.3+ (via go-sql-driver/mysql)
-- **Cassandra/Scylla** (experimental, via gocql) - dialect-aware migration execution; all `migrate`, `status`, `rollback`, `refresh` commands supported
 
 Database type is automatically detected from the DSN URL.
 
@@ -85,12 +82,9 @@ vm make migration create_users_table
 vm make migration add_email_to_users
 vm make migration create_posts_table
 
-# Cassandra/Scylla (CQL template)
-vm make migration create_keyspace_and_table --dialect cassandra
 ```
 
 The migration file will be created in the `migrations/` directory with a timestamp prefix.
-Use `--dialect cassandra` to generate a CQL-style template instead of SQL.
 
 ### Run migrations
 
@@ -123,9 +117,7 @@ MySQL:
 vm migrate --dsn "mysql://user:pass@localhost:3306/db"
 ```
 
-Cassandra/Scylla:
 ```bash
-vm migrate --dsn "cassandra://host1,host2:9042/keyspace"
 ```
 
 ### Check migration status
