@@ -1,4 +1,4 @@
-# Vorzela Migration Tool (v1.1.0)
+# Vorzela Migration Tool (v1.1.1)
 
 A Laravel-inspired database migration tool for Go with support for PostgreSQL, MySQL/MariaDB and experimental Cassandra/Scylla support. Simple, powerful, and easy to use.
 
