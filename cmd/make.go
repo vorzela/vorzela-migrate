@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/urfave/cli/v2"
+	"github.com/vorzela/vorzela-migrate/internal/config"
 	"github.com/vorzela/vorzela-migrate/internal/migration"
 	"github.com/vorzela/vorzela-migrate/internal/output"
 )
@@ -40,9 +41,23 @@ var MakeCommand = &cli.Command{
 		}
 
 		migrationName := args[1]
-		migrationPath := c.String("path")
 		dialect := c.String("dialect")
 		softDelete := c.Bool("soft-delete")
+
+		// Only use path flag if explicitly set by user
+		var pathOverride string
+		if c.IsSet("path") {
+			pathOverride = c.String("path")
+		}
+
+		// Load config to get MIGRATION_PATH from .vorzela if not specified via flag
+		cfg, err := config.LoadConfig("", pathOverride)
+		if err != nil {
+			output.Error(err.Error())
+			return err
+		}
+
+		migrationPath := cfg.MigrationPath
 
 		// Create migration file
 		if err := migration.CreateMigrationWithOptions(migrationName, migrationPath, migration.CreateMigrationOptions{
