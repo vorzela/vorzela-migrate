@@ -2,6 +2,16 @@
 
 All notable changes to Vorzela Migration Tool are documented in this file.
 
+## [1.1.3] - 2026-02-14
+
+### Improved
+- **Functions Command Structure**: Restructured `vm functions` to use proper subcommands
+  - `vm functions migrate` - Apply functions to database (replaces `vm functions`)
+  - `vm functions drop` - Remove all common functions from database
+  - `vm functions drop --step` - Interactive removal with confirmation for each function
+  - Better CLI ergonomics with clear command hierarchy
+  - Updated all documentation to reflect new command structure
+
 ## [1.1.2] - 2026-02-14
 
 ### Added
