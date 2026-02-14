@@ -11,6 +11,7 @@ import (
 // CreateMigrationOptions defines options for migration creation
 type CreateMigrationOptions struct {
 	SoftDelete bool
+	Triggers   bool // Add trigger functions for updated_at automation
 	Dialect    string
 }
 
@@ -29,6 +30,13 @@ func CreateMigrationWithOptions(name, path string, opts CreateMigrationOptions) 
 	// Create migrations directory if it doesn't exist
 	if err := os.MkdirAll(path, 0755); err != nil {
 		return fmt.Errorf("failed to create migrations directory: %w", err)
+	}
+
+	// Ensure functions.sql exists if triggers are enabled
+	if opts.Triggers {
+		if err := EnsureFunctionsFile(path); err != nil {
+			return err
+		}
 	}
 
 	// Generate timestamp-based filename
@@ -104,6 +112,39 @@ func generateMigrationTemplate(name string, opts CreateMigrationOptions) string 
 	deleted_at TIMESTAMP DEFAULT NULL`
 	}
 
+	// Add soft delete index if enabled
+	var softDeleteIndex string
+	if opts.SoftDelete {
+		softDeleteIndex = fmt.Sprintf("\n\n-- Create index for soft delete queries\nCREATE INDEX IF NOT EXISTS idx_%s_deleted_at ON %s(deleted_at);\n", tableName, tableName)
+	}
+
+	// Add trigger using centralized functions from functions.sql
+	var triggerFunctions string
+	var triggerCleanup string
+	if opts.Triggers {
+		// Use centralized function from functions.sql
+		functionName := "auto_update_timestamp"
+		if opts.SoftDelete {
+			// Use combined function for soft delete tables
+			functionName = "auto_update_with_soft_delete_protection"
+		}
+
+		triggerFunctions = fmt.Sprintf(`
+
+-- Create trigger using centralized function from functions.sql
+-- IMPORTANT: Run 'vm functions migrate' first to install the required functions
+DROP TRIGGER IF EXISTS trigger_%s_auto_update ON %s;
+CREATE TRIGGER trigger_%s_auto_update
+    BEFORE UPDATE ON %s
+    FOR EACH ROW
+    EXECUTE FUNCTION %s();
+`, tableName, tableName, tableName, tableName, functionName)
+
+		triggerCleanup = fmt.Sprintf(`
+DROP TRIGGER IF EXISTS trigger_%s_auto_update ON %s;
+`, tableName, tableName)
+	}
+
 	return fmt.Sprintf(`-- Migration: %s
 -- Created at: %s
 
@@ -112,15 +153,14 @@ BEGIN;
 
 CREATE TABLE IF NOT EXISTS %s (
 %s
-);
-
+);%s%s
 COMMIT;
 
 -- ⬇ Down (Run when rolling back)
 BEGIN;
-
+%s
 DROP TABLE IF EXISTS %s CASCADE;
 
 COMMIT;
-`, upperName, timestamp, tableName, columns, tableName)
+`, upperName, timestamp, tableName, columns, softDeleteIndex, triggerFunctions, triggerCleanup, tableName)
 }

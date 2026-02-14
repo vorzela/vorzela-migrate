@@ -370,7 +370,7 @@ The tool implements comprehensive error handling:
 
 Example warning:
 ```
-⚠️  Warning: Missing UP section in 1707123456_create_users_table.sql
+⚠️  Warning: Missing UP section in 1707123456_users.sql
 ```
 
 ## Performance Characteristics

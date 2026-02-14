@@ -3,8 +3,12 @@
 ## 🚀 Quick Start
 
 ```bash
-# 1. Create migration (with timestamps + templates)
-vm make migration create_users_table
+# 1. Create migration (auto-adds create_ and _table)
+vm make migration users        # → create_users_table.sql
+
+# Or with soft delete support (adds deleted_at + index)
+vm make migration users --soft-delete
+vm make migration posts -sd
 
 # 2. Run migrations
 vm migrate
@@ -23,7 +27,13 @@ vm rollback --steps=all  # All migrations
 
 | Command | Purpose | Example |
 |---------|---------|---------|
-| `make` | Create new migration | `vm make migration create_table` |
+| `make migration <name>` | Create new migration | `vm make migration users` → `create_users_table.sql` |
+| `make migration <name> -sd` | Create with soft delete | `vm make migration users -sd` |
+| `make migration <name> -t` | Create with auto-update triggers | `vm make migration users -t` |
+| `make migration <name> -sd -t` | Combine soft delete + triggers | `vm make migration users -sd -t` |
+| `functions migrate` | Install functions to database | `vm functions migrate` |
+| `functions drop` | Drop all common functions | `vm functions drop` |
+| `functions drop --step` | Drop functions with confirmation | `vm functions drop --step` |
 | `migrate` | Run pending migrations | `vm migrate` |
 | `rollback` | Rollback migrations | `vm rollback --steps=all` |
 | `fresh` | Rollback all + Re-run (safe) | `vm fresh` |
@@ -168,7 +178,7 @@ vm status --env=server
    - Or set `DATABASE_URL` env var
 
 4. **Migrations run in order by timestamp**
-   - File names like: `1707129057_create_users_table.sql`
+   - File names like: `1707129057_users.sql`
    - Always added with Unix timestamp
 
 ---

@@ -4,6 +4,48 @@ All notable changes to Vorzela Migration Tool are documented in this file.
 
 ## [1.1.2] - 2026-02-14
 
+### Added
+- **Centralized Trigger Functions**: New `migrations/functions.sql` file with reusable database functions
+  - `auto_update_timestamp()` - Automatically updates `updated_at` column on changes
+  - `protect_soft_deleted()` - Prevents updates on soft-deleted records  
+  - `auto_update_with_soft_delete_protection()` - Combined auto-update + soft delete protection
+  - `prevent_hard_delete()` - Forces soft delete only (blocks hard deletes)
+  - Eliminates code duplication across migrations
+  - Single source of truth for trigger logic
+  - **Custom functions preserved**: Add your own functions below CUSTOM FUNCTIONS section
+  - File never automatically overwritten (your custom functions are safe)
+- **Functions Command**: New `vm functions` command with subcommands to manage database functions
+  - `vm functions migrate` - Applies `functions.sql` to database
+  - `vm functions drop` - Removes all common functions from database
+  - `vm functions drop --step` - Removes functions one by one with confirmation
+  - Idempotent: Safe to run multiple times
+  - Run `vm functions migrate` once before using `--triggers` flag
+- **Soft Delete Support**: New `--soft-delete` / `-sd` flag for `vm make migration` command
+  - Automatically generates `deleted_at TIMESTAMP DEFAULT NULL` column
+  - Creates index on `deleted_at` for efficient soft-delete queries
+  - Flag can be placed anywhere in command (before or after migration name)
+  - Example: `vm make migration users -sd` → creates `create_users_table.sql`
+- **Auto-Update Triggers**: New `--triggers` / `-t` flag for automatic `updated_at` timestamp management
+  - References centralized functions from `migrations/functions.sql`
+  - Automatically updates `updated_at` column on every row change  
+  - **With `-sd`**: Uses combined function that prevents updates on soft-deleted records
+  - Prevents data anomalies from stale timestamps
+  - Cleaner migrations: no inline function definitions
+  - Example: `vm make migration users -t` or combined: `vm make migration users -sd -t`
+
+### Improved
+- **Command Structure**: Restructured `vm make` to use proper subcommands for better CLI ergonomics
+  - Flags now work at any position: `vm make migration users --soft-delete` or `vm make migration users -sd`
+  - Better help text and usage messages
+- **Automatic File Naming**: Migration file names automatically normalized
+  - `users` → `create_users_table.sql`
+  - `add_email_to_users` → `add_email_to_users_table.sql`
+  - Ensures consistent, descriptive file names across projects
+- **Migration Templates**: Now reference centralized functions instead of inline definitions
+  - Smaller, cleaner migration files
+  - Easier to maintain and update trigger logic across all tables
+  - One-time function setup with `vm functions migrate`
+
 ### Removed
 - **Cassandra/Scylla Support**: Removed experimental Cassandra/Scylla support to focus on SQL databases (PostgreSQL, MySQL, MariaDB)
   - Cassandra requires fundamentally different query patterns (CQL vs SQL)

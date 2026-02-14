@@ -63,7 +63,7 @@ postgres://user:password@host:port/database
 **Example `.vm` config:**
 ```ini
 DATABASE_URL=postgres://user:mypass@localhost:5432/myapp
-VM_ENV=dev
+MIGRATION_PATH=./migrations
 ```
 
 ### MySQL / MariaDB
@@ -81,7 +81,7 @@ user:password@tcp(localhost:3306)/database
 **Example `.vm` config:**
 ```ini
 DATABASE_URL=mysql://user:mypass@localhost:3306/myapp
-VM_ENV=dev
+MIGRATION_PATH=./migrations
 ```
 
 ### Connection String Equivalents
@@ -201,14 +201,12 @@ Create `.vm` in your project root:
 # Windows (PowerShell)
 @"
 DATABASE_URL=postgres://localhost:5432/myapp
-VM_ENV=dev
 MIGRATION_PATH=./migrations
 "@ | Out-File -Encoding utf8 .vm
 
 # macOS/Linux (Bash)
 cat > .vm << EOF
 DATABASE_URL=postgres://localhost:5432/myapp
-VM_ENV=dev
 MIGRATION_PATH=./migrations
 EOF
 ```
@@ -216,7 +214,6 @@ EOF
 Or manually create `.vm` file with:
 ```ini
 DATABASE_URL=postgres://localhost:5432/myapp
-VM_ENV=dev
 MIGRATION_PATH=./migrations
 ```
 
@@ -228,18 +225,38 @@ mkdir migrations\dev
 mkdir migrations\server
 
 # macOS/Linux
-mkdir -p migrations/{dev,server}
+### 2. **Create Migrations Directory**
+
+```bash
+mkdir -p migrations
 ```
 
 ### 3. **Create First Migration**
 
+**Basic migration:**
 ```bash
-vm make migration create_users_table
+vm make migration users  # Creates: create_users_table.sql
 ```
+
+**With soft delete support:**
+```bash
+vm make migration users --soft-delete
+# or short form:
+vm make migration users -sd
+```
+
+**Soft delete adds:**
+- `deleted_at TIMESTAMP DEFAULT NULL` column
+- Index on `deleted_at` for efficient queries  
+- Enables soft delete pattern: `WHERE deleted_at IS NULL`
+
+**Note**: File names automatically normalized:
+- `users` → `create_users_table.sql`
+- `add_column` → `add_column_table.sql`
 
 ### 4. **Edit Migration File**
 
-Open the generated file in `migrations/dev/` and add your SQL
+Open the generated file in `migrations/` and add your SQL (or it's already generated with the -sd flag)
 
 ### 5. **Run Migration**
 
@@ -432,7 +449,6 @@ FROM alpine:latest
 WORKDIR /app
 COPY --from=builder /apvc .
 ENV DATABASE_URL=postgres://db:5432/myapp
-ENV VM_ENV=server
 
 ENTRYPOINT ["./vm"]
 CMD ["status"]
@@ -456,8 +472,6 @@ docker run vorzela status
 DATABASE_URL=postgres://user:password@host:port/database
 
 # Environment type (dev or server)
-VM_ENV=dev
-
 # Path to migrations directory
 MIGRATION_PATH=./migrations
 ```
@@ -485,7 +499,7 @@ source ~/.bashrc
 
 1. **Create first migration**
    ```bash
-   vm make migration create_users_table
+   vm make migration users
    ```
 
 2. **Read naming conventions**
