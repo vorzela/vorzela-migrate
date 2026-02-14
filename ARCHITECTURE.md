@@ -40,6 +40,7 @@ vorzela-migrate/
 │   └── migration/
 │       ├── types.go                 # Data structures (MigrationFile, Migration)
 │       ├── create.go                # Migration creation logic
+│       ├── relationship.go          # Relationship & foreign key generation
 │       ├── executor.go              # Migration execution logic
 │       ├── status.go                # Migration status display
 │       └── dialect.go               # Dialect-aware SQL generation
@@ -116,7 +117,7 @@ type DB interface {
 Generates SQL that's correct for the target database:
 
 **PostgreSQL**:
-- Uses `SERIAL` for auto-increment IDs
+- Uses `BIGSERIAL` for auto-increment IDs (supports up to ~9 quintillion records)
 - Uses `CASCADE` for foreign key drops
 - Uses `CURRENT_TIMESTAMP` for timestamps
 
@@ -148,6 +149,16 @@ type MigrationFile struct {
 - Creates `migrations/` directory if needed
 - Generates templates with UP/DOWN sections
 - Names files with Unix timestamp prefix for ordering
+- Supports relationship flags for automatic FK generation
+
+**Relationships** (`relationship.go`):
+- **One-to-Many** (`--belongs-to`): Generates `BIGINT NOT NULL` FK columns with indexes
+- **One-to-One** (`--one-to-one`): Generates `BIGINT NOT NULL UNIQUE` FK columns
+- **Many-to-Many** (`--many-to-many`): Generates pivot tables with composite unique constraints
+- Automatic table name singularization (users → user_id)
+- Alphabetically sorted pivot table names (role_user, not user_role)
+- Foreign key constraints with `ON DELETE CASCADE`
+- Performance indexes on all FK columns
 
 **Execution** (`executor.go`):
 - Initializes migrations table on first run

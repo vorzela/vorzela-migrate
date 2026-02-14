@@ -2,6 +2,36 @@
 
 All notable changes to Vorzela Migration Tool are documented in this file.
 
+## [1.1.4] - 2026-02-14
+
+### Added
+- **Database Relationships**: New relationship flags for automatic foreign key generation
+  - `--belongs-to` / `-bt`: Creates one-to-many relationships (e.g., `vm make migration posts --belongs-to users`)
+  - `--one-to-one` / `-oto`: Creates one-to-one relationships with UNIQUE constraint
+  - `--many-to-many` / `-mm` / `--pivot`: Creates pivot/junction tables with composite unique constraints
+  - Automatic table name singularization (users → user_id, categories → category_id)
+  - Foreign key constraints with `ON DELETE CASCADE`
+  - Performance indexes automatically created on all foreign key columns
+  - Alphabetically sorted pivot table names for consistency (role_user, not user_role)
+  - Multiple relationships supported: `--belongs-to users --belongs-to categories`
+  - Combine with existing features: `--belongs-to users -sd -t`
+
+### Changed
+- **BIGSERIAL and BIGINT by default**: All migrations now use `BIGSERIAL` for primary keys and `BIGINT` for foreign keys
+  - Previous: `id SERIAL PRIMARY KEY` (max ~2 billion records)
+  - New: `id BIGSERIAL PRIMARY KEY` (max ~9 quintillion records)
+  - Previous: `user_id INTEGER NOT NULL`
+  - New: `user_id BIGINT NOT NULL`
+  - Better scalability without future migration headaches
+  - All documentation updated to reflect BIGSERIAL/BIGINT usage
+
+### Improved
+- **Documentation**: Comprehensive relationship examples added to README.md and QUICK_REFERENCE.md
+  - One-to-Many query patterns
+  - One-to-One query patterns
+  - Many-to-Many join query examples
+  - Best practices section updated with BIGSERIAL/BIGINT explanation
+
 ## [1.1.3] - 2026-02-14
 
 ### Improved

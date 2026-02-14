@@ -1,4 +1,4 @@
-# Vorzela Migration Tool (v1.1.3)
+# Vorzela Migration Tool (v1.1.4)
 
 
 ## ✨ Features
@@ -311,7 +311,7 @@ vm make migration users --soft-delete
 **Generated SQL includes:**
 ```sql
 CREATE TABLE users (
-    id SERIAL PRIMARY KEY,
+    id BIGSERIAL PRIMARY KEY,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     deleted_at TIMESTAMP DEFAULT NULL
@@ -461,6 +461,126 @@ vm functions drop
 vm functions drop --step
 ```
 
+## Database Relationships
+
+Vorzela Migrate provides built-in support for defining relationships between tables with automatic foreign key generation, constraints, and indexes.
+
+### One-to-Many (belongs-to)
+
+Use `--belongs-to` (or `-bt`) when a record belongs to a parent table:
+
+```bash
+# Posts belong to users
+vm make migration posts --belongs-to users
+
+# Orders belong to users and have a status
+vm make migration orders --belongs-to users --belongs-to order_statuses
+```
+
+**Generated SQL:**
+```sql
+CREATE TABLE IF NOT EXISTS posts (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_posts_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_posts_user_id ON posts(user_id);
+```
+
+**Features:**
+- ✅ Automatically creates `user_id BIGINT NOT NULL` column
+- ✅ Adds foreign key constraint with `ON DELETE CASCADE`
+- ✅ Creates index on foreign key column for query performance
+- ✅ Handles table name singularization (users → user_id, categories → category_id)
+
+### One-to-One (unique)
+
+Use `--one-to-one` (or `-oto`) for unique relationships:
+
+```bash
+# Each user has one profile
+vm make migration profiles --one-to-one users
+```
+
+**Generated SQL:**
+```sql
+CREATE TABLE IF NOT EXISTS profiles (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL UNIQUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_profiles_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+```
+
+**Difference from belongs-to:**
+- Uses `BIGINT NOT NULL UNIQUE` (enforces one-to-one relationship)
+- No separate index needed (UNIQUE constraint creates one)
+
+### Many-to-Many (pivot table)
+
+Use `--many-to-many` (or `-mm` / `--pivot`) for junction tables:
+
+```bash
+# Users can have many roles, roles can have many users
+vm make migration users --many-to-many roles
+```
+
+**Generated SQL:**
+```sql
+CREATE TABLE IF NOT EXISTS role_user (
+    id BIGSERIAL PRIMARY KEY,
+    role_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_role_user_role FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE,
+    CONSTRAINT fk_role_user_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    CONSTRAINT uq_role_user_role_user UNIQUE (role_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_role_user_role_id ON role_user(role_id);
+CREATE INDEX IF NOT EXISTS idx_role_user_user_id ON role_user(user_id);
+```
+
+**Features:**
+- ✅ Pivot table name alphabetically sorted: `role_user` (not `user_role`)
+- ✅ Both foreign keys with CASCADE delete
+- ✅ Composite UNIQUE constraint prevents duplicates
+- ✅ Indexes on both foreign key columns
+- ✅ Optional soft delete support: `--many-to-many roles -sd`
+
+### Combining Relationships with Other Features
+
+```bash
+# Posts belong to users + soft delete + auto-update triggers
+vm make migration posts --belongs-to users -sd -t
+
+# Orders with multiple relationships + soft delete
+vm make migration orders --belongs-to users --belongs-to products -sd
+```
+
+**Query examples:**
+```sql
+-- One-to-Many: Get all posts by a user
+SELECT * FROM posts WHERE user_id = 123;
+
+-- One-to-One: Get user's profile
+SELECT * FROM profiles WHERE user_id = 123;
+
+-- Many-to-Many: Get all roles for a user
+SELECT r.* FROM roles r
+JOIN role_user ru ON r.id = ru.role_id
+WHERE ru.user_id = 123;
+
+-- Many-to-Many: Get all users with a specific role
+SELECT u.* FROM users u
+JOIN role_user ru ON u.id = ru.user_id
+WHERE ru.role_id = 456;
+```
+
 ## Error Handling
 
 The tool provides helpful warnings and errors:
@@ -513,6 +633,7 @@ vorzela-migrate/
 4. **Separate concerns** - one migration per table/feature
 5. **Use descriptive names** that clearly indicate what the migration does
 6. **Keep DOWN migrations reversible** - don't lose data unless intentional
+7. **BIGSERIAL and BIGINT for scalability** - All generated migrations use `BIGSERIAL` for primary keys and `BIGINT` for foreign keys, supporting up to ~9 quintillion records (vs `SERIAL`/`INTEGER`'s ~2 billion limit). This prevents future migration headaches as your app scales.
 
 ## Troubleshooting
 

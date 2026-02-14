@@ -1,4 +1,4 @@
-# Quick Reference Guide - Vorzela Migration Tool v1.1.3
+# Quick Reference Guide - Vorzela Migration Tool v1.1.4
 
 ## 🚀 Quick Start
 
@@ -31,6 +31,9 @@ vm rollback --steps=all  # All migrations
 | `make migration <name> -sd` | Create with soft delete | `vm make migration users -sd` |
 | `make migration <name> -t` | Create with auto-update triggers | `vm make migration users -t` |
 | `make migration <name> -sd -t` | Combine soft delete + triggers | `vm make migration users -sd -t` |
+| `make migration <name> --belongs-to <table>` | Create with one-to-many FK | `vm make migration posts --belongs-to users` |
+| `make migration <name> --one-to-one <table>` | Create with one-to-one FK | `vm make migration profiles --one-to-one users` |
+| `make migration <name> --many-to-many <table>` | Create pivot table | `vm make migration users --many-to-many roles` |
 | `functions migrate` | Install functions to database | `vm functions migrate` |
 | `functions drop` | Drop all common functions | `vm functions drop` |
 | `functions drop --step` | Drop functions with confirmation | `vm functions drop --step` |
@@ -42,7 +45,39 @@ vm rollback --steps=all  # All migrations
 
 ---
 
-## 🔄 Rollback Options
+## 🔗 Relationship Shortcuts
+
+```bash
+# One-to-Many (belongs-to)
+vm make migration posts --belongs-to users
+vm make migration posts -bt users  # Short alias
+
+# One-to-One (unique FK)
+vm make migration profiles --one-to-one users
+vm make migration profiles -oto users  # Short alias
+
+# Many-to-Many (pivot table)
+vm make migration users --many-to-many roles
+vm make migration users -mm roles     # Short alias
+vm make migration users --pivot roles # Alternative
+
+# Multiple relationships
+vm make migration comments --belongs-to users --belongs-to posts
+
+# Combine with other features
+vm make migration orders --belongs-to users -sd -t
+```
+
+**What gets generated:**
+- ✅ Foreign key columns (`user_id BIGINT NOT NULL`)
+- ✅ Foreign key constraints with CASCADE delete
+- ✅ Performance indexes on FK columns
+- ✅ Pivot tables with composite unique constraints
+- ✅ Automatic table name singularization
+
+---
+
+##  Rollback Options
 
 ```bash
 vm rollback              # Rollback 1 batch (default)
@@ -110,7 +145,7 @@ Every migration includes:
 -- ⬆ Up
 BEGIN;
 CREATE TABLE IF NOT EXISTS create_users_table (
-    id SERIAL PRIMARY KEY,
+    id BIGSERIAL PRIMARY KEY,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

@@ -17,7 +17,7 @@ var MakeCommand = &cli.Command{
 		{
 			Name:      "migration",
 			Usage:     "Create a new migration file",
-			ArgsUsage: "<migration_name> [--soft-delete|-sd]",
+			ArgsUsage: "<table_name> [flags]",
 			Flags: []cli.Flag{
 				&cli.StringFlag{
 					Name:    "path",
@@ -34,42 +34,108 @@ var MakeCommand = &cli.Command{
 					Aliases: []string{"t"},
 					Usage:   "add trigger functions for automatic updated_at timestamp",
 				},
+				// Relationship flags
+				&cli.StringSliceFlag{
+					Name:    "belongs-to",
+					Aliases: []string{"bt"},
+					Usage:   "add foreign key to parent table (one-to-many). Repeatable: --belongs-to users --belongs-to categories",
+				},
+				&cli.StringSliceFlag{
+					Name:    "one-to-one",
+					Aliases: []string{"oto"},
+					Usage:   "add unique foreign key to parent table (one-to-one). E.g.: --one-to-one users",
+				},
+				&cli.StringFlag{
+					Name:    "many-to-many",
+					Aliases: []string{"mm", "pivot"},
+					Usage:   "create many-to-many pivot table with specified table. E.g.: vm make migration users --many-to-many roles",
+				},
 			},
 			Action: func(c *cli.Context) error {
 				if c.NArg() < 1 {
-					return fmt.Errorf("migration name is required. Usage: vm make migration <name> [--soft-delete|-sd]")
+					return fmt.Errorf("table name is required. Usage: vm make migration <name> [flags]")
 				}
 
-				migrationName := c.Args().First()
+				rawName := c.Args().First()
 
-				// Normalize migration name: add create_ prefix and _table suffix
-				// Exception: trigger function files (start with "trigger_")
-				if !strings.HasPrefix(migrationName, "trigger_") {
-					// Add create_ or add_ prefix if missing
-					if !strings.HasPrefix(migrationName, "create_") && !strings.HasPrefix(migrationName, "add_") {
-						migrationName = "create_" + migrationName
-					}
-
-					// Add _table suffix if missing
-					if !strings.HasSuffix(migrationName, "_table") {
-						migrationName = migrationName + "_table"
-					}
-				}
-
-				// Check for soft-delete flag (supports at beginning or end)
+				// Get flags from CLI parser (works when flags are before positional arg)
+				belongsToTables := c.StringSlice("belongs-to")
+				oneToOneTables := c.StringSlice("one-to-one")
+				manyToManyTable := c.String("many-to-many")
 				softDelete := c.Bool("soft-delete")
 				triggers := c.Bool("triggers")
 
-				// Also manually check remaining args for flags
-				// This handles flags placed after the migration name
-				if !softDelete || !triggers {
-					args := c.Args().Slice()
-					for _, arg := range args {
-						if arg == "-sd" || arg == "--soft-delete" || arg == "--sd" {
-							softDelete = true
+				// Manually parse flags from remaining args
+				// This handles the common case: vm make migration posts --belongs-to users
+				// where urfave/cli treats flags after args as positional
+				args := c.Args().Slice()
+				for i := 1; i < len(args); i++ {
+					arg := args[i]
+					switch arg {
+					case "--belongs-to", "-bt", "--bt":
+						if i+1 < len(args) {
+							i++
+							belongsToTables = append(belongsToTables, args[i])
 						}
-						if arg == "-t" || arg == "--triggers" {
-							triggers = true
+					case "--one-to-one", "-oto", "--oto":
+						if i+1 < len(args) {
+							i++
+							oneToOneTables = append(oneToOneTables, args[i])
+						}
+					case "--many-to-many", "-mm", "--mm", "--pivot", "-pivot":
+						if i+1 < len(args) {
+							i++
+							if manyToManyTable == "" {
+								manyToManyTable = args[i]
+							}
+						}
+					case "-sd", "--soft-delete", "--sd":
+						softDelete = true
+					case "-t", "--triggers":
+						triggers = true
+					}
+				}
+
+				// Validate: cannot combine many-to-many with belongs-to/one-to-one
+				if manyToManyTable != "" && (len(belongsToTables) > 0 || len(oneToOneTables) > 0) {
+					return fmt.Errorf("cannot combine --many-to-many with --belongs-to or --one-to-one")
+				}
+
+				// Build relationships slice
+				var relationships []migration.Relationship
+				for _, tbl := range belongsToTables {
+					relationships = append(relationships, migration.Relationship{
+						Type:        migration.BelongsTo,
+						TargetTable: tbl,
+					})
+				}
+				for _, tbl := range oneToOneTables {
+					relationships = append(relationships, migration.Relationship{
+						Type:        migration.OneToOne,
+						TargetTable: tbl,
+					})
+				}
+
+				// Determine migration name
+				var migrationName string
+				var isPivot bool
+				var pivotTables [2]string
+
+				if manyToManyTable != "" {
+					// Many-to-many: compute pivot table name
+					pivotName := migration.PivotTableName(rawName, manyToManyTable)
+					migrationName = "create_" + pivotName + "_table"
+					isPivot = true
+					pivotTables = [2]string{rawName, manyToManyTable}
+				} else {
+					// Standard migration name normalization
+					migrationName = rawName
+					if !strings.HasPrefix(migrationName, "trigger_") {
+						if !strings.HasPrefix(migrationName, "create_") && !strings.HasPrefix(migrationName, "add_") {
+							migrationName = "create_" + migrationName
+						}
+						if !strings.HasSuffix(migrationName, "_table") {
+							migrationName = migrationName + "_table"
 						}
 					}
 				}
@@ -90,10 +156,14 @@ var MakeCommand = &cli.Command{
 				migrationPath := cfg.MigrationPath
 
 				// Create migration file
-				if err := migration.CreateMigrationWithOptions(migrationName, migrationPath, migration.CreateMigrationOptions{
-					SoftDelete: softDelete,
-					Triggers:   triggers,
-				}); err != nil {
+				opts := migration.CreateMigrationOptions{
+					SoftDelete:    softDelete,
+					Triggers:      triggers,
+					Relationships: relationships,
+					IsPivot:       isPivot,
+					PivotTables:   pivotTables,
+				}
+				if err := migration.CreateMigrationWithOptions(migrationName, migrationPath, opts); err != nil {
 					output.Error(err.Error())
 					return err
 				}
@@ -105,6 +175,13 @@ var MakeCommand = &cli.Command{
 				}
 				if triggers {
 					features = append(features, "auto-update triggers")
+				}
+
+				// Add relationship info to features
+				if isPivot {
+					features = append(features, migration.RelationshipFeatureDescription(nil, pivotTables[0], pivotTables[1]))
+				} else if len(relationships) > 0 {
+					features = append(features, migration.RelationshipFeatureDescription(relationships, "", ""))
 				}
 
 				if len(features) > 0 {

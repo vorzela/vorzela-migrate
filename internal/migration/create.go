@@ -10,9 +10,12 @@ import (
 
 // CreateMigrationOptions defines options for migration creation
 type CreateMigrationOptions struct {
-	SoftDelete bool
-	Triggers   bool // Add trigger functions for updated_at automation
-	Dialect    string
+	SoftDelete    bool
+	Triggers      bool // Add trigger functions for updated_at automation
+	Dialect       string
+	Relationships []Relationship // FK relationships (belongs-to, one-to-one)
+	IsPivot       bool           // True when creating a many-to-many pivot table
+	PivotTables   [2]string      // The two table names for pivot generation
 }
 
 // CreateMigration creates a new migration file (backward compatible)
@@ -50,7 +53,12 @@ func CreateMigrationWithOptions(name, path string, opts CreateMigrationOptions) 
 	}
 
 	// Create migration file with template
-	template := generateMigrationTemplate(name, opts)
+	var template string
+	if opts.IsPivot {
+		template = GeneratePivotMigration(opts.PivotTables[0], opts.PivotTables[1], opts)
+	} else {
+		template = generateMigrationTemplate(name, opts)
+	}
 	if err := os.WriteFile(filepath, []byte(template), 0644); err != nil {
 		return fmt.Errorf("failed to create migration file: %w", err)
 	}
@@ -78,9 +86,9 @@ func isValidMigrationName(name string) bool {
 // extractTableName extracts the actual table name from migration name
 // Examples:
 //
-//	create_users_table -> users
-//	add_email_to_users -> add_email_to_users (no extraction)
-//	create_posts_table -> posts
+// create_users_table -> users
+// add_email_to_users -> add_email_to_users (no extraction)
+// create_posts_table -> posts
 func extractTableName(migrationName string) string {
 	name := migrationName
 
@@ -103,29 +111,63 @@ func generateMigrationTemplate(name string, opts CreateMigrationOptions) string 
 	upperName := strings.ToUpper(name)
 	tableName := extractTableName(name)
 
-	columns := `    id SERIAL PRIMARY KEY,
-	created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-	updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`
+	// Build column definitions
+	var columnParts []string
+	columnParts = append(columnParts, "    id BIGSERIAL PRIMARY KEY")
 
-	if opts.SoftDelete {
-		columns += `,
-	deleted_at TIMESTAMP DEFAULT NULL`
+	// Add FK columns from relationships
+	for _, rel := range opts.Relationships {
+		fkCol := ForeignKeyColumn(rel.TargetTable)
+		switch rel.Type {
+		case OneToOne:
+			columnParts = append(columnParts, fmt.Sprintf("    %s BIGINT NOT NULL UNIQUE", fkCol))
+		case BelongsTo:
+			columnParts = append(columnParts, fmt.Sprintf("    %s BIGINT NOT NULL", fkCol))
+		}
 	}
 
-	// Add soft delete index if enabled
-	var softDeleteIndex string
+	columnParts = append(columnParts, "    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+	columnParts = append(columnParts, "    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+
 	if opts.SoftDelete {
-		softDeleteIndex = fmt.Sprintf("\n\n-- Create index for soft delete queries\nCREATE INDEX IF NOT EXISTS idx_%s_deleted_at ON %s(deleted_at);\n", tableName, tableName)
+		columnParts = append(columnParts, "    deleted_at TIMESTAMP DEFAULT NULL")
+	}
+
+	// Add FK constraints
+	for _, rel := range opts.Relationships {
+		fkCol := ForeignKeyColumn(rel.TargetTable)
+		singular := Singularize(rel.TargetTable)
+		columnParts = append(columnParts, fmt.Sprintf(
+			"    CONSTRAINT fk_%s_%s FOREIGN KEY (%s) REFERENCES %s(id) ON DELETE CASCADE",
+			tableName, singular, fkCol, rel.TargetTable,
+		))
+	}
+
+	columns := strings.Join(columnParts, ",\n")
+
+	// Build extra indexes (FK indexes for belongs-to, soft delete index)
+	var extraIndexes string
+	for _, rel := range opts.Relationships {
+		if rel.Type == BelongsTo {
+			fkCol := ForeignKeyColumn(rel.TargetTable)
+			extraIndexes += fmt.Sprintf("\nCREATE INDEX IF NOT EXISTS idx_%s_%s ON %s(%s);", tableName, fkCol, tableName, fkCol)
+		}
+	}
+
+	if opts.SoftDelete {
+		extraIndexes += fmt.Sprintf("\nCREATE INDEX IF NOT EXISTS idx_%s_deleted_at ON %s(deleted_at);", tableName, tableName)
+	}
+
+	if extraIndexes != "" {
+		extraIndexes = "\n" + extraIndexes + "\n"
 	}
 
 	// Add trigger using centralized functions from functions.sql
 	var triggerFunctions string
 	var triggerCleanup string
 	if opts.Triggers {
-		// Use centralized function from functions.sql
 		functionName := "auto_update_timestamp"
 		if opts.SoftDelete {
-			// Use combined function for soft delete tables
 			functionName = "auto_update_with_soft_delete_protection"
 		}
 
@@ -145,9 +187,12 @@ DROP TRIGGER IF EXISTS trigger_%s_auto_update ON %s;
 `, tableName, tableName)
 	}
 
+	// Build relationship comment
+	relComment := RelationshipComment(tableName, opts.Relationships)
+
 	return fmt.Sprintf(`-- Migration: %s
 -- Created at: %s
-
+%s
 -- ⬆ Up (Run when migrating forward)
 BEGIN;
 
@@ -162,5 +207,5 @@ BEGIN;
 DROP TABLE IF EXISTS %s CASCADE;
 
 COMMIT;
-`, upperName, timestamp, tableName, columns, softDeleteIndex, triggerFunctions, triggerCleanup, tableName)
+`, upperName, timestamp, relComment, tableName, columns, extraIndexes, triggerFunctions, triggerCleanup, tableName)
 }
