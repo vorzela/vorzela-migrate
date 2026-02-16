@@ -36,14 +36,15 @@ jobs:
       - name: Verify dependencies
         run: go mod verify
 
-      - name: Run unit tests
+      - name: Run unit tests (non-Ubuntu or Go 1.21)
+        if: matrix.os != 'ubuntu-latest' || matrix.go == '1.21'
         run: go test -v -short -timeout=10m ./...
 
-      - name: Run tests with race detector (Linux only)
-        if: matrix.os == 'ubuntu-latest'
+      - name: Run tests with race detector (Ubuntu + Go 1.21)
+        if: matrix.os == 'ubuntu-latest' && matrix.go == '1.21'
         run: go test -v -short -race -timeout=10m ./...
 
-      - name: Run tests with coverage (Ubuntu + Go 1.22 only)
+      - name: Run tests with coverage (Ubuntu + Go 1.22)
         if: matrix.os == 'ubuntu-latest' && matrix.go == '1.22'
         run: go test -v -short -coverprofile=coverage.txt -covermode=atomic -timeout=10m ./...
 
