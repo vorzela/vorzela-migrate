@@ -598,13 +598,14 @@ COMMIT;
 
 ## 🔌 Integration with sqlc & goose
 
-Vorzela migrations are fully compatible with [**sqlc**](https://sqlc.dev/) (SQL compiler) and [**goose**](https://github.com/pressly/goose) (database migration tool). When enabled, all generated migrations include goose-style directional markers.
+Vorzela migrations are fully compatible with [**sqlc**](https://sqlc.dev/) (SQL compiler) and [**goose**](https://github.com/pressly/goose) (database migration tool). When `SQLC_SUPPORT=true` is enabled, all generated migrations include goose-style directional markers.
 
 ### Why Use This Integration?
 
-- **sqlc**: Generate type-safe Go code from SQL queries. Works with goose-style migrations.
-- **goose**: Popular migration tool with extensive ecosystem support.
-- **Compatibility**: Use Vorzela for migration generation and sqlc for query code generation seamlessly.
+- **sqlc (Primary Use Case)**: Generate type-safe Go code from SQL queries. Requires goose-style migrations as schema source.
+- **goose Compatibility**: Goose markers allow sqlc to parse your migrations. You still use `vm migrate` to run them.
+- **Best of Both**: Vorzela's advanced features (drift detection, checksums, online migrations) + sqlc's type-safe queries.
+- **Optional goose CLI**: Can optionally run migrations with goose instead of Vorzela, but you'll lose Vorzela-specific features.
 
 ### Enable sqlc/goose Support
 
@@ -759,21 +760,28 @@ func main() {
 
 ### Using with goose Directly
 
-Vorzela migrations can also be run directly with goose:
+**Important:** Goose requires `SQLC_SUPPORT=true` to be enabled in your `.vm` config. The goose markers (`-- +goose Up/Down`) are necessary for goose to parse the migrations.
+
+With `SQLC_SUPPORT=true` enabled, Vorzela migrations can be run with goose:
 
 ```bash
+# First, ensure SQLC_SUPPORT is enabled in .vm
+echo "SQLC_SUPPORT=true" >> .vm
+
 # Install goose
 go install github.com/pressly/goose/v3/cmd/goose@latest
 
-# Run migrations with goose
-goose postgres "postgres://user:pass@localhost/db" up
+# Run migrations with goose (goose will manage its own migrations table)
+goose -dir ./migrations postgres "postgres://user:pass@localhost/db" up
 
 # Check status
-goose postgres "postgres://user:pass@localhost/db" status
+goose -dir ./migrations postgres "postgres://user:pass@localhost/db" status
 
 # Rollback
-goose postgres "postgres://user:pass@localhost/db" down
+goose -dir ./migrations postgres "postgres://user:pass@localhost/db" down
 ```
+
+**Note:** When using goose to run migrations, goose creates its own `goose_db_version` table. If you want to use Vorzela's migration tracking instead, use `vm migrate` commands. The primary use case for goose compatibility is **sqlc integration**, not as a replacement for Vorzela's migration runner.
 
 ### Complete Project Example
 
