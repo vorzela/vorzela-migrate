@@ -16,14 +16,14 @@ import (
 
 // MigrationOptions configures migration execution
 type MigrationOptions struct {
-	DryRun           bool
-	Force            bool
-	Online           bool // Use zero-downtime techniques
-	VerifyChecksums  bool
-	DetectDrift      bool
-	Verbose          bool
-	SkipLock         bool
-	DriftHandling    string // auto, reject, prompt
+	DryRun          bool
+	Force           bool
+	Online          bool // Use zero-downtime techniques
+	VerifyChecksums bool
+	DetectDrift     bool
+	Verbose         bool
+	SkipLock        bool
+	DriftHandling   string // auto, reject, prompt
 }
 
 // ExecutionResult tracks migration execution details
@@ -123,7 +123,7 @@ func (e *EnhancedExecutor) RunMigrationsEnhanced(opts MigrationOptions) ([]Execu
 	}
 
 	// Get next batch number
-	batch, err := getNextBatchNumber(e.conn, e.dialect)
+	batch, err := getNextBatchNumber(e.conn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get batch number: %w", err)
 	}
@@ -142,7 +142,7 @@ func (e *EnhancedExecutor) RunMigrationsEnhanced(opts MigrationOptions) ([]Execu
 	}
 
 	e.logger.Info("Found %d pending migration(s)", pendingCount)
-	
+
 	current := 0
 	for _, file := range files {
 		if _, exists := executedMap[file.Filename]; exists {
@@ -286,7 +286,7 @@ func (e *EnhancedExecutor) executeMigrationWithRecovery(sqlContent string, migra
 // isOnlineCompatible checks if a statement can be executed with online techniques
 func (e *EnhancedExecutor) isOnlineCompatible(stmt string) bool {
 	stmtUpper := strings.ToUpper(strings.TrimSpace(stmt))
-	
+
 	// Check for ADD COLUMN operations
 	if strings.Contains(stmtUpper, "ALTER TABLE") && strings.Contains(stmtUpper, "ADD COLUMN") {
 		return true
@@ -319,7 +319,7 @@ func splitStatements(sqlContent string) []string {
 	lines := strings.Split(sqlContent, "\n")
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		
+
 		// Skip comments
 		if strings.HasPrefix(trimmed, "--") {
 			continue
@@ -371,7 +371,7 @@ func (e *EnhancedExecutor) verifyChecksums(executed []Migration) error {
 
 		filePath := filepath.Join(e.migrationPath, mig.Migration)
 		match, err := ChecksumMatch(filePath, mig.Checksum)
-		
+
 		if err != nil {
 			e.logger.Warning("Could not verify checksum for %s: %v", mig.Migration, err)
 			continue
@@ -384,7 +384,7 @@ func (e *EnhancedExecutor) verifyChecksums(executed []Migration) error {
 	}
 
 	if len(mismatches) > 0 {
-		return fmt.Errorf("checksum mismatch detected in %d migration(s): %s", 
+		return fmt.Errorf("checksum mismatch detected in %d migration(s): %s",
 			len(mismatches), strings.Join(mismatches, ", "))
 	}
 
@@ -448,28 +448,28 @@ func (e *EnhancedExecutor) detectAndHandleDrift(opts MigrationOptions) error {
 func (e *EnhancedExecutor) autoApplyDrift(drifts []*SchemaDrift, opts MigrationOptions) error {
 	for _, drift := range drifts {
 		statements := e.inspector.GenerateAlterStatements(drift)
-		
+
 		for _, stmt := range statements {
 			e.logger.Info("Auto-applying: %s", stmt)
-			
+
 			if opts.DryRun {
 				e.logger.Info("DRY RUN - Would execute: %s", stmt)
 				continue
 			}
-			
+
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			err := e.conn.Exec(ctx, stmt)
 			cancel()
-			
+
 			if err != nil {
 				e.logger.Error("Failed to apply drift fix: %v", err)
 				return fmt.Errorf("failed to apply drift fix for %s: %w", drift.Table, err)
 			}
-			
+
 			e.logger.Success("Applied drift fix for table '%s'", drift.Table)
 		}
 	}
-	
+
 	e.logger.Success("All drift fixes applied successfully")
 	return nil
 }
@@ -484,9 +484,9 @@ func (e *EnhancedExecutor) promptAndApplyDrift(drifts []*SchemaDrift, opts Migra
 			fmt.Println("  " + stmt)
 		}
 	}
-	
+
 	e.logger.Prompt("Apply these changes automatically? (yes/no/generate)")
-	
+
 	reader := bufio.NewReader(os.Stdin)
 	response, err := reader.ReadString('\n')
 	if err != nil {
@@ -494,18 +494,18 @@ func (e *EnhancedExecutor) promptAndApplyDrift(drifts []*SchemaDrift, opts Migra
 	}
 
 	response = strings.TrimSpace(strings.ToLower(response))
-	
+
 	switch response {
 	case "yes", "y":
 		// Apply changes immediately
 		e.logger.Info("Applying drift fixes...")
 		return e.autoApplyDrift(drifts, opts)
-		
+
 	case "generate", "g":
 		// Just generate migration file
 		e.logger.Info("You can add these to a new migration file")
 		return nil
-		
+
 	default:
 		e.logger.Info("Drift fixes skipped")
 		return nil
@@ -555,7 +555,7 @@ func (e *EnhancedExecutor) RollbackWithWarnings(steps int, opts MigrationOptions
 
 	// Determine migrations to rollback
 	toRollback := selectMigrationsToRollback(executed, steps)
-	
+
 	if len(toRollback) == 0 {
 		e.logger.Info("No migrations selected for rollback")
 		return results, nil
@@ -566,10 +566,10 @@ func (e *EnhancedExecutor) RollbackWithWarnings(steps int, opts MigrationOptions
 	for _, mig := range toRollback {
 		fmt.Printf("  - %s (batch %d)\n", mig.Migration, mig.Batch)
 	}
-	
+
 	if !opts.Force {
 		e.logger.Prompt("Continue with rollback? (yes/no)")
-		
+
 		reader := bufio.NewReader(os.Stdin)
 		response, err := reader.ReadString('\n')
 		if err != nil {
@@ -653,7 +653,7 @@ func (e *EnhancedExecutor) rollbackSingleMigration(mig Migration, opts Migration
 	}
 
 	// Remove record
-	if err := removeMigrationRecord(e.conn, mig, e.dialect); err != nil {
+	if err := removeMigrationRecord(e.conn, mig); err != nil {
 		result.Error = fmt.Errorf("rollback succeeded but failed to remove record: %w", err)
 		e.logger.Warning("%v", result.Error)
 	}
@@ -681,7 +681,7 @@ func selectMigrationsToRollback(executed []Migration, steps int) []Migration {
 	for b := range batchSet {
 		batches = append(batches, b)
 	}
-	
+
 	// Sort descending
 	for i := 0; i < len(batches)-1; i++ {
 		for j := i + 1; j < len(batches); j++ {

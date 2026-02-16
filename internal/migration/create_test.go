@@ -174,7 +174,7 @@ func TestCreateMigrationWithOptions(t *testing.T) {
 			// Use unique subdirectory for each test
 			testDir := filepath.Join(tmpDir, tt.name)
 			err := CreateMigrationWithOptions(tt.migName, testDir, tt.opts)
-			
+
 			if (err != nil) != tt.wantErr {
 				t.Errorf("CreateMigrationWithOptions() error = %v, wantErr %v", err, tt.wantErr)
 				return

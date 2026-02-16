@@ -23,17 +23,17 @@ type TableSchema struct {
 
 // SchemaDrift represents detected schema differences
 type SchemaDrift struct {
-	Table         string
-	AddedColumns  []ColumnInfo
+	Table           string
+	AddedColumns    []ColumnInfo
 	ModifiedColumns []ColumnModification
 }
 
 // ColumnModification represents a changed column
 type ColumnModification struct {
-	Name     string
-	OldType  string
-	NewType  string
-	Changed  string // "type", "nullable", "default"
+	Name    string
+	OldType string
+	NewType string
+	Changed string // "type", "nullable", "default"
 }
 
 // SchemaInspector inspects database schema for drift detection
@@ -83,16 +83,16 @@ func (si *SchemaInspector) getPostgresTableSchema(tableName string) (*TableSchem
 	defer rows.Close()
 
 	schema := &TableSchema{Name: tableName}
-	
+
 	for rows.Next() {
 		var col ColumnInfo
 		var nullable string
-		
+
 		err := rows.Scan(&col.Name, &col.Type, &nullable, &col.Default)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan column: %w", err)
 		}
-		
+
 		col.Nullable = (nullable == "YES")
 		schema.Columns = append(schema.Columns, col)
 	}
@@ -121,16 +121,16 @@ func (si *SchemaInspector) getMySQLTableSchema(tableName string) (*TableSchema, 
 	defer rows.Close()
 
 	schema := &TableSchema{Name: tableName}
-	
+
 	for rows.Next() {
 		var col ColumnInfo
 		var nullable string
-		
+
 		err := rows.Scan(&col.Name, &col.Type, &nullable, &col.Default)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan column: %w", err)
 		}
-		
+
 		col.Nullable = (nullable == "YES")
 		schema.Columns = append(schema.Columns, col)
 	}
@@ -160,8 +160,8 @@ func (si *SchemaInspector) DetectDrift(tableName string, expectedColumns []strin
 	for _, col := range currentSchema.Columns {
 		if !expectedMap[col.Name] {
 			// Skip standard columns that are auto-added
-			if col.Name == "id" || col.Name == "created_at" || 
-			   col.Name == "updated_at" || col.Name == "deleted_at" {
+			if col.Name == "id" || col.Name == "created_at" ||
+				col.Name == "updated_at" || col.Name == "deleted_at" {
 				continue
 			}
 			drift.AddedColumns = append(drift.AddedColumns, col)
@@ -178,7 +178,7 @@ func (si *SchemaInspector) GenerateAlterStatements(drift *SchemaDrift) []string 
 	}
 
 	var statements []string
-	
+
 	for _, col := range drift.AddedColumns {
 		stmt := si.generateAddColumnStatement(drift.Table, col)
 		statements = append(statements, stmt)
@@ -190,24 +190,24 @@ func (si *SchemaInspector) GenerateAlterStatements(drift *SchemaDrift) []string 
 // generateAddColumnStatement creates ALTER TABLE ADD COLUMN statement
 func (si *SchemaInspector) generateAddColumnStatement(table string, col ColumnInfo) string {
 	var parts []string
-	parts = append(parts, fmt.Sprintf("ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s", 
+	parts = append(parts, fmt.Sprintf("ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s",
 		table, col.Name, col.Type))
-	
+
 	if !col.Nullable {
 		parts = append(parts, "NOT NULL")
 	}
-	
+
 	if col.Default.Valid {
 		parts = append(parts, fmt.Sprintf("DEFAULT %s", col.Default.String))
 	}
-	
+
 	return strings.Join(parts, " ") + ";"
 }
 
 // GetAllTables returns all user tables in the database
 func (si *SchemaInspector) GetAllTables() ([]string, error) {
 	var query string
-	
+
 	switch si.dialect {
 	case PostgreSQL:
 		query = `

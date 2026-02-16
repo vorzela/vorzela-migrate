@@ -11,11 +11,11 @@ import (
 
 func TestNewMigrationLogger(t *testing.T) {
 	logger := NewMigrationLogger(true)
-	
+
 	if logger == nil {
 		t.Error("NewMigrationLogger() returned nil")
 	}
-	
+
 	if !logger.verbose {
 		t.Error("Logger should be verbose when true is passed")
 	}
@@ -42,7 +42,7 @@ func TestLoggerVerboseMode(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			logger := NewMigrationLogger(tt.verbose)
-			
+
 			if logger.verbose != tt.want {
 				t.Errorf("Logger verbose = %v, want %v", logger.verbose, tt.want)
 			}
@@ -67,11 +67,11 @@ func captureOutput(f func()) string {
 
 func TestLoggerSuccess(t *testing.T) {
 	logger := NewMigrationLogger(true)
-	
+
 	output := captureOutput(func() {
 		logger.Success("Migration completed")
 	})
-	
+
 	if !strings.Contains(output, "SUCCESS") && !strings.Contains(output, "✓") {
 		t.Logf("Output: %s", output)
 	}
@@ -79,11 +79,11 @@ func TestLoggerSuccess(t *testing.T) {
 
 func TestLoggerInfo(t *testing.T) {
 	logger := NewMigrationLogger(true)
-	
+
 	output := captureOutput(func() {
 		logger.Info("Running migration %s", "001_create_users.sql")
 	})
-	
+
 	if !strings.Contains(output, "INFO") && !strings.Contains(output, "ℹ") {
 		t.Logf("Output: %s", output)
 	}
@@ -91,11 +91,11 @@ func TestLoggerInfo(t *testing.T) {
 
 func TestLoggerWarning(t *testing.T) {
 	logger := NewMigrationLogger(true)
-	
+
 	output := captureOutput(func() {
 		logger.Warning("Checksum mismatch detected")
 	})
-	
+
 	if !strings.Contains(output, "WARNING") && !strings.Contains(output, "⚠") {
 		t.Logf("Output: %s", output)
 	}
@@ -103,11 +103,11 @@ func TestLoggerWarning(t *testing.T) {
 
 func TestLoggerError(t *testing.T) {
 	logger := NewMigrationLogger(true)
-	
+
 	output := captureOutput(func() {
 		logger.Error("Migration failed: %v", "connection timeout")
 	})
-	
+
 	if !strings.Contains(output, "ERROR") && !strings.Contains(output, "✗") {
 		t.Logf("Output: %s", output)
 	}
@@ -115,11 +115,11 @@ func TestLoggerError(t *testing.T) {
 
 func TestLoggerProgress(t *testing.T) {
 	logger := NewMigrationLogger(true)
-	
+
 	output := captureOutput(func() {
 		logger.Progress(1, 5, "Migrating table users...")
 	})
-	
+
 	if output == "" {
 		t.Log("Progress output captured")
 	}
@@ -127,11 +127,11 @@ func TestLoggerProgress(t *testing.T) {
 
 func TestLoggerPrompt(t *testing.T) {
 	logger := NewMigrationLogger(true)
-	
+
 	output := captureOutput(func() {
 		logger.Prompt("Continue? (yes/no)")
 	})
-	
+
 	if output == "" {
 		t.Log("Prompt output captured")
 	}
@@ -164,11 +164,11 @@ func TestFormatDuration(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// formatDuration is a package-level function
 			formatted := formatDuration(tt.duration)
-			
+
 			if formatted == "" {
 				t.Error("formatDuration() returned empty string")
 			}
-			
+
 			if !strings.Contains(formatted, tt.wantUnit) {
 				t.Logf("Formatted duration: %s (expected unit: %s)", formatted, tt.wantUnit)
 			}
@@ -178,11 +178,11 @@ func TestFormatDuration(t *testing.T) {
 
 func TestMigrationComplete(t *testing.T) {
 	logger := NewMigrationLogger(true)
-	
+
 	output := captureOutput(func() {
 		logger.MigrationComplete("001_create_users.sql", 100*time.Millisecond)
 	})
-	
+
 	if !strings.Contains(output, "Completed") && !strings.Contains(output, "✓") {
 		t.Logf("Output: %s", output)
 	}
@@ -190,11 +190,11 @@ func TestMigrationComplete(t *testing.T) {
 
 func TestMigrationFailed(t *testing.T) {
 	logger := NewMigrationLogger(true)
-	
+
 	output := captureOutput(func() {
 		logger.MigrationFailed("002_add_column.sql", os.ErrNotExist)
 	})
-	
+
 	if !strings.Contains(output, "Failed") && !strings.Contains(output, "✗") {
 		t.Logf("Output: %s", output)
 	}
@@ -203,21 +203,21 @@ func TestMigrationFailed(t *testing.T) {
 func TestVerboseFiltering(t *testing.T) {
 	// Verbose mode should show debug messages
 	verboseLogger := NewMigrationLogger(true)
-	
+
 	output := captureOutput(func() {
 		verboseLogger.Debug("Debug message")
 	})
-	
+
 	// In verbose mode, debug should appear
 	_ = output // Would contain debug in real implementation
-	
+
 	// Non-verbose mode should hide debug messages
 	quietLogger := NewMigrationLogger(false)
-	
+
 	output2 := captureOutput(func() {
 		quietLogger.Debug("Debug message")
 	})
-	
+
 	// In quiet mode, debug should not appear (or be filtered)
 	_ = output2
 }
@@ -246,8 +246,8 @@ func TestLogLevels(t *testing.T) {
 func TestColorCodes(t *testing.T) {
 	// ANSI color codes should be valid
 	tests := []struct {
-		name  string
-		code  string
+		name string
+		code string
 	}{
 		{"reset", "\033[0m"},
 		{"green", "\033[32m"},
@@ -262,7 +262,7 @@ func TestColorCodes(t *testing.T) {
 			if len(tt.code) == 0 {
 				t.Errorf("Color code for %s is empty", tt.name)
 			}
-			
+
 			if !strings.HasPrefix(tt.code, "\033[") {
 				t.Errorf("Invalid ANSI code: %s", tt.code)
 			}
@@ -272,13 +272,13 @@ func TestColorCodes(t *testing.T) {
 
 func TestMultipleLogCalls(t *testing.T) {
 	logger := NewMigrationLogger(true)
-	
+
 	output := captureOutput(func() {
 		logger.Info("First message")
 		logger.Info("Second message")
 		logger.Success("Third message")
 	})
-	
+
 	// Should contain all messages
 	if len(output) == 0 {
 		t.Error("No output captured from multiple log calls")
@@ -306,7 +306,7 @@ func TestFormatDurationPrecision(t *testing.T) {
 
 func BenchmarkLoggerInfo(b *testing.B) {
 	logger := NewMigrationLogger(false) // Quiet mode for benchmark
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		logger.Info("Benchmark message %d", i)
@@ -315,7 +315,7 @@ func BenchmarkLoggerInfo(b *testing.B) {
 
 func BenchmarkFormatDuration(b *testing.B) {
 	duration := 123 * time.Millisecond
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		formatDuration(duration)
@@ -325,7 +325,7 @@ func BenchmarkFormatDuration(b *testing.B) {
 func BenchmarkMigrationComplete(b *testing.B) {
 	logger := NewMigrationLogger(false)
 	duration := 100 * time.Millisecond
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		logger.MigrationComplete("test.sql", duration)

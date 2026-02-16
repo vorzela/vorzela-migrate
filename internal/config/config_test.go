@@ -8,14 +8,14 @@ import (
 
 func TestLoadConfig(t *testing.T) {
 	tests := []struct {
-		name          string
-		dsnOverride   string
-		pathOverride  string
-		envVars       map[string]string
-		vmFile        string
-		wantErr       bool
-		expectedDSN   string
-		expectedPath  string
+		name         string
+		dsnOverride  string
+		pathOverride string
+		envVars      map[string]string
+		vmFile       string
+		wantErr      bool
+		expectedDSN  string
+		expectedPath string
 	}{
 		{
 			name:         "DSN override takes precedence",
@@ -228,7 +228,7 @@ func TestNormalizeEnvironment(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := &Config{Environment: tt.input}
 			cfg.NormalizeEnvironment()
-			
+
 			if cfg.Environment != tt.expected {
 				t.Errorf("NormalizeEnvironment() = %q, want %q", cfg.Environment, tt.expected)
 			}
@@ -240,9 +240,9 @@ func TestApplyEnvironmentDefaults_Development(t *testing.T) {
 	cfg := &Config{
 		Environment: "development",
 	}
-	
+
 	cfg.ApplyEnvironmentDefaults()
-	
+
 	// Development defaults
 	if !cfg.Enhanced {
 		t.Error("Development should enable Enhanced mode")
@@ -268,9 +268,9 @@ func TestApplyEnvironmentDefaults_Production(t *testing.T) {
 	cfg := &Config{
 		Environment: "production",
 	}
-	
+
 	cfg.ApplyEnvironmentDefaults()
-	
+
 	// Production defaults
 	if !cfg.Enhanced {
 		t.Error("Production should enable Enhanced mode")
@@ -312,7 +312,7 @@ func TestIsProduction(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := &Config{Environment: tt.environment}
 			cfg.NormalizeEnvironment()
-			
+
 			got := cfg.IsProduction()
 			if got != tt.want {
 				t.Errorf("IsProduction() = %v, want %v for environment %q", got, tt.want, tt.environment)
@@ -341,7 +341,7 @@ func TestIsDevelopment(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := &Config{Environment: tt.environment}
 			cfg.NormalizeEnvironment()
-			
+
 			got := cfg.IsDevelopment()
 			if got != tt.want {
 				t.Errorf("IsDevelopment() = %v, want %v for environment %q", got, tt.want, tt.environment)
@@ -523,7 +523,7 @@ func TestConfigOverridesPrecedence(t *testing.T) {
 	// Apply defaults (should not override explicit false values)
 	// Note: In actual implementation, you'd need logic to track which values
 	// were explicitly set vs. defaults. This test validates the concept.
-	
+
 	if cfg.Environment != "production" {
 		t.Error("Environment should remain production")
 	}
@@ -531,7 +531,7 @@ func TestConfigOverridesPrecedence(t *testing.T) {
 
 func BenchmarkNormalizeEnvironment(b *testing.B) {
 	cfg := &Config{Environment: "DEVELOPMENT"}
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		cfg.NormalizeEnvironment()
@@ -540,7 +540,7 @@ func BenchmarkNormalizeEnvironment(b *testing.B) {
 
 func BenchmarkApplyEnvironmentDefaults(b *testing.B) {
 	cfg := &Config{Environment: "production"}
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		cfg.ApplyEnvironmentDefaults()

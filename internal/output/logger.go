@@ -16,7 +16,7 @@ const (
 	ColorCyan    = "\033[36m"
 	ColorWhite   = "\033[37m"
 	ColorGray    = "\033[90m"
-	
+
 	ColorBold      = "\033[1m"
 	ColorDim       = "\033[2m"
 	ColorUnderline = "\033[4m"
@@ -78,10 +78,10 @@ func (l *MigrationLogger) Debug(format string, args ...interface{}) {
 func (l *MigrationLogger) log(level LogLevel, color string, format string, args ...interface{}) {
 	timestamp := time.Now().Format("15:04:05")
 	message := fmt.Sprintf(format, args...)
-	
+
 	levelStr := fmt.Sprintf("%s%-7s%s", color, level, ColorReset)
 	timeStr := fmt.Sprintf("%s%s%s", ColorGray, timestamp, ColorReset)
-	
+
 	fmt.Printf("[%s] %s %s\n", levelStr, timeStr, message)
 }
 
@@ -97,8 +97,8 @@ func (l *MigrationLogger) Migration(name string, version string) {
 
 // MigrationComplete logs the completion of a migration with elapsed time
 func (l *MigrationLogger) MigrationComplete(name string, elapsed time.Duration) {
-	fmt.Printf("%s✓ Completed:%s %s %s(%s)%s\n", 
-		ColorGreen, ColorReset, name, 
+	fmt.Printf("%s✓ Completed:%s %s %s(%s)%s\n",
+		ColorGreen, ColorReset, name,
 		ColorGray, formatDuration(elapsed), ColorReset)
 }
 
@@ -115,7 +115,7 @@ func (l *MigrationLogger) Step(step string) {
 
 // StepComplete logs a completed step with timing
 func (l *MigrationLogger) StepComplete(step string, elapsed time.Duration) {
-	fmt.Printf("  %s✓%s %s %s(%s)%s\n", 
+	fmt.Printf("  %s✓%s %s %s(%s)%s\n",
 		ColorGreen, ColorReset, step,
 		ColorGray, formatDuration(elapsed), ColorReset)
 }
@@ -128,16 +128,16 @@ func (l *MigrationLogger) StepFailed(step string, err error) {
 // Summary logs a summary of the migration run
 func (l *MigrationLogger) Summary(successful, failed, total int) {
 	elapsed := time.Since(l.startTime)
-	
+
 	fmt.Printf("\n%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n", ColorCyan, ColorReset)
 	fmt.Printf("%sSummary%s\n", ColorBold, ColorReset)
 	fmt.Printf("  Total migrations:     %d\n", total)
 	fmt.Printf("  %sSuccessful:%s          %d\n", ColorGreen, ColorReset, successful)
-	
+
 	if failed > 0 {
 		fmt.Printf("  %sFailed:%s             %d\n", ColorRed, ColorReset, failed)
 	}
-	
+
 	fmt.Printf("  Total time:           %s\n", formatDuration(elapsed))
 	fmt.Printf("%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n", ColorCyan, ColorReset)
 }
@@ -173,7 +173,7 @@ func (l *MigrationLogger) TableRow(cells ...string) {
 // Progress shows a progress indicator
 func (l *MigrationLogger) Progress(current, total int, message string) {
 	percentage := float64(current) / float64(total) * 100
-	fmt.Printf("\r%s[%d/%d]%s %s%.0f%%%s %s", 
+	fmt.Printf("\r%s[%d/%d]%s %s%.0f%%%s %s",
 		ColorCyan, current, total, ColorReset,
 		ColorGreen, percentage, ColorReset,
 		message)

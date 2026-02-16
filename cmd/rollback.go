@@ -43,9 +43,9 @@ var RollbackCommand = &cli.Command{
 			Value: false,
 		},
 		&cli.BoolFlag{
-			Name:    "dry-run",
-			Usage:   "show what would be rolled back without executing",
-			Value:   false,
+			Name:  "dry-run",
+			Usage: "show what would be rolled back without executing",
+			Value: false,
 		},
 		&cli.BoolFlag{
 			Name:    "verbose",

@@ -37,7 +37,7 @@ func (om *OnlineMigration) AddColumnOnline(ctx context.Context, table, column, c
 func (om *OnlineMigration) addColumnPostgres(ctx context.Context, table, column, columnType string, nullable bool, defaultValue *string) error {
 	// Step 1: Add column as nullable without default (fast, no table rewrite)
 	addSQL := fmt.Sprintf("ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s", table, column, columnType)
-	
+
 	if _, err := om.db.ExecContext(ctx, addSQL); err != nil {
 		return fmt.Errorf("failed to add column: %w", err)
 	}
@@ -49,7 +49,7 @@ func (om *OnlineMigration) addColumnPostgres(ctx context.Context, table, column,
 		}
 
 		// Step 3: Add the default constraint (fast)
-		defaultSQL := fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s SET DEFAULT %s", 
+		defaultSQL := fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s SET DEFAULT %s",
 			table, column, *defaultValue)
 		if _, err := om.db.ExecContext(ctx, defaultSQL); err != nil {
 			return fmt.Errorf("failed to set default: %w", err)
@@ -82,14 +82,14 @@ func (om *OnlineMigration) addColumnPostgres(ctx context.Context, table, column,
 // addColumnMySQL adds column using MySQL non-blocking technique (requires Percona/MySQL 8.0+)
 func (om *OnlineMigration) addColumnMySQL(ctx context.Context, table, column, columnType string, nullable bool, defaultValue *string) error {
 	var addSQL string
-	
+
 	if nullable {
 		addSQL = fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s NULL", table, column, columnType)
 	} else {
 		if defaultValue == nil {
 			return fmt.Errorf("NOT NULL columns must have a default value for online migrations")
 		}
-		addSQL = fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s NOT NULL DEFAULT %s", 
+		addSQL = fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s NOT NULL DEFAULT %s",
 			table, column, columnType, *defaultValue)
 	}
 
@@ -103,7 +103,7 @@ func (om *OnlineMigration) addColumnMySQL(ctx context.Context, table, column, co
 			addSQL += fmt.Sprintf(" NOT NULL DEFAULT %s", *defaultValue)
 		}
 		addSQL += ", ALGORITHM=INPLACE, LOCK=NONE"
-		
+
 		if _, err := om.db.ExecContext(ctx, addSQL); err != nil {
 			return fmt.Errorf("failed to add column: %w", err)
 		}
@@ -115,7 +115,7 @@ func (om *OnlineMigration) addColumnMySQL(ctx context.Context, table, column, co
 // updateDefaultInBatches updates column values in batches to avoid long locks
 func (om *OnlineMigration) updateDefaultInBatches(ctx context.Context, table, column, defaultValue string) error {
 	const batchSize = 1000
-	
+
 	for {
 		// Update in small batches
 		updateSQL := fmt.Sprintf(`
@@ -160,7 +160,7 @@ func (om *OnlineMigration) CreateIndexConcurrently(ctx context.Context, indexNam
 		columnList += col
 	}
 
-	createSQL := fmt.Sprintf("CREATE INDEX CONCURRENTLY IF NOT EXISTS %s ON %s (%s)", 
+	createSQL := fmt.Sprintf("CREATE INDEX CONCURRENTLY IF NOT EXISTS %s ON %s (%s)",
 		indexName, table, columnList)
 
 	if _, err := om.db.ExecContext(ctx, createSQL); err != nil {
@@ -197,7 +197,7 @@ func (om *OnlineMigration) DropColumnOnline(ctx context.Context, table, column s
 // RenameTableOnline renames a table atomically
 func (om *OnlineMigration) RenameTableOnline(ctx context.Context, oldName, newName string) error {
 	renameSQL := fmt.Sprintf("ALTER TABLE %s RENAME TO %s", oldName, newName)
-	
+
 	if _, err := om.db.ExecContext(ctx, renameSQL); err != nil {
 		return fmt.Errorf("failed to rename table: %w", err)
 	}

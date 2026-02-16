@@ -15,14 +15,14 @@ type Config struct {
 	MigrationPath string
 	SqlcSupport   bool   // Enable goose markers for sqlc compatibility
 	Environment   string // dev, development, prod, production
-	
+
 	// Migration strategy settings
 	Enhanced        bool
 	Online          bool
 	VerifyChecksums bool
 	DetectDrift     bool
 	Verbose         bool
-	
+
 	// Drift handling: auto, reject, prompt
 	DriftHandling string
 }
@@ -167,19 +167,19 @@ func (c *Config) Validate() error {
 // NormalizeEnvironment normalizes environment names
 func (c *Config) NormalizeEnvironment() {
 	env := strings.ToLower(c.Environment)
-	
+
 	// Normalize dev/development
 	if env == "dev" || env == "develop" || env == "development" {
 		c.Environment = "development"
 		return
 	}
-	
+
 	// Normalize prod/production
 	if env == "prod" || env == "production" {
 		c.Environment = "production"
 		return
 	}
-	
+
 	// Default to development if unknown
 	c.Environment = "development"
 }
@@ -197,7 +197,7 @@ func (c *Config) IsDevelopment() bool {
 // ApplyEnvironmentDefaults applies default settings based on environment
 func (c *Config) ApplyEnvironmentDefaults() {
 	c.NormalizeEnvironment()
-	
+
 	// If no explicit settings provided, use environment-based defaults
 	if c.IsProduction() {
 		// Production defaults: all safety features enabled

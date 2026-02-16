@@ -71,7 +71,7 @@ func TestGeneratePivotTableName(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got := PivotTableName(tt.table1, tt.table2)
 			if got != tt.want {
-				t.Errorf("PivotTableName(%q, %q) = %q, want %q", 
+				t.Errorf("PivotTableName(%q, %q) = %q, want %q",
 					tt.table1, tt.table2, got, tt.want)
 			}
 		})

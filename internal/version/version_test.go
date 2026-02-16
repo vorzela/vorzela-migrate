@@ -44,7 +44,7 @@ func TestCheckForUpdate(t *testing.T) {
 	}
 
 	newVersion, available, err := CheckForUpdate()
-	
+
 	// We don't assert specific values since they depend on what's actually released
 	// Just ensure the function doesn't error and returns sensible values
 	if err != nil {

@@ -29,7 +29,7 @@ func (ml *MigrationLock) AcquireLock(ctx context.Context) error {
 	case PostgreSQL:
 		return ml.acquirePostgresLock(ctx)
 	case MySQL, MariaDB:
-		return ml.acquireMySQLLock(ctx)
+		return ml.acquireMySQLLock()
 	default:
 		return ml.acquireTableLock(ctx)
 	}
@@ -95,7 +95,7 @@ func (ml *MigrationLock) releasePostgresLock() error {
 }
 
 // acquireMySQLLock uses MySQL GET_LOCK function
-func (ml *MigrationLock) acquireMySQLLock(ctx context.Context) error {
+func (ml *MigrationLock) acquireMySQLLock() error {
 	const lockName = "vorzela_migrate_lock"
 	const lockTimeout = 30 // seconds
 
@@ -104,11 +104,11 @@ func (ml *MigrationLock) acquireMySQLLock(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to acquire lock: %w", err)
 	}
-	
+
 	if acquired != 1 {
 		return fmt.Errorf("another migration is currently running")
 	}
-	
+
 	ml.locked = true
 	return nil
 }
