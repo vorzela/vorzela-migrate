@@ -2,6 +2,17 @@
 
 All notable changes to Vorzela Migration Tool are documented in this file.
 
+## [Unreleased]
+
+### Added
+- **PostgreSQL Extensions Management**: New `vm extensions` command for managing database extensions
+  - `vm extensions migrate` - Install extensions from extensions.sql
+  - `vm extensions drop` - Remove extensions with optional step-by-step confirmation
+  - Automatic template creation with common extensions (uuid-ossp, pg_trgm, citext, postgis, etc.)
+  - Ensures extensions are separate from schema migrations
+  - IF NOT EXISTS pattern for safe re-runs
+  - Documentation on best practices for extension management
+
 ## [1.1.5] - 2026-02-16
 
 ### Added

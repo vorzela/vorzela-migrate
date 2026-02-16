@@ -34,6 +34,9 @@ vm rollback --steps=all  # All migrations
 | `make migration <name> --belongs-to <table>` | Create with one-to-many FK | `vm make migration posts --belongs-to users` |
 | `make migration <name> --one-to-one <table>` | Create with one-to-one FK | `vm make migration profiles --one-to-one users` |
 | `make migration <name> --many-to-many <table>` | Create pivot table | `vm make migration users --many-to-many roles` |
+| `extensions migrate` | Install PostgreSQL extensions | `vm extensions migrate` |
+| `extensions drop` | Drop all extensions | `vm extensions drop` |
+| `extensions drop --step` | Drop extensions with confirmation | `vm extensions drop --step` |
 | `functions migrate` | Install functions to database | `vm functions migrate` |
 | `functions drop` | Drop all common functions | `vm functions drop` |
 | `functions drop --step` | Drop functions with confirmation | `vm functions drop --step` |

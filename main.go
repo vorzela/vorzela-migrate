@@ -17,6 +17,7 @@ func main() {
 		Commands: []*cli.Command{
 			cmd.MakeCommand,
 			cmd.FunctionsCommand,
+			cmd.ExtensionsCommand,
 			cmd.MigrateCommand,
 			cmd.RollbackCommand,
 			cmd.FreshCommand,

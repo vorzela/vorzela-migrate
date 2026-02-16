@@ -351,6 +351,73 @@ SELECT * FROM users WHERE deleted_at IS NOT NULL;
 DELETE FROM users WHERE id = 1;
 ```
 
+## PostgreSQL Extensions
+
+Manage PostgreSQL extensions separately from your schema migrations in `migrations/extensions.sql`.
+
+### Why Separate Extensions?
+
+- **Install Before Migrations**: Extensions must be available before creating tables that use them
+- **Not Schema Changes**: Extensions are database-level, not schema changes
+- **Reusable**: Same extensions file across all environments
+- **IF NOT EXISTS**: Safe to re-run without errors
+
+### Quick Start
+
+```bash
+# Create extensions.sql template (first time only)
+vm extensions migrate
+
+# Edit migrations/extensions.sql and uncomment what you need
+# Then apply to database
+vm extensions migrate
+```
+
+### Common Extensions Included
+
+**UUID Generation (Recommended)**
+```sql
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+```
+
+**Full-Text Search with Trigrams**
+```sql
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+```
+
+**Case-Insensitive Text**
+```sql
+CREATE EXTENSION IF NOT EXISTS citext;
+```
+
+**Additional Extensions**
+- `postgis` - Geographic data
+- `pgcrypto` - Cryptographic functions
+- `hstore` - Key-value storage
+- `unaccent` - Remove accents from text
+
+### Managing Extensions
+
+```bash
+# Install all enabled extensions
+vm extensions migrate
+
+# Drop all extensions
+vm extensions drop
+
+# Drop with confirmation for each
+vm extensions drop --step
+```
+
+### Best Practices
+
+✅ **DO**: Add extensions to `migrations/extensions.sql`
+✅ **DO**: Use `IF NOT EXISTS` (already included in template)
+✅ **DO**: Run `vm extensions migrate` before `vm migrate`
+
+❌ **DON'T**: Add extensions in your schema migration files
+❌ **DON'T**: Manually run CREATE EXTENSION in psql
+
 ## Auto-Update Triggers
 
 The tool provides **centralized trigger functions** in `migrations/functions.sql` to avoid code duplication.
