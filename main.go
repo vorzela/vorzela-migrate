@@ -25,8 +25,10 @@ func main() {
 			cmd.UpgradeCommand,
 		},
 		After: func(c *cli.Context) error {
-			// Show version notice after command execution
-			version.PrintVersionNotice()
+			// Skip version notice for upgrade command (it handles its own messaging)
+			if c.Command.Name != "upgrade" {
+				version.PrintVersionNotice()
+			}
 			return nil
 		},
 	}
