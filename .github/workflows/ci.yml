@@ -10,7 +10,9 @@ jobs:
   test:
     name: Test
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         go: ['1.21', '1.22']
@@ -35,7 +37,7 @@ jobs:
         run: go mod verify
 
       - name: Run unit tests
-        run: go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
+        run: go test -v -short -race -coverprofile=coverage.txt -covermode=atomic -timeout=10m ./...
 
       - name: Upload coverage to Codecov
         if: matrix.os == 'ubuntu-latest' && matrix.go == '1.22'
@@ -49,6 +51,7 @@ jobs:
   lint:
     name: Lint & Format
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     
     steps:
       - name: Checkout code
@@ -81,7 +84,9 @@ jobs:
   build:
     name: Build & Smoke Test
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     
@@ -101,7 +106,7 @@ jobs:
 
       - name: Build binary (Windows)
         if: matrix.os == 'windows-latest'
-        run: go build -v -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=v1.1.5-test'" -o vm.exe main.go
+        run: go build -v -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=v2.0.0-test'" -o vm.exe main.go
 
       - name: Smoke test - version (Linux/macOS)
         if: matrix.os != 'windows-latest'
@@ -131,6 +136,7 @@ jobs:
   security:
     name: Security Scan
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     
     steps:
       - name: Checkout code
