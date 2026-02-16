@@ -1,4 +1,4 @@
-# Vorzela Migration Tool (v1.1.4)
+# Vorzela Migration Tool (v1.1.5)
 
 
 ## ✨ Features
@@ -205,6 +205,7 @@ Migrations are SQL files with a special format. The tool automatically extracts 
 -- Migration: CREATE_USERS_TABLE
 -- Created at: 2026-02-05 10:30:45
 
+-- +goose Up
 -- ⬆ Up (Run when migrating forward)
 BEGIN;
 
@@ -217,6 +218,7 @@ CREATE TABLE users (
 
 COMMIT;
 
+-- +goose Down
 -- ⬇ Down (Run when rolling back)
 BEGIN;
 
@@ -224,6 +226,8 @@ DROP TABLE IF EXISTS users;
 
 COMMIT;
 ```
+
+**Note**: The `-- +goose Up` and `-- +goose Down` markers provide compatibility with sqlc and other tools.
 
 ## Configuration
 
@@ -647,7 +651,10 @@ Check your DATABASE_URL or --dsn flag. Ensure PostgreSQL is running.
 Use snake_case with only lowercase letters, numbers, and underscores.
 
 ### "No UP section found"
-Ensure your migration file has the proper format with `-- ⬆ Up` marker.
+Ensure your migration file has the proper format with `-- +goose Up` and `-- ⬆ Up` markers.
+
+### "migrations table does not exist"
+Run your first migration with `vm migrate` to initialize the migrations table.
 
 ## License
 

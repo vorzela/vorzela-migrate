@@ -193,6 +193,7 @@ DROP TRIGGER IF EXISTS trigger_%s_auto_update ON %s;
 	return fmt.Sprintf(`-- Migration: %s
 -- Created at: %s
 %s
+-- +goose Up
 -- ⬆ Up (Run when migrating forward)
 BEGIN;
 
@@ -201,6 +202,7 @@ CREATE TABLE IF NOT EXISTS %s (
 );%s%s
 COMMIT;
 
+-- +goose Down
 -- ⬇ Down (Run when rolling back)
 BEGIN;
 %s

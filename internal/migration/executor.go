@@ -44,7 +44,7 @@ func RunMigrations(conn db.DB, migrationPath string, dsn string) (int, error) {
 
 	// Get executed migrations
 	dialect := DetectDialect(dsn)
-	executed, err := getExecutedMigrations(conn, dialect)
+	executed, err := getExecutedMigrations(conn)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get executed migrations: %w", err)
 	}
@@ -114,7 +114,7 @@ func RunMigrations(conn db.DB, migrationPath string, dsn string) (int, error) {
 func RollbackMigrations(conn db.DB, migrationPath string, steps int, dsn string) (int, error) {
 	// Get executed migrations in reverse order
 	dialect := DetectDialect(dsn)
-	executed, err := getExecutedMigrations(conn, dialect)
+	executed, err := getExecutedMigrations(conn)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get executed migrations: %w", err)
 	}
@@ -194,7 +194,7 @@ func RollbackMigrations(conn db.DB, migrationPath string, steps int, dsn string)
 // RollbackAllMigrations rolls back all migrations
 func RollbackAllMigrations(conn db.DB, migrationPath string, dsn string) (int, error) {
 	dialect := DetectDialect(dsn)
-	executed, err := getExecutedMigrations(conn, dialect)
+	executed, err := getExecutedMigrations(conn)
 	if err != nil {
 		return 0, err
 	}
@@ -279,12 +279,17 @@ func getMigrationFiles(basePath string) ([]MigrationFile, error) {
 	return migrations, nil
 }
 
-func getExecutedMigrations(conn db.DB, dialect Dialect) ([]Migration, error) {
+func getExecutedMigrations(conn db.DB) ([]Migration, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	rows, err := conn.Query(ctx, "SELECT id, migration, batch FROM migrations ORDER BY batch, id")
 	if err != nil {
+		// Check if the error is about the migrations table not existing
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "does not exist") || strings.Contains(errMsg, "doesn't exist") {
+			return nil, fmt.Errorf("migrations table does not exist. Please run your first migration with: vm migrate")
+		}
 		return nil, err
 	}
 	defer rows.Close()

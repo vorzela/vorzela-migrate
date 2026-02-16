@@ -177,6 +177,7 @@ CREATE TRIGGER trigger_%s_auto_update
 -- Created at: %s
 -- Relationship: %s <-> %s (Many-to-Many)
 
+-- +goose Up
 -- ⬆ Up (Run when migrating forward)
 BEGIN;
 
@@ -187,6 +188,7 @@ CREATE TABLE IF NOT EXISTS %s (
 
 COMMIT;
 
+-- +goose Down
 -- ⬇ Down (Run when rolling back)
 BEGIN;
 %s

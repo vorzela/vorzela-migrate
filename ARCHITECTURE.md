@@ -253,11 +253,13 @@ Migration files use a special format with UP and DOWN sections:
 -- Migration: UPPERCASE_NAME
 -- Created at: YYYY-MM-DD HH:MM:SS
 
+-- +goose Up
 -- ⬆ Up (Run when migrating forward)
 BEGIN;
 -- Your migration SQL here
 COMMIT;
 
+-- +goose Down
 -- ⬇ Down (Run when rolling back)
 BEGIN;
 -- Your rollback SQL here
@@ -270,6 +272,7 @@ The tool extracts UP/DOWN sections using markers:
 1. `-- ⬆ Up` marks the start of the UP section
 2. `-- ⬇ Down` marks the end of UP and start of DOWN section
 3. End of file marks the end of DOWN section
+4. `-- +goose Up` and `-- +goose Down` markers are included for sqlc compatibility
 
 ### SQL Execution
 

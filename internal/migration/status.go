@@ -18,8 +18,7 @@ func ShowStatus(conn db.DB, migrationPath string, dsn string) error {
 	}
 
 	// Get executed migrations
-	dialect := DetectDialect(dsn)
-	executed, err := getExecutedMigrations(conn, dialect)
+	executed, err := getExecutedMigrations(conn)
 	if err != nil {
 		return fmt.Errorf("failed to get executed migrations: %w", err)
 	}

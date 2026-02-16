@@ -135,11 +135,13 @@ vm make migration create_users_table_v2
 
 **Solution**: Ensure migration file has proper format:
 ```sql
+-- +goose Up
 -- ⬆ Up (Run when migrating forward)
 BEGIN;
 -- Your SQL here
 COMMIT;
 
+-- +goose Down
 -- ⬇ Down (Run when rolling back)
 BEGIN;
 -- Your SQL here
@@ -151,11 +153,22 @@ COMMIT;
 
 **Solution**: Add DOWN section to migration file:
 ```sql
+-- +goose Down
 -- ⬇ Down (Run when rolling back)
 BEGIN;
 DROP TABLE IF EXISTS users CASCADE;
 COMMIT;
 ```
+
+#### "migrations table does not exist"
+**Problem**: The migrations tracking table hasn't been created yet
+
+**Solution**: Run your first migration to initialize the migrations table:
+```bash
+vm migrate
+```
+
+The migrations table is automatically created the first time you run `vm migrate`.
 
 #### "failed to execute migration"
 **Problem**: SQL syntax error or constraint violation
