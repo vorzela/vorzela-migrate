@@ -11,7 +11,8 @@
 - 🔒 **Transaction Safety** - All-or-nothing migration execution
 - ⚠️ **Warning System** - Alerts for missing migration sections
 - 🌍 **Global CLI** - Install and use from anywhere
-- 📚 **Comprehensive Docs** - Full documentation and examples
+- � **sqlc & goose Compatible** - Full integration with sqlc (type-safe queries) and goose migrations
+- �📚 **Comprehensive Docs** - Full documentation and examples
 
 ### 🚀 Enhanced Features (v2.0.0)
 
@@ -595,18 +596,258 @@ DROP TABLE IF EXISTS users;
 COMMIT;
 ```
 
-### Optional: sqlc/goose Compatibility
+## 🔌 Integration with sqlc & goose
 
-If you use **sqlc** or other goose-compatible tools, enable goose markers in your `.vm` config file:
+Vorzela migrations are fully compatible with [**sqlc**](https://sqlc.dev/) (SQL compiler) and [**goose**](https://github.com/pressly/goose) (database migration tool). When enabled, all generated migrations include goose-style directional markers.
 
-```bash
+### Why Use This Integration?
+
+- **sqlc**: Generate type-safe Go code from SQL queries. Works with goose-style migrations.
+- **goose**: Popular migration tool with extensive ecosystem support.
+- **Compatibility**: Use Vorzela for migration generation and sqlc for query code generation seamlessly.
+
+### Enable sqlc/goose Support
+
+Add `SQLC_SUPPORT=true` to your `.vm` configuration file:
+
+```ini
 # .vm file
 DATABASE_URL=postgres://user:pass@localhost:5432/mydb
 MIGRATION_PATH=./migrations
-SQLC_SUPPORT=true  # Add this line
+SQLC_SUPPORT=true  # Enables goose markers
 ```
 
-With `SQLC_SUPPORT=true`, migrations will include `-- +goose Up` and `-- +goose Down` markers.
+Or set it as an environment variable:
+
+```bash
+export SQLC_SUPPORT=true
+```
+
+### Migration File Comparison
+
+**Without SQLC_SUPPORT (default):**
+
+```sql
+-- Migration: CREATE_TABLE_USERS
+-- Created at: 2024-01-15 10:30:00
+
+-- ⬆ Up (Run when migrating forward)
+BEGIN;
+
+CREATE TABLE IF NOT EXISTS users (
+    id SERIAL PRIMARY KEY,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+COMMIT;
+
+-- ⬇ Down (Run when rolling back)
+BEGIN;
+
+DROP TABLE IF EXISTS users CASCADE;
+
+COMMIT;
+```
+
+**With SQLC_SUPPORT=true:**
+
+```sql
+-- Migration: CREATE_TABLE_USERS
+-- Created at: 2024-01-15 10:30:00
+
+-- +goose Up
+-- ⬆ Up (Run when migrating forward)
+BEGIN;
+
+CREATE TABLE IF NOT EXISTS users (
+    id SERIAL PRIMARY KEY,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+COMMIT;
+
+-- +goose Down
+-- ⬇ Down (Run when rolling back)
+BEGIN;
+
+DROP TABLE IF EXISTS users CASCADE;
+
+COMMIT;
+```
+
+### Using with sqlc Workflow
+
+**Step 1:** Enable sqlc support in `.vm`:
+
+```ini
+DATABASE_URL=postgres://user:pass@localhost:5432/mydb
+MIGRATION_PATH=./migrations
+SQLC_SUPPORT=true
+```
+
+**Step 2:** Create migrations with Vorzela:
+
+```bash
+vm make migration users
+vm make migration posts
+```
+
+**Step 3:** Configure sqlc (sqlc.yaml):
+
+```yaml
+version: "2"
+sql:
+  - engine: "postgresql"
+    queries: "./queries"
+    schema: "./migrations"  # Point to your Vorzela migrations
+    gen:
+      go:
+        package: "db"
+        out: "./internal/db"
+        emit_json_tags: true
+        emit_prepared_queries: true
+        emit_interface: true
+```
+
+**Step 4:** Run migrations and generate Go code:
+
+```bash
+# Run Vorzela migrations
+vm migrate
+
+# Generate type-safe Go code from your queries
+sqlc generate
+```
+
+**Step 5:** Write queries in `./queries/users.sql`:
+
+```sql
+-- name: GetUser :one
+SELECT * FROM users WHERE id = $1;
+
+-- name: ListUsers :many
+SELECT * FROM users ORDER BY created_at DESC;
+
+-- name: CreateUser :one
+INSERT INTO users (email) 
+VALUES ($1) 
+RETURNING *;
+```
+
+**Step 6:** Use generated code in Go:
+
+```go
+package main
+
+import (
+    "context"
+    "database/sql"
+    "yourapp/internal/db"
+)
+
+func main() {
+    conn, _ := sql.Open("postgres", "...")
+    queries := db.New(conn)
+    
+    // Type-safe database queries!
+    user, err := queries.GetUser(context.Background(), 1)
+    users, err := queries.ListUsers(context.Background())
+}
+```
+
+### Using with goose Directly
+
+Vorzela migrations can also be run directly with goose:
+
+```bash
+# Install goose
+go install github.com/pressly/goose/v3/cmd/goose@latest
+
+# Run migrations with goose
+goose postgres "postgres://user:pass@localhost/db" up
+
+# Check status
+goose postgres "postgres://user:pass@localhost/db" status
+
+# Rollback
+goose postgres "postgres://user:pass@localhost/db" down
+```
+
+### Complete Project Example
+
+```
+myproject/
+├── .vm                          # Vorzela config
+├── sqlc.yaml                    # sqlc config
+├── migrations/                  # Vorzela-generated migrations
+│   ├── 20240115103000_create_table_users.sql
+│   ├── 20240115104000_create_table_posts.sql
+│   └── 20240115105000_create_table_comments.sql
+├── queries/                     # SQL queries for sqlc
+│   ├── users.sql
+│   ├── posts.sql
+│   └── comments.sql
+└── internal/
+    └── db/                      # sqlc-generated Go code
+        ├── db.go
+        ├── models.go
+        ├── querier.go
+        ├── users.sql.go
+        ├── posts.sql.go
+        └── comments.sql.go
+```
+
+### Workflow Commands
+
+```bash
+# 1. Create migration
+vm make migration users
+
+# 2. Edit migration file if needed
+# (migrations are auto-generated, but you can customize)
+
+# 3. Run migrations
+vm migrate
+
+# 4. Generate type-safe Go code
+sqlc generate
+
+# 5. Use in your application
+go run main.go
+```
+
+### Best Practices
+
+1. **Version Control**: Commit both migrations and generated code
+2. **CI/CD**: Run `vm migrate` before `sqlc generate` in pipelines
+3. **Testing**: Use separate databases for development and testing
+4. **Code Generation**: Add `internal/db/*` to `.gitignore` if regenerating in CI
+5. **Migration Reviews**: Always review auto-generated migrations before running
+
+### Features That Work Together
+
+All Vorzela features work seamlessly with sqlc/goose markers:
+
+```ini
+# .vm - Full-featured configuration
+DATABASE_URL=postgres://localhost:5432/mydb
+MIGRATION_PATH=./migrations
+ENVIRONMENT=production
+SQLC_SUPPORT=true              # Enable goose markers
+VERIFY_CHECKSUMS=true          # Ensure migration integrity
+DETECT_DRIFT=true              # Detect manual schema changes
+ONLINE_MIGRATIONS=true         # Zero-downtime migrations
+```
+
+This gives you:
+- ✅ Type-safe database queries (sqlc)
+- ✅ Auto-generated migrations (Vorzela)
+- ✅ Goose compatibility markers
+- ✅ Checksum validation
+- ✅ Schema drift detection
+- ✅ Zero-downtime deployments
 
 ## Configuration
 
