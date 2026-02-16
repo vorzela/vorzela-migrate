@@ -37,7 +37,15 @@ jobs:
         run: go mod verify
 
       - name: Run unit tests
-        run: go test -v -short -race -coverprofile=coverage.txt -covermode=atomic -timeout=10m ./...
+        run: go test -v -short -timeout=10m ./...
+
+      - name: Run tests with race detector (Linux only)
+        if: matrix.os == 'ubuntu-latest'
+        run: go test -v -short -race -timeout=10m ./...
+
+      - name: Run tests with coverage (Ubuntu + Go 1.22 only)
+        if: matrix.os == 'ubuntu-latest' && matrix.go == '1.22'
+        run: go test -v -short -coverprofile=coverage.txt -covermode=atomic -timeout=10m ./...
 
       - name: Upload coverage to Codecov
         if: matrix.os == 'ubuntu-latest' && matrix.go == '1.22'
