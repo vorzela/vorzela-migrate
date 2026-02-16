@@ -62,7 +62,6 @@ Open `migrations/TIMESTAMP_create_users_table.sql` and add your SQL:
 
 **Without soft delete:**
 ```sql
--- +goose Up
 -- ⬆ Up (Run when migrating forward)
 BEGIN;
 
@@ -76,7 +75,6 @@ CREATE TABLE users (
 
 COMMIT;
 
--- +goose Down
 -- ⬇ Down (Run when rolling back)
 BEGIN;
 
@@ -87,7 +85,6 @@ COMMIT;
 
 **With soft delete (auto-generated when using -sd flag):**
 ```sql
--- +goose Up
 -- ⬆ Up (Run when migrating forward)
 BEGIN;
 

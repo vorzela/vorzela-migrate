@@ -16,6 +16,7 @@ type CreateMigrationOptions struct {
 	Relationships []Relationship // FK relationships (belongs-to, one-to-one)
 	IsPivot       bool           // True when creating a many-to-many pivot table
 	PivotTables   [2]string      // The two table names for pivot generation
+	SqlcSupport   bool           // Include goose markers for sqlc compatibility
 }
 
 // CreateMigration creates a new migration file (backward compatible)
@@ -190,11 +191,18 @@ DROP TRIGGER IF EXISTS trigger_%s_auto_update ON %s;
 	// Build relationship comment
 	relComment := RelationshipComment(tableName, opts.Relationships)
 
+	// Build goose markers if sqlc support enabled
+	gooseUp := ""
+	gooseDown := ""
+	if opts.SqlcSupport {
+		gooseUp = "-- +goose Up\n"
+		gooseDown = "-- +goose Down\n"
+	}
+
 	return fmt.Sprintf(`-- Migration: %s
 -- Created at: %s
 %s
--- +goose Up
--- ⬆ Up (Run when migrating forward)
+%s-- ⬆ Up (Run when migrating forward)
 BEGIN;
 
 CREATE TABLE IF NOT EXISTS %s (
@@ -202,12 +210,11 @@ CREATE TABLE IF NOT EXISTS %s (
 );%s%s
 COMMIT;
 
--- +goose Down
--- ⬇ Down (Run when rolling back)
+%s-- ⬇ Down (Run when rolling back)
 BEGIN;
 %s
 DROP TABLE IF EXISTS %s CASCADE;
 
 COMMIT;
-`, upperName, timestamp, relComment, tableName, columns, extraIndexes, triggerFunctions, triggerCleanup, tableName)
+`, upperName, timestamp, relComment, gooseUp, tableName, columns, extraIndexes, triggerFunctions, gooseDown, triggerCleanup, tableName)
 }

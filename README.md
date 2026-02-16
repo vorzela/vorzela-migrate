@@ -205,7 +205,6 @@ Migrations are SQL files with a special format. The tool automatically extracts 
 -- Migration: CREATE_USERS_TABLE
 -- Created at: 2026-02-05 10:30:45
 
--- +goose Up
 -- ⬆ Up (Run when migrating forward)
 BEGIN;
 
@@ -218,7 +217,6 @@ CREATE TABLE users (
 
 COMMIT;
 
--- +goose Down
 -- ⬇ Down (Run when rolling back)
 BEGIN;
 
@@ -227,7 +225,18 @@ DROP TABLE IF EXISTS users;
 COMMIT;
 ```
 
-**Note**: The `-- +goose Up` and `-- +goose Down` markers provide compatibility with sqlc and other tools.
+### Optional: sqlc/goose Compatibility
+
+If you use **sqlc** or other goose-compatible tools, enable goose markers in your `.vm` config file:
+
+```bash
+# .vm file
+DATABASE_URL=postgres://user:pass@localhost:5432/mydb
+MIGRATION_PATH=./migrations
+SQLC_SUPPORT=true  # Add this line
+```
+
+With `SQLC_SUPPORT=true`, migrations will include `-- +goose Up` and `-- +goose Down` markers.
 
 ## Configuration
 
@@ -651,7 +660,7 @@ Check your DATABASE_URL or --dsn flag. Ensure PostgreSQL is running.
 Use snake_case with only lowercase letters, numbers, and underscores.
 
 ### "No UP section found"
-Ensure your migration file has the proper format with `-- +goose Up` and `-- ⬆ Up` markers.
+Ensure your migration file has the proper format with `-- ⬆ Up` marker.
 
 ### "migrations table does not exist"
 Run your first migration with `vm migrate` to initialize the migrations table.

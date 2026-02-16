@@ -5,18 +5,24 @@ All notable changes to Vorzela Migration Tool are documented in this file.
 ## [1.1.5] - 2026-02-16
 
 ### Added
-- **Goose/sqlc Compatibility**: All migration templates now include `-- +goose Up` and `-- +goose Down` markers
-  - Enables seamless integration with sqlc and other goose-compatible tools
-  - Automatically added to all newly created migrations
-  - Both regular and pivot table migrations include goose markers
-  - Documentation updated across all .md files with new format examples
-
+- **Optional sqlc/goose Compatibility**: New `SQLC_SUPPORT` configuration option in `.vm` file
+  - When enabled, includes `-- +goose Up` and `-- +goose Down` markers in migration templates
+  - Disabled by default to keep templates clean for users who don't use sqlc
+  - Add `SQLC_SUPPORT=true` to your `.vm` config file to enable
+  - Works with both regular migrations and pivot table migrations
+  
 ### Improved
 - **Better Error Messages**: Enhanced error handling for missing migrations table
   - Clear message: "migrations table does not exist. Please run your first migration with: vm migrate"
   - Helps new users understand initialization process
   - Prevents confusion when running `vm status` before first migration
   - Updated troubleshooting documentation with migration table initialization guidance
+
+### Changed
+- **Template Format**: Migration templates no longer include goose markers by default
+  - Cleaner templates for the majority of users who don't use sqlc
+  - Opt-in via configuration keeps the tool flexible and unobtrusive
+  - All documentation updated to reflect configurable goose support
 
 ## [1.1.4] - 2026-02-14
 

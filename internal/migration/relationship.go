@@ -173,12 +173,19 @@ CREATE TRIGGER trigger_%s_auto_update
 			pivotName, pivotName)
 	}
 
+	// Build goose markers if sqlc support enabled
+	gooseUp := ""
+	gooseDown := ""
+	if opts.SqlcSupport {
+		gooseUp = "-- +goose Up\n"
+		gooseDown = "-- +goose Down\n"
+	}
+
 	return fmt.Sprintf(`-- Migration: %s
 -- Created at: %s
 -- Relationship: %s <-> %s (Many-to-Many)
 
--- +goose Up
--- ⬆ Up (Run when migrating forward)
+%s-- ⬆ Up (Run when migrating forward)
 BEGIN;
 
 CREATE TABLE IF NOT EXISTS %s (
@@ -188,16 +195,15 @@ CREATE TABLE IF NOT EXISTS %s (
 
 COMMIT;
 
--- +goose Down
--- ⬇ Down (Run when rolling back)
+%s-- ⬇ Down (Run when rolling back)
 BEGIN;
 %s
 DROP TABLE IF EXISTS %s CASCADE;
 
 COMMIT;
 `, upperName, now, tables[0], tables[1],
-		pivotName, columns, indexes, triggerUp,
-		triggerDown, pivotName)
+		gooseUp, pivotName, columns, indexes, triggerUp,
+		gooseDown, triggerDown, pivotName)
 }
 
 // RelationshipComment generates a comment line describing the relationships

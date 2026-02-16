@@ -136,14 +136,12 @@ Every migration includes:
 - ✅ Timestamp of creation
 - ✅ CREATE TABLE template with id, created_at, updated_at
 - ✅ DROP TABLE template for rollback
-- ✅ Goose markers for sqlc compatibility
 
 ```sql
 -- Migration: CREATE_USERS_TABLE
 -- Created at: 2026-02-05 23:29:57
 -- Environment: dev/server
 
--- +goose Up
 -- ⬆ Up
 BEGIN;
 CREATE TABLE IF NOT EXISTS create_users_table (
@@ -153,11 +151,15 @@ CREATE TABLE IF NOT EXISTS create_users_table (
 );
 COMMIT;
 
--- +goose Down
 -- ⬇ Down
 BEGIN;
 DROP TABLE IF EXISTS create_users_table CASCADE;
 COMMIT;
+```
+
+**Optional**: Enable goose markers for sqlc compatibility by adding to `.vm`:
+```
+SQLC_SUPPORT=true
 ```
 
 ---

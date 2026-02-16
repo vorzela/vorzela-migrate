@@ -162,6 +162,7 @@ var MakeCommand = &cli.Command{
 					Relationships: relationships,
 					IsPivot:       isPivot,
 					PivotTables:   pivotTables,
+					SqlcSupport:   cfg.SqlcSupport, // Include goose markers if enabled in config
 				}
 				if err := migration.CreateMigrationWithOptions(migrationName, migrationPath, opts); err != nil {
 					output.Error(err.Error())

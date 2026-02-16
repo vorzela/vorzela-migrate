@@ -135,13 +135,11 @@ vm make migration create_users_table_v2
 
 **Solution**: Ensure migration file has proper format:
 ```sql
--- +goose Up
 -- ⬆ Up (Run when migrating forward)
 BEGIN;
 -- Your SQL here
 COMMIT;
 
--- +goose Down
 -- ⬇ Down (Run when rolling back)
 BEGIN;
 -- Your SQL here
@@ -153,7 +151,6 @@ COMMIT;
 
 **Solution**: Add DOWN section to migration file:
 ```sql
--- +goose Down
 -- ⬇ Down (Run when rolling back)
 BEGIN;
 DROP TABLE IF EXISTS users CASCADE;

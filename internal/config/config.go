@@ -13,6 +13,7 @@ import (
 type Config struct {
 	DatabaseURL   string
 	MigrationPath string
+	SqlcSupport   bool // Enable goose markers for sqlc compatibility
 }
 
 // LoadConfig loads configuration with optional DSN and path overrides
@@ -110,6 +111,8 @@ func loadVorzelaFile(filepath string, cfg *Config) error {
 			cfg.DatabaseURL = value
 		case "MIGRATION_PATH":
 			cfg.MigrationPath = value
+		case "SQLC_SUPPORT":
+			cfg.SqlcSupport = strings.ToLower(value) == "true" || value == "1"
 		}
 	}
 
