@@ -2,6 +2,103 @@
 
 All notable changes to Vorzela Migration Tool are documented in this file.
 
+## [2.0.0] - 2026-02-16
+
+### Major Features
+
+- **Environment-Based Auto Configuration** 🌍
+  - Set `ENVIRONMENT=development` or `ENVIRONMENT=production` in `.vm` file
+  - Tool automatically applies appropriate migration strategy
+  - Development: Enhanced mode + verbose logging + drift detection (no online mode)
+  - Production: Enhanced mode + online migrations + checksums + drift detection
+  - No more typing long command flags!
+  - New methods: `Config.ApplyEnvironmentDefaults()`, `Config.IsProduction()`, `Config.IsDevelopment()`
+
+- **Checksum Validation** ✅
+  - SHA-256 checksums calculated and stored for each migration
+  - Automatic verification on subsequent runs  - Detects if migration files were modified after execution
+  - Prevents data corruption from modified migrations
+  - New file: `internal/migration/checksum.go`
+
+- **Migration Locking** 🔐
+  - Prevents concurrent migrations from multiple processes
+  - PostgreSQL: Advisory locks (`pg_try_advisory_lock`)
+  - MySQL/MariaDB: Named locks (`GET_LOCK`)
+  - Fallback: Table-based locking for other databases
+  - 30-second timeout with clear error messages
+  - New file: `internal/migration/lock.go`
+
+- **Schema Drift Detection & Auto-Fix** 🔍
+  - Detects manually added columns not tracked in migrations
+  - Three handling modes:
+    - `auto`: Automatically apply ALTER statements in background
+    - `prompt`: Ask user yes/no/generate (default)
+    - `reject`: Fail migration if drift detected
+  - Generates proper ALTER TABLE statements
+  - PostgreSQL and MySQL support
+  - New file: `internal/migration/drift.go`
+
+- **Enhanced Colored Logging** 🎨
+  - ANSI color-coded output for better readability
+  - Execution timing for each migration
+  - Progress indicators for batch operations
+  - Log levels: SUCCESS, INFO, WARNING, ERROR, DEBUG
+  - Verbose mode for detailed output
+  - New file: `internal/output/logger.go`
+
+- **Online Migrations (Zero-Downtime)** 🌐
+  - PostgreSQL: `CREATE INDEX CONCURRENTLY`
+  - MySQL 8.0+: `ALGORITHM=INSTANT/INPLACE`
+  - Batch updates to avoid long table locks
+  - Adds columns without blocking reads/writes
+  - Production-safe strategies
+  - New file: `internal/migration/online.go`
+
+- **Partial Failure Recovery** 🛡️
+  - Tracks which statements succeeded before failure
+  - Shows exactly where migration failed
+  - Recovery guidance for manual fixes
+  - Enhanced `EnhancedExecutor` with statement-level tracking
+
+### Testing & Quality
+
+- **Comprehensive Test Suite** ✨
+  - 205+ tests across all packages
+  - Unit tests for all new features
+  - Checksum validation tests
+  - Lock mechanism tests
+  - Drift detection tests
+  - Online migration tests
+  - Logger output tests
+  - Environment config tests
+  - All tests passing ✅
+
+### Configuration
+
+- **New Config Options**
+  - `ENVIRONMENT`: `development`, `dev`, `production`, `prod`
+  - `DRIFT_HANDLING`: `auto`, `prompt`, `reject`
+  - `ENHANCED`: Enable enhanced migration features
+  - `ONLINE`: Enable zero-downtime migrations
+  - `VERIFY_CHECKSUMS`: Enable checksum validation
+  - `DETECT_DRIFT`: Enable drift detection
+  - `VERBOSE`: Enable detailed logging
+
+### Breaking Changes
+
+- Migrations table schema updated with new columns:
+  - `checksum VARCHAR(64)` - SHA-256 hash of migration content
+  - `execution_time_ms BIGINT` - Execution duration in milliseconds
+- Existing migrations table will be automatically migrated on first run
+
+### Documentation
+
+- Removed redundant .md files (consolidated into README.md)
+- Updated README with v2.0.0 features
+- Enhanced ARCHITECTURE.md with new components
+- Improved TROUBLESHOOTING.md
+- Added example.vm with full configuration options
+
 ## [Unreleased]
 
 ### Added

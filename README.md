@@ -1,4 +1,4 @@
-# Vorzela Migration Tool (v1.1.5)
+# Vorzela Migration Tool (v2.0.0)
 
 
 ## ✨ Features
@@ -6,12 +6,24 @@
 - 🎨 **Colorized Output** - Beautiful, easy-to-read colored terminal output
 - ⚙️ **Multiple Configuration Methods** - `.vm` config files, `.env` files, or environment variables
 - 🚀 **No DSN Flag Required** - Use config files instead of repeating `--dsn` flag
- - 🐘 **Multi-Database Support** - PostgreSQL and MySQL/MariaDB with automatic detection
-- � **Batch Tracking** - Organized rollback with batch numbers
+- 🐘 **Multi-Database Support** - PostgreSQL and MySQL/MariaDB with automatic detection
+- 📦 **Batch Tracking** - Organized rollback with batch numbers
 - 🔒 **Transaction Safety** - All-or-nothing migration execution
 - ⚠️ **Warning System** - Alerts for missing migration sections
 - 🌍 **Global CLI** - Install and use from anywhere
 - 📚 **Comprehensive Docs** - Full documentation and examples
+
+### 🚀 Enhanced Features (v2.0.0)
+
+- 🌍 **Environment-Based Auto Config** - Set ENVIRONMENT in .vm file, tool auto-configures everything
+- ✅ **Checksum Validation** - Detect if migration files have been modified after execution
+- 🔐 **Migration Locking** - Prevent concurrent migrations (advisory locks for PostgreSQL, named locks for MySQL)
+- 🔍 **Schema Drift Detection** - Automatically detect and fix manual database changes
+- 🎨 **Enhanced Logging** - Colored output with execution timing and progress tracking
+- 🛡️ **Partial Failure Recovery** - Track which statements succeeded before a failure
+- ⚠️ **Safe Rollback** - Confirmation prompts and detailed warnings before rollback
+- 🌐 **Online Migrations** - Zero-downtime strategies for production (PostgreSQL & MySQL 8.0+)
+- 🤖 **Auto Drift Handling** - Configure auto/prompt/reject modes for schema drift
 
 ## Requirements
 
@@ -20,28 +32,132 @@
 
 ## Installation
 
-```bash
-go mod download
-go build -o vm main.go
-```
+### Method 1: Quick Install Script (Recommended)
 
-### Installers (Recommended)
+The easiest way to install is using our installation scripts. They download the latest release, install it globally, and add it to your PATH.
 
-**Linux/macOS (bash):**
+**Linux/macOS:**
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/vorzela/vorzela-migrate/main/install.sh | bash
 ```
 
-**Windows (PowerShell):**
+**Windows PowerShell (Run as Administrator):**
 
 ```powershell
 iex (New-Object Net.WebClient).DownloadString('https://raw.githubusercontent.com/vorzela/vorzela-migrate/main/install.ps1')
 ```
 
-Note: The installers try to add the install directory to your PATH. On Linux/macOS this updates your shell profile (best effort). On Windows this updates your user PATH. Restart your shell if the `vm` command is not found right away.
+**What the installers do:**
+- Download the latest binary for your platform
+- Install to `/usr/local/bin` (Linux/macOS) or `%USERPROFILE%\bin` (Windows)
+- Add the install directory to your PATH
+- Make the binary executable
 
-For more options and platform notes, see [INSTALL.md](INSTALL.md).
+**Post-installation:**
+- **Linux/macOS**: Restart your terminal or run `source ~/.bashrc` (or `~/.zshrc`)
+- **Windows**: Restart PowerShell/Command Prompt
+- Verify installation: `vm --version`
+
+### Method 2: Download Pre-built Binary
+
+Download the appropriate binary for your platform from the [releases page](https://github.com/vorzela/vorzela-migrate/releases/latest).
+
+**Available platforms:**
+- `vm-linux-amd64` - Linux (Intel/AMD 64-bit)
+- `vm-linux-arm64` - Linux (ARM 64-bit, Raspberry Pi, etc.)
+- `vm-macos-amd64` - macOS (Intel)
+- `vm-macos-arm64` - macOS (Apple Silicon M1/M2/M3)
+- `vm-windows-amd64.exe` - Windows (64-bit)
+- `vm-windows-386.exe` - Windows (32-bit)
+
+**Manual Installation Steps:**
+
+**Linux/macOS:**
+```bash
+# Download (replace URL with your platform)
+wget https://github.com/vorzela/vorzela-migrate/releases/download/v2.0.0/vm-linux-amd64
+
+# Rename and make executable
+chmod +x vm-linux-amd64
+sudo mv vm-linux-amd64 /usr/local/bin/vm
+
+# Verify
+vm --version
+```
+
+**Windows:**
+```powershell
+# Download the .exe file from releases page
+# Move to a directory in your PATH, or:
+
+# Create a bin directory
+New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\bin"
+
+# Move the downloaded file
+Move-Item vm-windows-amd64.exe "$env:USERPROFILE\bin\vm.exe"
+
+# Add to PATH (if not already)
+[Environment]::SetEnvironmentVariable("Path", $env:Path + ";$env:USERPROFILE\bin", "User")
+
+# Restart terminal and verify
+vm --version
+```
+
+### Method 3: Build from Source
+
+If you have Go installed and want the latest development version:
+
+```bash
+# Clone the repository
+git clone https://github.com/vorzela/vorzela-migrate.git
+cd vorzela-migrate
+
+# Download dependencies
+go mod download
+
+# Build
+go build -o vm main.go
+
+# Install globally (optional)
+sudo mv vm /usr/local/bin/  # Linux/macOS
+# or move vm.exe to a directory in your PATH on Windows
+```
+
+**Build with version info:**
+```bash
+go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=v2.0.0'" -o vm main.go
+```
+
+### Verify Installation
+
+After installation, verify it works:
+
+```bash
+vm --version
+# Should output: vorzela-migrate v2.0.0
+
+vm --help
+# Shows all available commands
+```
+
+### Troubleshooting Installation
+
+**"vm: command not found"**
+- The binary is not in your PATH
+- Run `echo $PATH` (Linux/macOS) or `echo $env:Path` (Windows) to see your PATH
+- Add the installation directory to your PATH, or move the binary to an existing PATH directory
+
+**Permission denied (Linux/macOS)**
+- The binary is not executable: `chmod +x vm`
+- Or you need sudo: `sudo mv vm /usr/local/bin/`
+
+**Windows: "vm is not recognized"**
+- Restart your terminal after installation
+- Check if the directory is in your PATH: `echo $env:Path`
+- Or run with full path: `C:\Users\YourName\bin\vm.exe`
+
+For more help, see [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 
 ## Supported Databases
 
@@ -52,6 +168,41 @@ For more options and platform notes, see [INSTALL.md](INSTALL.md).
 Database type is automatically detected from the DSN URL.
 
 ## Usage
+
+### ⚡ Super Quick Start (Environment-Based Auto Config)
+
+Create `.vm` file with your environment:
+
+**Development:**
+```ini
+DATABASE_URL=postgres://user:password@localhost:5432/myapp
+ENVIRONMENT=development
+```
+
+**Production:**
+```ini
+DATABASE_URL=postgres://prod-db:5432/myapp
+ENVIRONMENT=production
+DRIFT_HANDLING=auto
+```
+
+Then simply run:
+```bash
+vm migrate  # Auto-applies environment-based settings!
+```
+
+**What happens automatically:**
+- **Development**: Enhanced mode + verbose logging + drift detection
+- **Production**: Enhanced mode + online migrations + checksums + drift detection
+
+No more typing `--enhanced --online --verify-checksums --detect-drift --verbose`!
+
+**Configuration Options:**
+- `ENVIRONMENT`: `development` or `production` (auto-applies settings)
+- `DRIFT_HANDLING`: `auto` (apply fixes), `prompt` (ask), or `reject` (fail)
+- `ENHANCED`, `ONLINE`, `VERIFY_CHECKSUMS`, `DETECT_DRIFT`, `VERBOSE`: Override defaults
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for implementation details and [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for common issues.
 
 ### Quick Start (No --dsn Needed!)
 
@@ -196,6 +347,225 @@ chmod +x /usr/local/bin/vm
 vm make migration create_table_name_table
 vm migrate --dsn "postgres://user:pass@localhost:5432/db"
 ```
+
+## 🚀 Enhanced Migration Features
+
+### Checksum Validation
+
+Detect if migration files have been modified after they were run:
+
+```bash
+# Verify all previously run migrations haven't been modified
+vm migrate --verify-checksums
+
+# Use --enhanced for automatic checksum verification
+vm migrate --enhanced
+```
+
+**How it works:**
+- SHA-256 checksums are calculated and stored when migrations run
+- Verifies file integrity before running new migrations
+- Prevents accidental modifications to executed migrations
+- Use `--force` to override checksum mismatches
+
+### Migration Locking
+
+Prevent concurrent migrations from running simultaneously:
+
+```bash
+# Locking is automatic with enhanced mode
+vm migrate --enhanced
+```
+
+**Lock mechanisms by database:**
+- **PostgreSQL**: Advisory locks (pg_try_advisory_lock)
+- **MySQL**: Named locks (GET_LOCK/RELEASE_LOCK)
+- **Fallback**: Table-based locking for compatibility
+
+**Benefits:**
+- Prevents race conditions in CI/CD environments
+- Safe for multiple deployment instances
+- 30-second timeout with clear error messages
+
+### Schema Drift Detection
+
+Detect manual database changes not tracked in migrations:
+
+```bash
+# Detect and report schema drift
+vm migrate --detect-drift
+
+# Interactive mode - offers to generate ALTER statements
+vm migrate --enhanced --detect-drift
+```
+
+**Example output:**
+```
+⚠ WARNING  Schema drift detected in table 'users'
+  + email_verified_at
+  + last_login_at
+? Generate migration to document these columns? (y/n)
+```
+
+**Capabilities:**
+- Compares current schema with migration history
+- Detects manually added columns
+- Generates ALTER TABLE statements
+- Helps maintain migration consistency
+
+### Colored Logging with Timing
+
+Get beautiful, informative output with execution times:
+
+```bash
+# Enable verbose colored logging
+vm migrate --enhanced --verbose
+```
+
+**Example output:**
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+▶ Migration: 1707129045_create_users_table.sql
+  Version: 1.1.5
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[SUCCESS]  15:04:05 Checksum verified
+[INFO   ]  15:04:05 Executing statement 1/3
+✓ Completed: 1707129045_create_users_table.sql (127ms)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Summary
+  Total migrations:     3
+  Successful:           3
+  Total time:           425ms
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+### Partial Failure Recovery
+
+Track which statements succeeded before a failure:
+
+```bash
+vm migrate --enhanced
+```
+
+**Automatic tracking:**
+- Records each SQL statement execution
+- Shows exactly where failure occurred
+- Lists successfully applied statements
+- Enables targeted troubleshooting
+
+**Example failure output:**
+```
+✗ Failed: 1707129045_create_posts_table.sql
+  Error: statement 3 failed: relation "categories" does not exist
+⚠ WARNING  Partially applied statements:
+  - CREATE TABLE posts (...)
+  - CREATE INDEX idx_posts_user_id ON posts(user_id)
+```
+
+### Safe Rollback with Warnings
+
+Get confirmation prompts and detailed information before rollback:
+
+```bash
+# Enhanced rollback with warnings
+vm rollback --enhanced
+
+# Dry run to see what would be rolled back
+vm rollback --dry-run
+
+# Force rollback without prompts (dangerous!)
+vm rollback --enhanced --force
+```
+
+**Example output:**
+```
+⚠ WARNING  About to rollback 2 migration(s):
+  - 1707129045_create_posts_table.sql (batch 3)
+  - 1707129034_create_comments_table.sql (batch 3)
+? Continue with rollback? (yes/no)
+```
+
+### Online Migrations (Zero Downtime)
+
+Use zero-downtime strategies for production deployments:
+
+```bash
+# Enable online migration techniques
+vm migrate --online
+
+# Combine with other enhanced features
+vm migrate --enhanced --online
+```
+
+**Online strategies:**
+
+**PostgreSQL:**
+- ADD COLUMN without table locks
+- Batch updates for default values
+- CREATE INDEX CONCURRENTLY
+- NOT NULL constraints after data population
+
+**MySQL 8.0+:**
+- ALGORITHM=INSTANT for compatible changes
+- ALGORITHM=INPLACE with LOCK=NONE
+- Automatic fallback to safe methods
+
+**Example:**
+```sql
+-- Traditional (locks table):
+ALTER TABLE users ADD COLUMN email VARCHAR(255) NOT NULL DEFAULT '';
+
+-- Online (no locks):
+-- Step 1: Add nullable column
+-- Step 2: Batch update defaults
+-- Step 3: Add NOT NULL constraint
+```
+
+### Dry Run Mode
+
+Preview migrations without executing:
+
+```bash
+# See what would be executed
+vm migrate --dry-run
+
+# Preview rollback
+vm rollback --dry-run
+```
+
+### All Enhanced Features Together
+
+```bash
+# Production-ready migration run
+vm migrate --enhanced \
+  --online \
+  --verify-checksums \
+  --detect-drift \
+  --verbose
+
+# Safe rollback with all checks
+vm rollback --enhanced \
+  --verbose
+```
+
+### Flag Reference
+
+**Migration flags:**
+- `--enhanced, -e` - Enable all enhanced features
+- `--verify-checksums` - Verify migration file integrity
+- `--detect-drift` - Detect manual schema changes
+- `--online` - Use zero-downtime strategies
+- `--dry-run` - Preview without executing
+- `--verbose, -v` - Detailed colored logging
+- `--force` - Skip confirmations and override errors
+
+**Rollback flags:**
+- `--enhanced, -e` - Enhanced rollback with warnings
+- `--steps N` - Rollback N batches (or "all")
+- `--dry-run` - Preview rollback
+- `--verbose, -v` - Detailed logging
+- `--force` - Skip confirmation prompts
 
 ## Migration File Format
 

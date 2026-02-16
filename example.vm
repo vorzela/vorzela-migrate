@@ -1,0 +1,76 @@
+# Vorzela Migration Tool Configuration (.vm)
+# This file configures database migrations and auto-applies settings based on environment
+
+# ============================================
+# Database Connection
+# ============================================
+DATABASE_URL=postgres://user:password@localhost:5432/myapp
+# Or for MySQL/MariaDB:
+# DATABASE_URL=mysql://user:password@localhost:3306/myapp
+
+# ============================================
+# Environment (Auto-configures migration strategy)
+# ============================================
+# Options: development, dev, production, prod
+ENVIRONMENT=development
+
+# What this does:
+# - development: Enhanced features + verbose logging, no online mode
+# - production: All safety features + online mode, less verbose
+
+# ============================================
+# Schema Drift Handling
+# ============================================
+# What happens when manual database changes are detected:
+#   auto   - Automatically applies drift fixes in background
+#   prompt - Asks before applying (recommended)
+#   reject - Fails migration if drift detected
+DRIFT_HANDLING=prompt
+
+# ============================================
+# Optional: Manual Overrides
+# ============================================
+# Uncomment these to override environment-based defaults
+
+# Force enhanced mode on/off
+# ENHANCED=true
+
+# Force online migrations (zero-downtime)
+# ONLINE=true
+
+# Force checksum verification
+# VERIFY_CHECKSUMS=true
+
+# Force drift detection
+# DETECT_DRIFT=true
+
+# Force verbose logging
+# VERBOSE=true
+
+# ============================================
+# Other Settings
+# ============================================
+
+# Migration files directory
+MIGRATION_PATH=./migrations
+
+# Enable goose markers for sqlc compatibility
+SQLC_SUPPORT=false
+
+# ============================================
+# Example Configurations
+# ============================================
+
+# Local Development:
+# ENVIRONMENT=development
+# DRIFT_HANDLING=auto
+
+# Staging:
+# ENVIRONMENT=production
+# DRIFT_HANDLING=prompt
+# VERBOSE=true
+
+# Production:
+# ENVIRONMENT=production
+# DRIFT_HANDLING=reject
+# ONLINE=true

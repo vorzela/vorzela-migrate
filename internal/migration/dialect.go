@@ -33,7 +33,9 @@ func CreateMigrationTableSQL(dialect Dialect) string {
 			id INT AUTO_INCREMENT PRIMARY KEY,
 			migration VARCHAR(255) NOT NULL UNIQUE,
 			batch INT NOT NULL,
-			executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			checksum VARCHAR(64),
+			executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			execution_time_ms INT DEFAULT 0
 		);
 		`
 	default: // PostgreSQL
@@ -42,7 +44,9 @@ func CreateMigrationTableSQL(dialect Dialect) string {
 			id SERIAL PRIMARY KEY,
 			migration VARCHAR(255) NOT NULL UNIQUE,
 			batch INTEGER NOT NULL,
-			executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			checksum VARCHAR(64),
+			executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			execution_time_ms INTEGER DEFAULT 0
 		);
 		`
 	}

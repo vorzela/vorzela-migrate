@@ -31,6 +31,28 @@ var RollbackCommand = &cli.Command{
 			Value: "1",
 			Usage: "number of batches to rollback: 1, 2, or 'all'",
 		},
+		&cli.BoolFlag{
+			Name:    "enhanced",
+			Aliases: []string{"e"},
+			Usage:   "use enhanced rollback with warnings and confirmations",
+			Value:   false,
+		},
+		&cli.BoolFlag{
+			Name:  "force",
+			Usage: "skip confirmation prompts",
+			Value: false,
+		},
+		&cli.BoolFlag{
+			Name:    "dry-run",
+			Usage:   "show what would be rolled back without executing",
+			Value:   false,
+		},
+		&cli.BoolFlag{
+			Name:    "verbose",
+			Aliases: []string{"v"},
+			Usage:   "enable verbose logging",
+			Value:   false,
+		},
 	},
 	Action: func(c *cli.Context) error {
 		dsn := c.String("dsn")
@@ -58,17 +80,66 @@ var RollbackCommand = &cli.Command{
 		}
 		defer db.Close()
 
-		// Parse steps (1, 2, or "all")
+		// Check if enhanced mode is requested
+		useEnhanced := c.Bool("enhanced") || c.Bool("dry-run")
+
+		if useEnhanced {
+			// Use enhanced executor with warnings
+			sqlDB, err := database.GetSQLDB(cfg.DatabaseURL)
+			if err != nil {
+				output.Error("Failed to get SQL DB connection: %v", err)
+				return fmt.Errorf("failed to get SQL DB connection: %w", err)
+			}
+			defer sqlDB.Close()
+
+			opts := migration.MigrationOptions{
+				DryRun:  c.Bool("dry-run"),
+				Force:   c.Bool("force"),
+				Verbose: c.Bool("verbose"),
+			}
+
+			executor, err := migration.NewEnhancedExecutor(db, sqlDB, cfg.DatabaseURL, cfg.MigrationPath, opts)
+			if err != nil {
+				output.Error("Failed to create enhanced executor: %v", err)
+				return err
+			}
+
+			// Parse steps
+			steps := 1
+			if stepsStr != "all" {
+				fmt.Sscanf(stepsStr, "%d", &steps)
+				if steps < 1 {
+					steps = 1
+				}
+			} else {
+				steps = 999 // Large number to rollback all
+			}
+
+			results, err := executor.RollbackWithWarnings(steps, opts)
+			if err != nil && !c.Bool("force") {
+				return err
+			}
+
+			if c.Bool("dry-run") {
+				output.Info("DRY RUN completed - no rollbacks were actually executed")
+			}
+
+			if len(results) == 0 {
+				output.Info("No migrations to rollback")
+			}
+
+			return nil
+		}
+
+		// Use standard rollback (legacy mode)
 		var count int
 		if stepsStr == "all" {
-			// Rollback all migrations
 			count, err = migration.RollbackAllMigrations(db, cfg.MigrationPath, cfg.DatabaseURL)
 			if err != nil {
 				output.Error("Rollback failed: %v", err)
 				return fmt.Errorf("rollback failed: %w", err)
 			}
 		} else {
-			// Parse numeric steps
 			steps := 1
 			fmt.Sscanf(stepsStr, "%d", &steps)
 			if steps < 1 {

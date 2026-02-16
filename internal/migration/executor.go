@@ -55,7 +55,8 @@ func RunMigrations(conn db.DB, migrationPath string, dsn string) (int, error) {
 	}
 
 	// Get current batch number
-	batch, err := getNextBatchNumber(conn, dialect)
+	var _ Dialect = dialect
+	batch, err := getNextBatchNumber(conn)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get batch number: %w", err)
 	}
@@ -98,7 +99,7 @@ func RunMigrations(conn db.DB, migrationPath string, dsn string) (int, error) {
 		}
 
 		// Record migration
-		err = recordMigration(conn, file.Filename, batch, dialect)
+		err = recordMigration(conn, file.Filename, batch)
 		if err != nil {
 			return count, fmt.Errorf("failed to record migration %s: %w", file.Filename, err)
 		}
@@ -179,7 +180,8 @@ func RollbackMigrations(conn db.DB, migrationPath string, steps int, dsn string)
 		}
 
 		// Remove migration record
-		err = removeMigrationRecord(conn, mig, dialect)
+		var _ Dialect = dialect
+		err = removeMigrationRecord(conn, mig)
 		if err != nil {
 			return count, fmt.Errorf("failed to remove migration record %s: %w", mig.Migration, err)
 		}
@@ -230,7 +232,8 @@ func RollbackAllMigrations(conn db.DB, migrationPath string, dsn string) (int, e
 			return count, fmt.Errorf("failed to rollback migration %s: %w", mig.Migration, err)
 		}
 
-		err = removeMigrationRecord(conn, mig, dialect)
+		var _ Dialect = dialect
+		err = removeMigrationRecord(conn, mig)
 		if err != nil {
 			return count, fmt.Errorf("failed to remove migration record: %w", err)
 		}
@@ -283,7 +286,7 @@ func getExecutedMigrations(conn db.DB) ([]Migration, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	rows, err := conn.Query(ctx, "SELECT id, migration, batch FROM migrations ORDER BY batch, id")
+	rows, err := conn.Query(ctx, "SELECT id, migration, batch, COALESCE(checksum, ''), COALESCE(execution_time_ms, 0) FROM migrations ORDER BY batch, id")
 	if err != nil {
 		// Check if the error is about the migrations table not existing
 		errMsg := err.Error()
@@ -297,7 +300,7 @@ func getExecutedMigrations(conn db.DB) ([]Migration, error) {
 	var migrations []Migration
 	for rows.Next() {
 		var mig Migration
-		err := rows.Scan(&mig.ID, &mig.Migration, &mig.Batch)
+		err := rows.Scan(&mig.ID, &mig.Migration, &mig.Batch, &mig.Checksum, &mig.ExecutionTimeMs)
 		if err != nil {
 			return nil, err
 		}
@@ -307,7 +310,7 @@ func getExecutedMigrations(conn db.DB) ([]Migration, error) {
 	return migrations, rows.Err()
 }
 
-func recordMigration(conn db.DB, filename string, batch int, dialect Dialect) error {
+func recordMigration(conn db.DB, filename string, batch int) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -315,14 +318,14 @@ func recordMigration(conn db.DB, filename string, batch int, dialect Dialect) er
 	return conn.Exec(ctx, query, filename, batch)
 }
 
-func removeMigrationRecord(conn db.DB, mig Migration, dialect Dialect) error {
+func removeMigrationRecord(conn db.DB, mig Migration) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	return conn.Exec(ctx, "DELETE FROM migrations WHERE id = $1", mig.ID)
 }
 
-func getNextBatchNumber(conn db.DB, dialect Dialect) (int, error) {
+func getNextBatchNumber(conn db.DB) (int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 

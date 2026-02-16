@@ -4,10 +4,12 @@ import "time"
 
 // Migration represents a database migration
 type Migration struct {
-	ID         int
-	Migration  string
-	Batch      int
-	ExecutedAt time.Time
+	ID              int
+	Migration       string
+	Batch           int
+	Checksum        string
+	ExecutedAt      time.Time
+	ExecutionTimeMs int64
 }
 
 // MigrationFile represents a migration file on disk

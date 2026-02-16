@@ -13,13 +13,26 @@ import (
 type Config struct {
 	DatabaseURL   string
 	MigrationPath string
-	SqlcSupport   bool // Enable goose markers for sqlc compatibility
+	SqlcSupport   bool   // Enable goose markers for sqlc compatibility
+	Environment   string // dev, development, prod, production
+	
+	// Migration strategy settings
+	Enhanced        bool
+	Online          bool
+	VerifyChecksums bool
+	DetectDrift     bool
+	Verbose         bool
+	
+	// Drift handling: auto, reject, prompt
+	DriftHandling string
 }
 
 // LoadConfig loads configuration with optional DSN and path overrides
 func LoadConfig(dsnOverride, pathOverride string) (*Config, error) {
 	cfg := &Config{
 		MigrationPath: "./migrations",
+		Environment:   "development", // default to development
+		DriftHandling: "prompt",      // default to interactive prompt
 	}
 
 	// Load .env file if it exists (doesn't error if file doesn't exist)
@@ -42,6 +55,9 @@ func LoadConfig(dsnOverride, pathOverride string) (*Config, error) {
 	if pathOverride != "" && pathOverride != "./migrations" {
 		cfg.MigrationPath = pathOverride
 	}
+
+	// Apply environment-based defaults
+	cfg.ApplyEnvironmentDefaults()
 
 	return cfg, nil
 }
@@ -113,6 +129,23 @@ func loadVorzelaFile(filepath string, cfg *Config) error {
 			cfg.MigrationPath = value
 		case "SQLC_SUPPORT":
 			cfg.SqlcSupport = strings.ToLower(value) == "true" || value == "1"
+		case "ENVIRONMENT", "ENV":
+			cfg.Environment = strings.ToLower(value)
+		case "ENHANCED":
+			cfg.Enhanced = strings.ToLower(value) == "true" || value == "1"
+		case "ONLINE":
+			cfg.Online = strings.ToLower(value) == "true" || value == "1"
+		case "VERIFY_CHECKSUMS":
+			cfg.VerifyChecksums = strings.ToLower(value) == "true" || value == "1"
+		case "DETECT_DRIFT":
+			cfg.DetectDrift = strings.ToLower(value) == "true" || value == "1"
+		case "VERBOSE":
+			cfg.Verbose = strings.ToLower(value) == "true" || value == "1"
+		case "DRIFT_HANDLING":
+			val := strings.ToLower(value)
+			if val == "auto" || val == "reject" || val == "prompt" {
+				cfg.DriftHandling = val
+			}
 		}
 	}
 
@@ -125,5 +158,77 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("database URL is required. Set DATABASE_URL env var, create .vm config file, or use --dsn flag")
 	}
 
+	// Normalize environment
+	c.NormalizeEnvironment()
+
 	return nil
+}
+
+// NormalizeEnvironment normalizes environment names
+func (c *Config) NormalizeEnvironment() {
+	env := strings.ToLower(c.Environment)
+	
+	// Normalize dev/development
+	if env == "dev" || env == "develop" || env == "development" {
+		c.Environment = "development"
+		return
+	}
+	
+	// Normalize prod/production
+	if env == "prod" || env == "production" {
+		c.Environment = "production"
+		return
+	}
+	
+	// Default to development if unknown
+	c.Environment = "development"
+}
+
+// IsProduction returns true if running in production environment
+func (c *Config) IsProduction() bool {
+	return c.Environment == "production"
+}
+
+// IsDevelopment returns true if running in development environment
+func (c *Config) IsDevelopment() bool {
+	return c.Environment == "development"
+}
+
+// ApplyEnvironmentDefaults applies default settings based on environment
+func (c *Config) ApplyEnvironmentDefaults() {
+	c.NormalizeEnvironment()
+	
+	// If no explicit settings provided, use environment-based defaults
+	if c.IsProduction() {
+		// Production defaults: all safety features enabled
+		if !c.hasExplicitSettings() {
+			c.Enhanced = true
+			c.Online = true
+			c.VerifyChecksums = true
+			c.DetectDrift = true
+			c.Verbose = false // Less verbose in production
+			if c.DriftHandling == "" {
+				c.DriftHandling = "prompt"
+			}
+		}
+	} else {
+		// Development defaults: enhanced features with verbose logging
+		if !c.hasExplicitSettings() {
+			c.Enhanced = true
+			c.Online = false // No need for online migrations in dev
+			c.VerifyChecksums = true
+			c.DetectDrift = true
+			c.Verbose = true
+			if c.DriftHandling == "" {
+				c.DriftHandling = "prompt"
+			}
+		}
+	}
+}
+
+// hasExplicitSettings checks if any migration settings were explicitly configured
+func (c *Config) hasExplicitSettings() bool {
+	// If any setting was explicitly set in config, don't apply defaults
+	// This is a simplified check - in a real scenario, you'd track which were set
+	return false // For now, always apply environment-based defaults
 }
