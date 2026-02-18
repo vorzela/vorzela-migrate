@@ -87,13 +87,8 @@ func RunMigrations(conn db.DB, migrationPath string, dsn string) (int, error) {
 		cancel()
 
 		if err != nil {
-			// Migration failed - provide detailed error message
-			errorMsg := fmt.Sprintf("❌ MIGRATION FAILED: %s\n", file.Filename)
-			errorMsg += fmt.Sprintf("   Reason: %v\n", err)
-			errorMsg += "   Status: Transaction automatically rolled back\n"
-			errorMsg += fmt.Sprintf("   Action: Fix the SQL in %s and run migrate again\n", file.Filename)
-			errorMsg += "   Note: Failed migration was NOT recorded in database\n"
-
+			// Enhance error message for common issues
+			errorMsg := enhanceMigrationError(err, file.Filename)
 			output.Error(errorMsg)
 			return count, fmt.Errorf("%s", errorMsg)
 		}
@@ -370,4 +365,54 @@ func extractSection(content string, section string) string {
 	}
 
 	return strings.TrimSpace(strings.Join(sectionContent, "\n"))
+}
+
+// enhanceMigrationError provides helpful error messages for common migration issues
+func enhanceMigrationError(err error, filename string) string {
+	errStr := err.Error()
+	errStrLower := strings.ToLower(errStr)
+	errorMsg := fmt.Sprintf("❌ MIGRATION FAILED: %s\n", filename)
+
+	// Check for missing function errors (case-insensitive)
+	if strings.Contains(errStrLower, "does not exist") && strings.Contains(errStrLower, "function") {
+		// Extract function name if possible
+		functionName := ""
+		if strings.Contains(errStr, "auto_update_timestamp") {
+			functionName = "auto_update_timestamp()"
+		} else if strings.Contains(errStr, "protect_soft_deleted") {
+			functionName = "protect_soft_deleted()"
+		} else if strings.Contains(errStr, "auto_update_with_soft_delete_protection") {
+			functionName = "auto_update_with_soft_delete_protection()"
+		} else if strings.Contains(errStr, "prevent_hard_delete") {
+			functionName = "prevent_hard_delete()"
+		}
+
+		if functionName != "" {
+			errorMsg += fmt.Sprintf("   Reason: %v\n\n", err)
+			errorMsg += "❌ MISSING DATABASE FUNCTION\n\n"
+			errorMsg += fmt.Sprintf("   The migration uses trigger function '%s' which doesn't exist in the database.\n\n", functionName)
+			errorMsg += "💡 SOLUTION:\n"
+			errorMsg += "   1. Run: vm functions migrate\n"
+			errorMsg += "   2. Then run: vm migrate\n\n"
+			errorMsg += "   This installs the required database functions before running migrations.\n"
+			errorMsg += "   See documentation: vm functions --help\n"
+			return errorMsg
+		}
+	}
+
+	// Check for missing table/relation errors (case-insensitive)
+	if strings.Contains(errStrLower, "does not exist") && (strings.Contains(errStrLower, "relation") || strings.Contains(errStrLower, "table")) {
+		errorMsg += fmt.Sprintf("   Reason: %v\n", err)
+		errorMsg += "   Status: Transaction automatically rolled back\n"
+		errorMsg += "\n💡 TIP: This table might be created in a migration that hasn't run yet.\n"
+		errorMsg += "   Check your migration order and dependencies.\n"
+		return errorMsg
+	}
+
+	// Default error message
+	errorMsg += fmt.Sprintf("   Reason: %v\n", err)
+	errorMsg += "   Status: Transaction automatically rolled back\n"
+	errorMsg += fmt.Sprintf("   Action: Fix the SQL in %s and run migrate again\n", filename)
+	errorMsg += "   Note: Failed migration was NOT recorded in database\n"
+	return errorMsg
 }

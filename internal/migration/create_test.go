@@ -285,4 +285,12 @@ func TestEnsureFunctionsFile(t *testing.T) {
 			t.Errorf("functions.sql missing expected function: %q", expected)
 		}
 	}
+
+	// Test that prevent_hard_delete uses correct RAISE EXCEPTION syntax (single % not %%)
+	if !strings.Contains(string(content), "RAISE EXCEPTION 'Hard delete is disabled. Use soft delete: UPDATE % SET") {
+		t.Error("prevent_hard_delete() should use single % for RAISE EXCEPTION placeholders")
+	}
+	if strings.Contains(string(content), "UPDATE %% SET") {
+		t.Error("prevent_hard_delete() should NOT use double %% (invalid PostgreSQL syntax)")
+	}
 }

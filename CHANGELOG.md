@@ -2,6 +2,38 @@
 
 All notable changes to Vorzela Migration Tool are documented in this file.
 
+## [2.0.1] - 2026-02-18
+
+### Bug Fixes
+
+- **Fixed PostgreSQL RAISE EXCEPTION Syntax** 🐛
+  - Fixed `prevent_hard_delete()` function template using incorrect `%%` placeholders
+  - PostgreSQL requires single `%` for parameter substitution in RAISE statements
+  - This caused "too many parameters specified for RAISE" error when running `vm functions migrate`
+
+- **Fixed Upgrade Version Notice** ✅
+  - Fixed duplicate version notice appearing after successful upgrade
+  - Added nil check for `c.Command` in After hook to prevent potential panics
+  - Upgrade command now properly suppresses version check message
+
+- **Enhanced Error Messages for Missing Functions** 💡
+  - Added helpful error detection for missing database functions
+  - Provides clear solution: run `vm functions migrate` before `vm migrate`
+  - Detects all common trigger functions: `auto_update_timestamp()`, `protect_soft_deleted()`, etc.
+  - Works in both enhanced and regular migration modes
+  - Includes specific instructions and documentation links
+
+- **Improved Error Context for Missing Tables** 📋
+  - Better error messages when migrations reference non-existent tables
+  - Suggests checking migration order and dependencies
+
+### Technical Changes
+
+- Updated `internal/migration/functions.go` - Fixed RAISE EXCEPTION syntax
+- Updated `main.go` - Added nil check for command in After hook  
+- Updated `internal/migration/enhanced_executor.go` - Added `enhanceError()` method
+- Updated `internal/migration/executor.go` - Added `enhanceMigrationError()` function
+
 ## [2.0.0] - 2026-02-16
 
 ### Major Features

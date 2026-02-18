@@ -269,11 +269,11 @@ func (e *EnhancedExecutor) executeMigrationWithRecovery(sqlContent string, migra
 		// Check if this is an online-eligible operation
 		if useOnline && e.isOnlineCompatible(stmt) {
 			if err := e.executeOnlineStatement(ctx, stmt); err != nil {
-				return applied, fmt.Errorf("statement %d failed: %w", i+1, err)
+				return applied, e.enhanceError(err, i+1, stmt)
 			}
 		} else {
 			if err := e.conn.Exec(ctx, stmt); err != nil {
-				return applied, fmt.Errorf("statement %d failed: %w\nStatement: %s", i+1, err, stmt)
+				return applied, e.enhanceError(err, i+1, stmt)
 			}
 		}
 
@@ -307,6 +307,49 @@ func (e *EnhancedExecutor) executeOnlineStatement(ctx context.Context, stmt stri
 	}
 
 	return e.conn.Exec(ctx, stmt)
+}
+
+// enhanceError provides helpful error messages for common migration issues
+func (e *EnhancedExecutor) enhanceError(err error, statementNum int, stmt string) error {
+	errStr := err.Error()
+	errStrLower := strings.ToLower(errStr)
+
+	// Check for missing function errors (case-insensitive)
+	if strings.Contains(errStrLower, "does not exist") && strings.Contains(errStrLower, "function") {
+		// Extract function name if possible
+		functionName := ""
+		if strings.Contains(errStr, "auto_update_timestamp") {
+			functionName = "auto_update_timestamp()"
+		} else if strings.Contains(errStr, "protect_soft_deleted") {
+			functionName = "protect_soft_deleted()"
+		} else if strings.Contains(errStr, "auto_update_with_soft_delete_protection") {
+			functionName = "auto_update_with_soft_delete_protection()"
+		} else if strings.Contains(errStr, "prevent_hard_delete") {
+			functionName = "prevent_hard_delete()"
+		}
+
+		if functionName != "" {
+			return fmt.Errorf("statement %d failed: %w\n\n❌ MISSING DATABASE FUNCTION\n\n"+
+				"The migration uses trigger function '%s' which doesn't exist in the database.\n\n"+
+				"💡 SOLUTION:\n"+
+				"   1. Run: vm functions migrate\n"+
+				"   2. Then run: vm migrate\n\n"+
+				"This installs the required database functions before running migrations.\n"+
+				"See documentation: vm functions --help\n\nStatement: %s",
+				statementNum, err, functionName, stmt)
+		}
+	}
+
+	// Check for missing table/relation errors (case-insensitive)
+	if strings.Contains(errStrLower, "does not exist") && (strings.Contains(errStrLower, "relation") || strings.Contains(errStrLower, "table")) {
+		return fmt.Errorf("statement %d failed: %w\n\n"+
+			"💡 TIP: This table might be created in a migration that hasn't run yet.\n"+
+			"   Check your migration order and dependencies.\n\nStatement: %s",
+			statementNum, err, stmt)
+	}
+
+	// Default error with statement context
+	return fmt.Errorf("statement %d failed: %w\nStatement: %s", statementNum, err, stmt)
 }
 
 // splitStatements splits SQL content into individual statements

@@ -73,7 +73,7 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION prevent_hard_delete()
 RETURNS TRIGGER AS $$
 BEGIN
-    RAISE EXCEPTION 'Hard delete is disabled. Use soft delete: UPDATE %% SET deleted_at = CURRENT_TIMESTAMP WHERE id = %%', TG_TABLE_NAME, OLD.id;
+    RAISE EXCEPTION 'Hard delete is disabled. Use soft delete: UPDATE % SET deleted_at = CURRENT_TIMESTAMP WHERE id = %', TG_TABLE_NAME, OLD.id;
 END;
 $$ LANGUAGE plpgsql;
 

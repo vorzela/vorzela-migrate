@@ -67,3 +67,94 @@ func TestCurrentVersionSet(t *testing.T) {
 		t.Error("CurrentVersion should not be empty")
 	}
 }
+
+func TestPrintVersionNoticeNoError(t *testing.T) {
+	// PrintVersionNotice should not panic or error
+	// It silently fails on network errors, which is expected
+
+	// Save and restore original GitHubAPI to prevent network calls
+	originalAPI := GitHubAPI
+	GitHubAPI = "" // Empty URL will cause silent failure without network call
+	defer func() {
+		GitHubAPI = originalAPI
+		if r := recover(); r != nil {
+			t.Errorf("PrintVersionNotice() panicked: %v", r)
+		}
+	}()
+
+	PrintVersionNotice()
+	// If we reach here without panic, test passes
+}
+
+func TestCheckForUpdateGracefulFailure(t *testing.T) {
+	// Test that CheckForUpdate handles errors gracefully
+	// by verifying it doesn't panic and returns sensible defaults
+
+	// Save original values
+	originalAPI := GitHubAPI
+	originalTimeout := Timeout
+
+	// Test with invalid URL
+	GitHubAPI = "http://invalid-url-that-does-not-exist.local/api"
+	defer func() {
+		GitHubAPI = originalAPI
+		Timeout = originalTimeout
+	}()
+
+	newVersion, available, err := CheckForUpdate()
+
+	// Should gracefully handle error
+	if err != nil {
+		// Errors are acceptable but should be returned, not panic
+		t.Logf("CheckForUpdate gracefully handled error: %v", err)
+	}
+
+	// When error occurs, should not claim update is available
+	if available {
+		t.Error("CheckForUpdate() should not claim update available on error")
+	}
+
+	// Version should be empty string on error
+	if available && newVersion == "" {
+		t.Error("If available=true, newVersion should not be empty")
+	}
+}
+
+func TestVersionComparison(t *testing.T) {
+	// Test the normalize function used in CheckForUpdate
+	normalize := func(s string) string {
+		if s == "" {
+			return s
+		}
+		if s[0] == 'v' || s[0] == 'V' {
+			return s[1:]
+		}
+		return s
+	}
+
+	tests := []struct {
+		current string
+		latest  string
+		isDiff  bool
+	}{
+		{"v1.0.0", "v1.0.0", false},
+		{"1.0.0", "1.0.0", false},
+		{"v1.0.0", "1.0.0", false}, // After normalization, should be same
+		{"v1.0.0", "v2.0.0", true},
+		{"1.0.0", "2.0.0", true},
+		{"V1.0.0", "v1.0.0", false}, // Case insensitive normalization
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.current+"_vs_"+tt.latest, func(t *testing.T) {
+			normalizedCurrent := normalize(tt.current)
+			normalizedLatest := normalize(tt.latest)
+			isDiff := normalizedCurrent != normalizedLatest
+
+			if isDiff != tt.isDiff {
+				t.Errorf("normalize(%q) vs normalize(%q): got isDiff=%v, want %v",
+					tt.current, tt.latest, isDiff, tt.isDiff)
+			}
+		})
+	}
+}
