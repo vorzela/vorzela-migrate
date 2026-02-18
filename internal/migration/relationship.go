@@ -186,21 +186,14 @@ CREATE TRIGGER trigger_%s_auto_update
 -- Relationship: %s <-> %s (Many-to-Many)
 
 %s-- ⬆ Up (Run when migrating forward)
-BEGIN;
-
 CREATE TABLE IF NOT EXISTS %s (
 %s
 );
 %s%s
 
-COMMIT;
-
 %s-- ⬇ Down (Run when rolling back)
-BEGIN;
 %s
 DROP TABLE IF EXISTS %s CASCADE;
-
-COMMIT;
 `, upperName, now, tables[0], tables[1],
 		gooseUp, pivotName, columns, indexes, triggerUp,
 		gooseDown, triggerDown, pivotName)

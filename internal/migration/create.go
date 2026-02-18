@@ -203,18 +203,12 @@ DROP TRIGGER IF EXISTS trigger_%s_auto_update ON %s;
 -- Created at: %s
 %s
 %s-- ⬆ Up (Run when migrating forward)
-BEGIN;
-
 CREATE TABLE IF NOT EXISTS %s (
 %s
 );%s%s
-COMMIT;
 
 %s-- ⬇ Down (Run when rolling back)
-BEGIN;
 %s
 DROP TABLE IF EXISTS %s CASCADE;
-
-COMMIT;
 `, upperName, timestamp, relComment, gooseUp, tableName, columns, extraIndexes, triggerFunctions, gooseDown, triggerCleanup, tableName)
 }

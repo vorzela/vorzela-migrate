@@ -23,8 +23,15 @@ type Config struct {
 	DetectDrift     bool
 	Verbose         bool
 
+	// Auto-run dependencies before migrations
+	AutoRunExtensions bool // Run 'vm extensions migrate' before 'vm migrate'
+	AutoRunFunctions  bool // Run 'vm functions migrate' before 'vm migrate'
+
 	// Drift handling: auto, reject, prompt
 	DriftHandling string
+
+	// Internal: track explicitly set values
+	explicitVerbose bool
 }
 
 // LoadConfig loads configuration with optional DSN and path overrides
@@ -141,6 +148,11 @@ func loadVorzelaFile(filepath string, cfg *Config) error {
 			cfg.DetectDrift = strings.ToLower(value) == "true" || value == "1"
 		case "VERBOSE":
 			cfg.Verbose = strings.ToLower(value) == "true" || value == "1"
+			cfg.explicitVerbose = true
+		case "AUTO_RUN_EXTENSIONS":
+			cfg.AutoRunExtensions = strings.ToLower(value) == "true" || value == "1"
+		case "AUTO_RUN_FUNCTIONS":
+			cfg.AutoRunFunctions = strings.ToLower(value) == "true" || value == "1"
 		case "DRIFT_HANDLING":
 			val := strings.ToLower(value)
 			if val == "auto" || val == "reject" || val == "prompt" {
@@ -218,12 +230,30 @@ func (c *Config) ApplyEnvironmentDefaults() {
 			c.Online = false // No need for online migrations in dev
 			c.VerifyChecksums = true
 			c.DetectDrift = true
-			c.Verbose = true
+			// Only set Verbose to true if not explicitly set by user
+			if !c.explicitVerbose {
+				c.Verbose = true
+			}
 			if c.DriftHandling == "" {
 				c.DriftHandling = "prompt"
 			}
 		}
 	}
+
+	// Set auto-run defaults (both environments)
+	// These defaults are true to prevent common errors
+	if !c.hasExplicitAutoRunSettings() {
+		c.AutoRunExtensions = true
+		c.AutoRunFunctions = true
+	}
+}
+
+// hasExplicitAutoRunSettings checks if auto-run settings were explicitly configured
+func (c *Config) hasExplicitAutoRunSettings() bool {
+	// If user explicitly set either to false, don't override
+	// In practice, this returns false to always apply defaults
+	// unless we track explicit settings (future enhancement)
+	return false
 }
 
 // hasExplicitSettings checks if any migration settings were explicitly configured

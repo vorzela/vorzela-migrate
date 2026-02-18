@@ -24,6 +24,8 @@ type MigrationOptions struct {
 	Verbose         bool
 	SkipLock        bool
 	DriftHandling   string // auto, reject, prompt
+	// Step limits how many pending migrations to run. 0 means unlimited.
+	Step int
 }
 
 // ExecutionResult tracks migration execution details
@@ -103,22 +105,91 @@ func (e *EnhancedExecutor) RunMigrationsEnhanced(opts MigrationOptions) ([]Execu
 		executedMap[mig.Migration] = mig
 	}
 
-	// Verify checksums if enabled
+	// Verify checksums if enabled.
+	// checksumsMismatch is true when any executed file was modified after being run.
+	// We still allow the user to check drift so they can discover schema differences
+	// caused by the modification (e.g. columns added to a file that already ran).
+	checksumsMismatch := false
 	if opts.VerifyChecksums {
 		e.logger.Info("Verifying migration checksums...")
 		if err := e.verifyChecksums(executed); err != nil {
+			checksumsMismatch = true
 			e.logger.Warning("Checksum verification failed: %v", err)
 			if !opts.Force {
 				return nil, fmt.Errorf("checksum verification failed (use --force to override): %w", err)
 			}
+			// When forcing, re-hash files so future runs pass cleanly.
+			e.logger.Info("Updating checksums for modified migrations...")
+			if updateErr := e.updateChecksums(executed); updateErr != nil {
+				e.logger.Warning("Failed to update checksums: %v", updateErr)
+			} else {
+				e.logger.Success("Checksums updated successfully")
+			}
 		}
 	}
 
-	// Detect schema drift if enabled
+	// Count pending migrations first
+	pendingCount := 0
+	for _, file := range files {
+		if _, exists := executedMap[file.Filename]; !exists {
+			pendingCount++
+		}
+	}
+
+	// Detect schema drift.
+	//
+	// Normal path (no checksum mismatch):
+	//   pendingCount == 0            → pre-run drift check (DB is fully up-to-date)
+	//   step exhausts all pending    → post-run drift (runs after migrations below)
+	//   step leaves some pending     → skipped (avoid mid-run false positives)
+	//
+	// Checksum mismatch path:
+	//   Files were modified after running. The user can opt in to drift detection
+	//   to discover columns added to the DB outside of migrations. If found they
+	//   can apply them immediately via ALTER TABLE; then pending migrations run.
 	if opts.DetectDrift {
-		e.logger.Info("Checking for schema drift...")
-		if err := e.detectAndHandleDrift(opts); err != nil {
-			e.logger.Warning("Schema drift detection: %v", err)
+		if checksumsMismatch {
+			e.logger.Warning("Migration files were modified (checksum mismatch) — expected schema may be imprecise.")
+			if e.promptYesNo("Run drift check anyway to look for added columns?") {
+				e.logger.Info("Checking for schema drift...")
+				executedFilenames := make([]string, 0, len(executed))
+				for _, m := range executed {
+					executedFilenames = append(executedFilenames, m.Migration)
+				}
+				applied, driftErr := e.detectAndHandleDrift(opts, executedFilenames)
+				if driftErr != nil {
+					// error only arises from apply failure; warn and continue
+					e.logger.Warning("Schema drift check: %v", driftErr)
+				}
+				if applied {
+					// Columns were added — update checksums so the next run starts clean.
+					e.logger.Info("Drift applied successfully — updating checksums...")
+					if updateErr := e.updateChecksums(executed); updateErr != nil {
+						e.logger.Warning("Failed to update checksums: %v", updateErr)
+					} else {
+						e.logger.Success("Checksums updated")
+					}
+				}
+				// Columns applied (or user skipped) — fall through to pending migrations.
+			}
+			// Whether user said yes or no: always continue to pending migrations.
+		} else {
+			willExhaustPending := opts.Step == 0 || opts.Step >= pendingCount
+			if pendingCount > 0 && !willExhaustPending {
+				remaining := pendingCount - opts.Step
+				e.logger.Debug("Skipping drift detection - %d pending migration(s) will remain after --step %d", remaining, opts.Step)
+			} else if pendingCount == 0 {
+				// All up-to-date: run drift against current DB
+				e.logger.Info("Checking for schema drift...")
+				executedFilenames := make([]string, 0, len(executed))
+				for _, m := range executed {
+					executedFilenames = append(executedFilenames, m.Migration)
+				}
+				if _, err := e.detectAndHandleDrift(opts, executedFilenames); err != nil {
+					e.logger.Warning("Schema drift detection: %v", err)
+				}
+			}
+			// When willExhaustPending && pendingCount > 0: drift runs AFTER migrations below
 		}
 	}
 
@@ -128,29 +199,29 @@ func (e *EnhancedExecutor) RunMigrationsEnhanced(opts MigrationOptions) ([]Execu
 		return nil, fmt.Errorf("failed to get batch number: %w", err)
 	}
 
-	// Run pending migrations
-	pendingCount := 0
-	for _, file := range files {
-		if _, exists := executedMap[file.Filename]; !exists {
-			pendingCount++
-		}
-	}
-
 	if pendingCount == 0 {
 		e.logger.Info("No pending migrations")
 		return results, nil
 	}
 
-	e.logger.Info("Found %d pending migration(s)", pendingCount)
+	if opts.Step > 0 && opts.Step < pendingCount {
+		e.logger.Info("Found %d pending migration(s), running %d (--step %d)", pendingCount, opts.Step, opts.Step)
+	} else {
+		e.logger.Info("Found %d pending migration(s)", pendingCount)
+	}
 
+	stepLimit := opts.Step // 0 = unlimited
 	current := 0
 	for _, file := range files {
 		if _, exists := executedMap[file.Filename]; exists {
 			continue
 		}
+		if stepLimit > 0 && current >= stepLimit {
+			break
+		}
 
 		current++
-		result := e.runSingleMigration(file, batch, opts, current, pendingCount)
+		result := e.runSingleMigration(file, batch, opts)
 		results = append(results, result)
 
 		if !result.Success {
@@ -176,11 +247,29 @@ func (e *EnhancedExecutor) RunMigrationsEnhanced(opts MigrationOptions) ([]Execu
 		return results, fmt.Errorf("%d migration(s) failed", failed)
 	}
 
+	// Drift detection post-run: runs when --step covered all pending migrations
+	// and checksum files are trustworthy (no modifications detected).
+	if opts.DetectDrift && !checksumsMismatch {
+		willExhaustPending := opts.Step == 0 || opts.Step >= pendingCount
+		if willExhaustPending && pendingCount > 0 && failed == 0 {
+			e.logger.Info("Checking for schema drift...")
+			// Include just-executed migrations in expected schema
+			allExecuted, _ := getExecutedMigrations(e.conn)
+			executedFilenames := make([]string, 0, len(allExecuted))
+			for _, m := range allExecuted {
+				executedFilenames = append(executedFilenames, m.Migration)
+			}
+			if _, err := e.detectAndHandleDrift(opts, executedFilenames); err != nil {
+				e.logger.Warning("Schema drift detection: %v", err)
+			}
+		}
+	}
+
 	return results, nil
 }
 
 // runSingleMigration executes a single migration with full tracking
-func (e *EnhancedExecutor) runSingleMigration(file MigrationFile, batch int, opts MigrationOptions, current, total int) ExecutionResult {
+func (e *EnhancedExecutor) runSingleMigration(file MigrationFile, batch int, opts MigrationOptions) ExecutionResult {
 	result := ExecutionResult{
 		MigrationName: file.Filename,
 		Success:       false,
@@ -223,7 +312,7 @@ func (e *EnhancedExecutor) runSingleMigration(file MigrationFile, batch int, opt
 	}
 
 	// Execute with recovery
-	partialStatements, err := e.executeMigrationWithRecovery(upSQL, file.Filename, opts.Online)
+	partialStatements, err := e.executeMigrationWithRecovery(upSQL)
 	result.PartiallyApplied = partialStatements
 
 	if err != nil {
@@ -251,12 +340,26 @@ func (e *EnhancedExecutor) runSingleMigration(file MigrationFile, batch int, opt
 }
 
 // executeMigrationWithRecovery executes migration and tracks partial success
-func (e *EnhancedExecutor) executeMigrationWithRecovery(sqlContent string, migrationName string, useOnline bool) ([]string, error) {
+func (e *EnhancedExecutor) executeMigrationWithRecovery(sqlContent string) ([]string, error) {
 	statements := splitStatements(sqlContent)
 	var applied []string
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
+
+	// Start a proper database transaction
+	tx, err := e.sqlDB.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+
+	// Ensure rollback on panic or error
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+			panic(r)
+		}
+	}()
 
 	for i, stmt := range statements {
 		stmt = strings.TrimSpace(stmt)
@@ -264,49 +367,22 @@ func (e *EnhancedExecutor) executeMigrationWithRecovery(sqlContent string, migra
 			continue
 		}
 
-		e.logger.Debug("Executing statement %d/%d", i+1, len(statements))
-
-		// Check if this is an online-eligible operation
-		if useOnline && e.isOnlineCompatible(stmt) {
-			if err := e.executeOnlineStatement(ctx, stmt); err != nil {
-				return applied, e.enhanceError(err, i+1, stmt)
-			}
-		} else {
-			if err := e.conn.Exec(ctx, stmt); err != nil {
-				return applied, e.enhanceError(err, i+1, stmt)
-			}
+		// Execute within the transaction
+		if _, err := tx.ExecContext(ctx, stmt); err != nil {
+			// Rollback the transaction
+			tx.Rollback()
+			return applied, e.enhanceError(err, i+1, stmt)
 		}
 
 		applied = append(applied, stmt)
 	}
 
+	// Commit the transaction
+	if err := tx.Commit(); err != nil {
+		return applied, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
 	return applied, nil
-}
-
-// isOnlineCompatible checks if a statement can be executed with online techniques
-func (e *EnhancedExecutor) isOnlineCompatible(stmt string) bool {
-	stmtUpper := strings.ToUpper(strings.TrimSpace(stmt))
-
-	// Check for ADD COLUMN operations
-	if strings.Contains(stmtUpper, "ALTER TABLE") && strings.Contains(stmtUpper, "ADD COLUMN") {
-		return true
-	}
-
-	return false
-}
-
-// executeOnlineStatement executes a statement using online migration techniques
-func (e *EnhancedExecutor) executeOnlineStatement(ctx context.Context, stmt string) error {
-	// Parse ALTER TABLE ADD COLUMN statements
-	// This is a simplified parser - could be enhanced
-	if strings.Contains(strings.ToUpper(stmt), "ADD COLUMN") {
-		e.logger.Debug("Using online migration strategy for ADD COLUMN")
-		// For now, fall back to regular execution
-		// Full implementation would parse and use OnlineMigration methods
-		return e.conn.Exec(ctx, stmt)
-	}
-
-	return e.conn.Exec(ctx, stmt)
 }
 
 // enhanceError provides helpful error messages for common migration issues
@@ -435,19 +511,62 @@ func (e *EnhancedExecutor) verifyChecksums(executed []Migration) error {
 	return nil
 }
 
-// detectAndHandleDrift detects schema drift and handles it based on configuration
-func (e *EnhancedExecutor) detectAndHandleDrift(opts MigrationOptions) error {
+// updateChecksums updates checksums for executed migrations to match current file state
+func (e *EnhancedExecutor) updateChecksums(executed []Migration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	var updated []string
+
+	for _, mig := range executed {
+		filePath := filepath.Join(e.migrationPath, mig.Migration)
+
+		// Calculate current checksum
+		currentChecksum, err := CalculateChecksum(filePath)
+		if err != nil {
+			e.logger.Warning("Could not calculate checksum for %s: %v", mig.Migration, err)
+			continue
+		}
+
+		// Skip if checksum matches
+		if currentChecksum == mig.Checksum {
+			continue
+		}
+
+		// Update checksum in database
+		query := "UPDATE migrations SET checksum = $1 WHERE migration = $2"
+		if err := e.conn.Exec(ctx, query, currentChecksum, mig.Migration); err != nil {
+			return fmt.Errorf("failed to update checksum for %s: %w", mig.Migration, err)
+		}
+
+		updated = append(updated, mig.Migration)
+		e.logger.Info("✓ Updated checksum: %s", mig.Migration)
+	}
+
+	if len(updated) == 0 {
+		e.logger.Info("No checksums needed updating")
+	}
+
+	return nil
+}
+
+// detectAndHandleDrift detects schema drift and handles it based on configuration.
+// executedFiles is the list of migration filenames that have already been run.
+// Returns (true, nil) when drift was detected AND at least one column was successfully applied.
+func (e *EnhancedExecutor) detectAndHandleDrift(opts MigrationOptions, executedFiles []string) (bool, error) {
+	// Build expected schema from executed migration files
+	expectedSchema := buildExpectedSchemaFromFiles(e.migrationPath, executedFiles)
+
 	tables, err := e.inspector.GetAllTables()
 	if err != nil {
-		return fmt.Errorf("failed to get tables: %w", err)
+		return false, fmt.Errorf("failed to get tables: %w", err)
 	}
 
 	var drifts []*SchemaDrift
 
 	for _, table := range tables {
-		// For simplicity, we'll check against empty expected columns
-		// In a real implementation, you'd parse migrations to build expected schema
-		drift, err := e.inspector.DetectDrift(table, []string{})
+		expectedCols := expectedSchema[strings.ToLower(table)]
+		drift, err := e.inspector.DetectDrift(table, expectedCols)
 		if err != nil {
 			e.logger.Debug("Failed to check drift for %s: %v", table, err)
 			continue
@@ -461,7 +580,7 @@ func (e *EnhancedExecutor) detectAndHandleDrift(opts MigrationOptions) error {
 
 	if len(drifts) == 0 {
 		e.logger.Success("No schema drift detected")
-		return nil
+		return false, nil
 	}
 
 	// Handle drift based on configuration
@@ -473,7 +592,7 @@ func (e *EnhancedExecutor) detectAndHandleDrift(opts MigrationOptions) error {
 	switch driftHandling {
 	case "reject":
 		e.logger.Error("Schema drift detected. Migrations rejected.")
-		return fmt.Errorf("schema drift detected in %d table(s)", len(drifts))
+		return false, fmt.Errorf("schema drift detected in %d table(s)", len(drifts))
 
 	case "auto":
 		e.logger.Info("Auto-applying schema drift fixes...")
@@ -487,8 +606,10 @@ func (e *EnhancedExecutor) detectAndHandleDrift(opts MigrationOptions) error {
 	}
 }
 
-// autoApplyDrift automatically applies drift fixes in the background
-func (e *EnhancedExecutor) autoApplyDrift(drifts []*SchemaDrift, opts MigrationOptions) error {
+// autoApplyDrift automatically applies drift fixes in the background.
+// Returns (true, nil) when at least one ALTER statement was executed successfully.
+func (e *EnhancedExecutor) autoApplyDrift(drifts []*SchemaDrift, opts MigrationOptions) (bool, error) {
+	applied := false
 	for _, drift := range drifts {
 		statements := e.inspector.GenerateAlterStatements(drift)
 
@@ -506,19 +627,36 @@ func (e *EnhancedExecutor) autoApplyDrift(drifts []*SchemaDrift, opts MigrationO
 
 			if err != nil {
 				e.logger.Error("Failed to apply drift fix: %v", err)
-				return fmt.Errorf("failed to apply drift fix for %s: %w", drift.Table, err)
+				return applied, fmt.Errorf("failed to apply drift fix for %s: %w", drift.Table, err)
 			}
 
+			applied = true
 			e.logger.Success("Applied drift fix for table '%s'", drift.Table)
 		}
 	}
 
-	e.logger.Success("All drift fixes applied successfully")
-	return nil
+	if applied {
+		e.logger.Success("All drift fixes applied successfully")
+	}
+	return applied, nil
 }
 
-// promptAndApplyDrift prompts user and applies drift fixes
-func (e *EnhancedExecutor) promptAndApplyDrift(drifts []*SchemaDrift, opts MigrationOptions) error {
+// promptYesNo prints a question and reads a yes/no answer from stdin.
+// Returns true for "yes"/"y", false for anything else or on read error.
+func (e *EnhancedExecutor) promptYesNo(question string) bool {
+	e.logger.Prompt(question + " (yes/no)")
+	reader := bufio.NewReader(os.Stdin)
+	response, err := reader.ReadString('\n')
+	if err != nil {
+		return false
+	}
+	response = strings.TrimSpace(strings.ToLower(response))
+	return response == "yes" || response == "y"
+}
+
+// promptAndApplyDrift prompts user and applies drift fixes.
+// Returns (true, nil) when the user chose yes and all ALTER statements executed successfully.
+func (e *EnhancedExecutor) promptAndApplyDrift(drifts []*SchemaDrift, opts MigrationOptions) (bool, error) {
 	// Show all drift details
 	for _, drift := range drifts {
 		statements := e.inspector.GenerateAlterStatements(drift)
@@ -533,7 +671,7 @@ func (e *EnhancedExecutor) promptAndApplyDrift(drifts []*SchemaDrift, opts Migra
 	reader := bufio.NewReader(os.Stdin)
 	response, err := reader.ReadString('\n')
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	response = strings.TrimSpace(strings.ToLower(response))
@@ -547,20 +685,12 @@ func (e *EnhancedExecutor) promptAndApplyDrift(drifts []*SchemaDrift, opts Migra
 	case "generate", "g":
 		// Just generate migration file
 		e.logger.Info("You can add these to a new migration file")
-		return nil
+		return false, nil
 
 	default:
 		e.logger.Info("Drift fixes skipped")
-		return nil
+		return false, nil
 	}
-}
-
-// Legacy method for backwards compatibility
-func (e *EnhancedExecutor) detectAndOfferFix() error {
-	opts := MigrationOptions{
-		DriftHandling: "prompt",
-	}
-	return e.detectAndHandleDrift(opts)
 }
 
 // recordMigrationWithMetadata records migration with checksum and timing

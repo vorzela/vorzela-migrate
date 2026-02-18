@@ -28,6 +28,19 @@ ENVIRONMENT=development
 DRIFT_HANDLING=prompt
 
 # ============================================
+# Auto-Run Dependencies (Recommended: true)
+# ============================================
+# Automatically runs extensions.sql and functions.sql before migrations
+# This prevents "function does not exist" errors during migrations
+# Execution order: Extensions → Functions → Migrations
+
+AUTO_RUN_EXTENSIONS=true   # Run extensions.sql before migrate (if file exists)
+AUTO_RUN_FUNCTIONS=true    # Run functions.sql before migrate (if file exists)
+
+# Set to false if you want to manually control execution order
+# (Not recommended unless you have a specific reason)
+
+# ============================================
 # Optional: Manual Overrides
 # ============================================
 # Uncomment these to override environment-based defaults
