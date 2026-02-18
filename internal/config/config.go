@@ -26,6 +26,7 @@ type Config struct {
 	// Auto-run dependencies before migrations
 	AutoRunExtensions bool // Run 'vm extensions migrate' before 'vm migrate'
 	AutoRunFunctions  bool // Run 'vm functions migrate' before 'vm migrate'
+	AutoRunEnums      bool // Run 'vm enums migrate' before 'vm migrate'
 
 	// Drift handling: auto, reject, prompt
 	DriftHandling string
@@ -153,6 +154,8 @@ func loadVorzelaFile(filepath string, cfg *Config) error {
 			cfg.AutoRunExtensions = strings.ToLower(value) == "true" || value == "1"
 		case "AUTO_RUN_FUNCTIONS":
 			cfg.AutoRunFunctions = strings.ToLower(value) == "true" || value == "1"
+		case "AUTO_RUN_ENUMS":
+			cfg.AutoRunEnums = strings.ToLower(value) == "true" || value == "1"
 		case "DRIFT_HANDLING":
 			val := strings.ToLower(value)
 			if val == "auto" || val == "reject" || val == "prompt" {
@@ -245,6 +248,7 @@ func (c *Config) ApplyEnvironmentDefaults() {
 	if !c.hasExplicitAutoRunSettings() {
 		c.AutoRunExtensions = true
 		c.AutoRunFunctions = true
+		c.AutoRunEnums = true
 	}
 }
 

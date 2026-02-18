@@ -2,6 +2,73 @@
 
 All notable changes to Vorzela Migration Tool are documented in this file.
 
+## [2.0.5] - 2026-02-19
+
+### New Features
+
+- **vm enums Command** 🏷️
+  - New `vm enums` command for managing PostgreSQL enum types
+  - `vm enums migrate` — creates an `enums.sql` template on first run, then installs all enabled `CREATE TYPE` statements idempotently (using `DO` blocks so re-runs are safe)
+  - `vm enums drop` — drops all enum types defined in `enums.sql` (supports `--step` for one-at-a-time and `--force` to skip confirmation)
+  - `vm enums status` — compares enum types in `enums.sql` against live `pg_type`, showing current values and highlighting missing/extra types
+
+- **Auto-Run Enums Before Migrations** 🚀
+  - `vm migrate` now automatically runs enums before migrations
+  - Execution order: Extensions → Functions → Enums → Migrations
+  - New config option: `AUTO_RUN_ENUMS` (default: `true`)
+  - Set to `false` in `.vm` file to disable auto-run behavior
+
+---
+
+## [2.0.4] - 2026-02-18
+
+### New Features
+
+- **vm refresh: Confirmation Prompt & Timing** 🔄
+  - Prompts for confirmation before dropping all migrations (use `--force` to skip)
+  - Shows "Dropped" label (not "Rolled back") to match the destructive semantic
+  - Per-migration and total elapsed timing displayed
+
+- **vm rollback: Rollback by Name** 🎯
+  - New `--migration`/`-m` flag to rollback a specific migration by partial case-insensitive name match
+  - Example: `vm rollback --migration create_users` rolls back that single file
+  - New `--step`/`-n` aliases for the existing `--steps` flag
+
+- **vm fresh: Consistent Labels & Timing** 🧹
+  - Uses "Dropped" label and shows elapsed timing consistent with `vm refresh`
+
+### Improvements
+
+- All migration functions now return elapsed `time.Duration` for display
+
+---
+
+## [2.0.3] - 2026-02-18
+
+### Bug Fixes
+
+- **Fixed Down Section Detection** 🐛
+  - `extractSection("Down")` never matched because only the `⬆` (Up) arrow was checked for section entry; added dedicated `isUpMarker` / `isDownMarker` helpers
+  - Both `⬆`/`⬇` arrow format and `+goose Up`/`+goose Down` format are now correctly handled for both Up and Down sections
+  - `vm rollback` and `vm refresh` no longer silently skip the DOWN SQL
+
+- **Fixed `--step` Flag Not Recognised on Rollback**
+  - Added `--step` and `-n` as aliases for the existing `--steps` flag on `vm rollback`
+
+### New Features
+
+- **Drift Detection: Indexes & Triggers** 🔍
+  - Schema drift detection now covers missing indexes and triggers in addition to columns
+  - Compares `CREATE INDEX` / `CREATE TRIGGER` statements in migration files against live database state
+  - Auto-generates repair statements for missing indexes and triggers
+
+- **vm uninstall Command** 🗑️
+  - Removes the `vm` binary from the system
+  - Cleans `PATH` export lines added by `vm` from shell profile files (`~/.bashrc`, `~/.zshrc`, etc.)
+  - Supports `--yes` (skip confirmation) and `--keep-path` (leave shell profile untouched)
+
+---
+
 ## [2.0.2] - 2026-02-18
 
 ### New Features

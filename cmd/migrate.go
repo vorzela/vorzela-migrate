@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/urfave/cli/v2"
 	"github.com/vorzela/vorzela-migrate/internal/config"
@@ -129,6 +130,17 @@ var MigrateCommand = &cli.Command{
 			}
 		}
 
+		if cfg.AutoRunEnums {
+			if err := runEnumsIfNeeded(db, cfg); err != nil {
+				// Only show error if enums.sql exists
+				enumsPath := filepath.Join(cfg.MigrationPath, "enums.sql")
+				if _, statErr := os.Stat(enumsPath); statErr == nil {
+					output.Warning("Failed to run enums: %v", err)
+					output.Info("To skip auto-run, set AUTO_RUN_ENUMS=false in .vm file")
+				}
+			}
+		}
+
 		// Initialize migration table
 		if err := migration.InitMigrationTable(db, cfg.DatabaseURL); err != nil {
 			output.Error("Failed to initialize migration table: %v", err)
@@ -239,6 +251,32 @@ var MigrateCommand = &cli.Command{
 
 		return nil
 	},
+}
+
+// runEnumsIfNeeded runs enums.sql if it exists
+func runEnumsIfNeeded(conn db.DB, cfg *config.Config) error {
+	enumsPath := filepath.Join(cfg.MigrationPath, "enums.sql")
+
+	if _, err := os.Stat(enumsPath); os.IsNotExist(err) {
+		return nil // No enums file, skip
+	}
+
+	sqlContent, err := os.ReadFile(enumsPath)
+	if err != nil {
+		return fmt.Errorf("failed to read enums.sql: %w", err)
+	}
+
+	if len(strings.TrimSpace(string(sqlContent))) == 0 {
+		return nil
+	}
+
+	ctx := context.Background()
+	if err := conn.Exec(ctx, string(sqlContent)); err != nil {
+		return fmt.Errorf("failed to install enums: %w", err)
+	}
+
+	output.Info("✓ Enum types installed")
+	return nil
 }
 
 // runExtensionsIfNeeded runs extensions.sql if it exists

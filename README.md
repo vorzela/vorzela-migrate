@@ -1,4 +1,4 @@
-# Vorzela Migration Tool (v2.0.3)
+# Vorzela Migration Tool (v2.0.5)
 
 ## 📖 Table of Contents
 
@@ -119,7 +119,7 @@ Download the appropriate binary for your platform from the [releases page](https
 **Linux/macOS:**
 ```bash
 # Download (replace URL with your platform)
-wget https://github.com/vorzela/vorzela-migrate/releases/download/v2.0.2/vm-linux-amd64
+wget https://github.com/vorzela/vorzela-migrate/releases/download/v2.0.5/vm-linux-amd64
 
 # Rename and make executable
 chmod +x vm-linux-amd64
@@ -169,7 +169,7 @@ sudo mv vm /usr/local/bin/  # Linux/macOS
 
 **Build with version info:**
 ```bash
-go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=v2.0.2'" -o vm main.go
+go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=v2.0.5'" -o vm main.go
 ```
 
 ### Verify Installation
@@ -178,7 +178,7 @@ After installation, verify it works:
 
 ```bash
 vm --version
-# Should output: vorzela-migrate v2.0.2
+# Should output: vorzela-migrate v2.0.5
 
 vm --help
 # Shows all available commands
@@ -943,11 +943,16 @@ See [CONFIG_ENHANCED.md](CONFIG_ENHANCED.md) for detailed configuration guide.
 | `vm migrate --step N` | Run only N pending migrations (0 = unlimited) |
 | `vm rollback` | Rollback the last batch of migrations |
 | `vm rollback --steps N` | Rollback last N batches (`all` to rollback everything) |
+| `vm rollback --migration <name>` | Rollback a single migration by partial name match |
 | `vm refresh` | Rollback all migrations then re-run all |
 | `vm fresh` | Drop all tables and re-run all migrations (⚠ destructive) |
 | `vm status` | Show current migration status (pending / executed) |
 | `vm make migration <name>` | Create a new migration file |
+| `vm enums migrate` | Install enum types from `enums.sql` |
+| `vm enums drop` | Drop enum types defined in `enums.sql` |
+| `vm enums status` | Compare `enums.sql` types against live database |
 | `vm upgrade` | Upgrade the `vm` binary to the latest release |
+| `vm uninstall` | Remove the `vm` binary and clean shell profile |
 
 ### `vm make migration` Flags
 
@@ -978,7 +983,8 @@ See [CONFIG_ENHANCED.md](CONFIG_ENHANCED.md) for detailed configuration guide.
 
 | Flag | Alias | Description |
 |------|-------|-------------|
-| `--steps N` | | Number of batches to rollback (`all` for everything) |
+| `--steps N` | `--step`, `-n` | Number of batches to rollback (`all` for everything) |
+| `--migration <name>` | `-m` | Rollback a single migration by partial case-insensitive name |
 | `--enhanced` | `-e` | Enhanced rollback with warnings and confirmation prompts |
 | `--dry-run` | | Preview what would be rolled back |
 | `--force` | | Skip confirmation prompts |
@@ -1000,6 +1006,27 @@ See [CONFIG_ENHANCED.md](CONFIG_ENHANCED.md) for detailed configuration guide.
 | `vm functions migrate` | Create `functions.sql` template (first run) or install functions |
 | `vm functions drop` | Drop all common trigger functions |
 | `vm functions drop --step` | Drop functions one at a time with confirmation |
+
+### `vm enums` Sub-commands
+
+| Command | Description |
+|---------|-------------|
+| `vm enums migrate` | Create `enums.sql` template (first run) or install all enabled `CREATE TYPE` statements idempotently |
+| `vm enums drop` | Drop all enum types defined in `enums.sql` |
+| `vm enums drop --step` | Drop enum types one at a time with confirmation |
+| `vm enums drop --force` | Drop all enum types without confirmation |
+| `vm enums status` | Show which enum types are present in the live database vs `enums.sql` |
+
+> **Auto-run:** `vm migrate` automatically runs `vm enums migrate` before applying migrations when `AUTO_RUN_ENUMS=true` (default). Set `AUTO_RUN_ENUMS=false` in your `.vm` file to disable.
+
+### `vm uninstall` Flags
+
+| Flag | Description |
+|------|-------------|
+| `--yes` | Skip confirmation prompt |
+| `--keep-path` | Remove the binary but leave shell profile `PATH` entries untouched |
+
+> Removes the `vm` binary located via `which vm` or known install paths, and cleans any `PATH` export lines added by `vm install.sh` from `~/.bashrc`, `~/.zshrc`, `~/.profile`, and `~/.bash_profile`.
 
 ### Global Flags (all commands)
 
