@@ -552,10 +552,12 @@ func (e *EnhancedExecutor) updateChecksums(executed []Migration) error {
 
 // detectAndHandleDrift detects schema drift and handles it based on configuration.
 // executedFiles is the list of migration filenames that have already been run.
-// Returns (true, nil) when drift was detected AND at least one column was successfully applied.
+// Returns (true, nil) when drift was detected AND at least one fix was successfully applied.
 func (e *EnhancedExecutor) detectAndHandleDrift(opts MigrationOptions, executedFiles []string) (bool, error) {
 	// Build expected schema from executed migration files
 	expectedSchema := buildExpectedSchemaFromFiles(e.migrationPath, executedFiles)
+	expectedIndexes := buildExpectedIndexesFromFiles(e.migrationPath, executedFiles)
+	expectedTriggers := buildExpectedTriggersFromFiles(e.migrationPath, executedFiles)
 
 	tables, err := e.inspector.GetAllTables()
 	if err != nil {
@@ -565,16 +567,60 @@ func (e *EnhancedExecutor) detectAndHandleDrift(opts MigrationOptions, executedF
 	var drifts []*SchemaDrift
 
 	for _, table := range tables {
-		expectedCols := expectedSchema[strings.ToLower(table)]
+		tblKey := strings.ToLower(table)
+
+		// --- Column drift ---
+		expectedCols := expectedSchema[tblKey]
 		drift, err := e.inspector.DetectDrift(table, expectedCols)
 		if err != nil {
-			e.logger.Debug("Failed to check drift for %s: %v", table, err)
+			e.logger.Debug("Failed to check column drift for %s: %v", table, err)
 			continue
 		}
 
 		if len(drift.AddedColumns) > 0 {
-			drifts = append(drifts, drift)
 			e.logger.SchemaDrift(table, extractColumnNames(drift.AddedColumns))
+		}
+
+		// --- Index drift: indexes defined in migrations but missing from DB ---
+		if wantIdxs, ok := expectedIndexes[tblKey]; ok && len(wantIdxs) > 0 {
+			actualIdxs, idxErr := e.inspector.GetTableIndexes(table)
+			if idxErr != nil {
+				e.logger.Debug("Failed to check index drift for %s: %v", table, idxErr)
+			} else {
+				actualSet := make(map[string]bool)
+				for _, ai := range actualIdxs {
+					actualSet[strings.ToLower(ai.Name)] = true
+				}
+				for _, wi := range wantIdxs {
+					if !actualSet[strings.ToLower(wi.Name)] {
+						e.logger.Warning("Missing index '%s' on table '%s'", wi.Name, table)
+						drift.MissingIndexes = append(drift.MissingIndexes, wi)
+					}
+				}
+			}
+		}
+
+		// --- Trigger drift: triggers defined in migrations but missing from DB ---
+		if wantTrigs, ok := expectedTriggers[tblKey]; ok && len(wantTrigs) > 0 {
+			actualTrigs, trigErr := e.inspector.GetTableTriggers(table)
+			if trigErr != nil {
+				e.logger.Debug("Failed to check trigger drift for %s: %v", table, trigErr)
+			} else {
+				actualSet := make(map[string]bool)
+				for _, at := range actualTrigs {
+					actualSet[strings.ToLower(at.Name)] = true
+				}
+				for _, wt := range wantTrigs {
+					if !actualSet[strings.ToLower(wt.Name)] {
+						e.logger.Warning("Missing trigger '%s' on table '%s'", wt.Name, table)
+						drift.MissingTriggers = append(drift.MissingTriggers, wt)
+					}
+				}
+			}
+		}
+
+		if len(drift.AddedColumns) > 0 || len(drift.MissingIndexes) > 0 || len(drift.MissingTriggers) > 0 {
+			drifts = append(drifts, drift)
 		}
 	}
 
@@ -607,11 +653,11 @@ func (e *EnhancedExecutor) detectAndHandleDrift(opts MigrationOptions, executedF
 }
 
 // autoApplyDrift automatically applies drift fixes in the background.
-// Returns (true, nil) when at least one ALTER statement was executed successfully.
+// Returns (true, nil) when at least one fix statement was executed successfully.
 func (e *EnhancedExecutor) autoApplyDrift(drifts []*SchemaDrift, opts MigrationOptions) (bool, error) {
 	applied := false
 	for _, drift := range drifts {
-		statements := e.inspector.GenerateAlterStatements(drift)
+		statements := e.inspector.GenerateAllStatements(drift)
 
 		for _, stmt := range statements {
 			e.logger.Info("Auto-applying: %s", stmt)
@@ -655,11 +701,11 @@ func (e *EnhancedExecutor) promptYesNo(question string) bool {
 }
 
 // promptAndApplyDrift prompts user and applies drift fixes.
-// Returns (true, nil) when the user chose yes and all ALTER statements executed successfully.
+// Returns (true, nil) when the user chose yes and all fix statements executed successfully.
 func (e *EnhancedExecutor) promptAndApplyDrift(drifts []*SchemaDrift, opts MigrationOptions) (bool, error) {
 	// Show all drift details
 	for _, drift := range drifts {
-		statements := e.inspector.GenerateAlterStatements(drift)
+		statements := e.inspector.GenerateAllStatements(drift)
 		e.logger.Info("Detected drift in '%s':", drift.Table)
 		for _, stmt := range statements {
 			fmt.Println("  " + stmt)

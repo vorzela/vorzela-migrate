@@ -27,9 +27,10 @@ var RollbackCommand = &cli.Command{
 			Usage:   "path to migrations directory",
 		},
 		&cli.StringFlag{
-			Name:  "steps",
-			Value: "1",
-			Usage: "number of batches to rollback: 1, 2, or 'all'",
+			Name:    "steps",
+			Aliases: []string{"step", "n"},
+			Value:   "1",
+			Usage:   "number of batches to rollback: 1, 2, or 'all'",
 		},
 		&cli.BoolFlag{
 			Name:    "enhanced",

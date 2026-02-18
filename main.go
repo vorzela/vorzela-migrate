@@ -24,6 +24,7 @@ func main() {
 			cmd.RefreshCommand,
 			cmd.StatusCommand,
 			cmd.UpgradeCommand,
+			cmd.UninstallCommand,
 		},
 		After: func(c *cli.Context) error {
 			// Skip version notice for upgrade command (it handles its own messaging)

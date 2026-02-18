@@ -636,30 +636,27 @@ vm rollback --enhanced \
 
 ## Migration File Format
 
-Migrations are SQL files with a special format. The tool automatically extracts the UP and DOWN sections:
+Migrations are SQL files with a special format. The tool automatically extracts the UP and DOWN sections.
+
+> **Transactions are handled automatically.** Every migration runs inside its own database transaction. If any statement fails the entire migration is rolled back — no partial changes are left in the database. Do not add `BEGIN` / `COMMIT` to your migration files.
 
 ```sql
 -- Migration: CREATE_USERS_TABLE
 -- Created at: 2026-02-05 10:30:45
 
 -- ⬆ Up (Run when migrating forward)
-BEGIN;
-
 CREATE TABLE users (
-    id SERIAL PRIMARY KEY,
+    id BIGSERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-COMMIT;
+CREATE INDEX idx_users_email ON users(email);
 
 -- ⬇ Down (Run when rolling back)
-BEGIN;
-
 DROP TABLE IF EXISTS users;
-
-COMMIT;
 ```
 
 ## 🔌 Integration with sqlc & goose
@@ -699,22 +696,14 @@ export SQLC_SUPPORT=true
 -- Created at: 2024-01-15 10:30:00
 
 -- ⬆ Up (Run when migrating forward)
-BEGIN;
-
 CREATE TABLE IF NOT EXISTS users (
-    id SERIAL PRIMARY KEY,
+    id BIGSERIAL PRIMARY KEY,
     email VARCHAR(255) NOT NULL UNIQUE,
     created_at TIMESTAMP DEFAULT NOW()
 );
 
-COMMIT;
-
 -- ⬇ Down (Run when rolling back)
-BEGIN;
-
 DROP TABLE IF EXISTS users CASCADE;
-
-COMMIT;
 ```
 
 **With SQLC_SUPPORT=true:**
@@ -725,23 +714,15 @@ COMMIT;
 
 -- +goose Up
 -- ⬆ Up (Run when migrating forward)
-BEGIN;
-
 CREATE TABLE IF NOT EXISTS users (
-    id SERIAL PRIMARY KEY,
+    id BIGSERIAL PRIMARY KEY,
     email VARCHAR(255) NOT NULL UNIQUE,
     created_at TIMESTAMP DEFAULT NOW()
 );
 
-COMMIT;
-
 -- +goose Down
 -- ⬇ Down (Run when rolling back)
-BEGIN;
-
 DROP TABLE IF EXISTS users CASCADE;
-
-COMMIT;
 ```
 
 ### Using with sqlc Workflow

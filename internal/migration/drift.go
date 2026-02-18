@@ -15,6 +15,24 @@ type ColumnInfo struct {
 	Default  sql.NullString
 }
 
+// IndexInfo represents a database index
+type IndexInfo struct {
+	Name      string
+	TableName string
+	Columns   []string
+	IsUnique  bool
+	IndexType string // btree, hash, gin, gist, etc.
+}
+
+// TriggerInfo represents a database trigger
+type TriggerInfo struct {
+	Name      string
+	TableName string
+	Event     string // INSERT, UPDATE, DELETE
+	Timing    string // BEFORE, AFTER, INSTEAD OF
+	Statement string // trigger body / procedure reference
+}
+
 // TableSchema represents the schema of a database table
 type TableSchema struct {
 	Name    string
@@ -26,6 +44,8 @@ type SchemaDrift struct {
 	Table           string
 	AddedColumns    []ColumnInfo
 	ModifiedColumns []ColumnModification
+	MissingIndexes  []IndexInfo
+	MissingTriggers []TriggerInfo
 }
 
 // ColumnModification represents a changed column
@@ -138,6 +158,176 @@ func (si *SchemaInspector) getMySQLTableSchema(tableName string) (*TableSchema, 
 	return schema, nil
 }
 
+// GetTableIndexes retrieves all indexes for a table from the database.
+func (si *SchemaInspector) GetTableIndexes(tableName string) ([]IndexInfo, error) {
+	switch si.dialect {
+	case PostgreSQL:
+		return si.getPostgresTableIndexes(tableName)
+	case MySQL, MariaDB:
+		return si.getMySQLTableIndexes(tableName)
+	default:
+		return nil, fmt.Errorf("unsupported dialect for index inspection: %s", si.dialect)
+	}
+}
+
+func (si *SchemaInspector) getPostgresTableIndexes(tableName string) ([]IndexInfo, error) {
+	query := `
+		SELECT
+			i.relname AS index_name,
+			ix.indisunique AS is_unique,
+			am.amname AS index_type,
+			array_agg(a.attname ORDER BY a.attnum) AS columns
+		FROM
+			pg_class t
+			JOIN pg_index ix ON t.oid = ix.indrelid
+			JOIN pg_class i ON i.oid = ix.indexrelid
+			JOIN pg_am am ON am.oid = i.relam
+			JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(ix.indkey)
+		WHERE
+			t.relname = $1
+			AND t.relkind = 'r'
+			AND ix.indisprimary = false
+		GROUP BY i.relname, ix.indisunique, am.amname
+		ORDER BY i.relname
+	`
+	rows, err := si.db.Query(query, tableName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query indexes: %w", err)
+	}
+	defer rows.Close()
+
+	var indexes []IndexInfo
+	for rows.Next() {
+		var idx IndexInfo
+		var colArray string
+		idx.TableName = tableName
+		if err := rows.Scan(&idx.Name, &idx.IsUnique, &idx.IndexType, &colArray); err != nil {
+			return nil, err
+		}
+		// colArray arrives as "{col1,col2,...}" from PostgreSQL
+		colArray = strings.Trim(colArray, "{}")
+		for _, c := range strings.Split(colArray, ",") {
+			if c = strings.TrimSpace(c); c != "" {
+				idx.Columns = append(idx.Columns, c)
+			}
+		}
+		indexes = append(indexes, idx)
+	}
+	return indexes, rows.Err()
+}
+
+func (si *SchemaInspector) getMySQLTableIndexes(tableName string) ([]IndexInfo, error) {
+	query := `
+		SELECT
+			INDEX_NAME,
+			NON_UNIQUE,
+			INDEX_TYPE,
+			GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) AS columns
+		FROM information_schema.STATISTICS
+		WHERE TABLE_SCHEMA = DATABASE()
+		  AND TABLE_NAME = ?
+		  AND INDEX_NAME != 'PRIMARY'
+		GROUP BY INDEX_NAME, NON_UNIQUE, INDEX_TYPE
+		ORDER BY INDEX_NAME
+	`
+	rows, err := si.db.Query(query, tableName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query indexes: %w", err)
+	}
+	defer rows.Close()
+
+	var indexes []IndexInfo
+	for rows.Next() {
+		var idx IndexInfo
+		var nonUnique int
+		var colList string
+		idx.TableName = tableName
+		if err := rows.Scan(&idx.Name, &nonUnique, &idx.IndexType, &colList); err != nil {
+			return nil, err
+		}
+		idx.IsUnique = nonUnique == 0
+		for _, c := range strings.Split(colList, ",") {
+			if c = strings.TrimSpace(c); c != "" {
+				idx.Columns = append(idx.Columns, c)
+			}
+		}
+		indexes = append(indexes, idx)
+	}
+	return indexes, rows.Err()
+}
+
+// GetTableTriggers retrieves all triggers for a table from the database.
+func (si *SchemaInspector) GetTableTriggers(tableName string) ([]TriggerInfo, error) {
+	switch si.dialect {
+	case PostgreSQL:
+		return si.getPostgresTableTriggers(tableName)
+	case MySQL, MariaDB:
+		return si.getMySQLTableTriggers(tableName)
+	default:
+		return nil, fmt.Errorf("unsupported dialect for trigger inspection: %s", si.dialect)
+	}
+}
+
+func (si *SchemaInspector) getPostgresTableTriggers(tableName string) ([]TriggerInfo, error) {
+	query := `
+		SELECT
+			trigger_name,
+			event_manipulation,
+			action_timing,
+			action_statement
+		FROM information_schema.triggers
+		WHERE event_object_table = $1
+		  AND trigger_schema = 'public'
+		ORDER BY trigger_name
+	`
+	rows, err := si.db.Query(query, tableName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query triggers: %w", err)
+	}
+	defer rows.Close()
+
+	var triggers []TriggerInfo
+	for rows.Next() {
+		var trig TriggerInfo
+		trig.TableName = tableName
+		if err := rows.Scan(&trig.Name, &trig.Event, &trig.Timing, &trig.Statement); err != nil {
+			return nil, err
+		}
+		triggers = append(triggers, trig)
+	}
+	return triggers, rows.Err()
+}
+
+func (si *SchemaInspector) getMySQLTableTriggers(tableName string) ([]TriggerInfo, error) {
+	query := `
+		SELECT
+			TRIGGER_NAME,
+			EVENT_MANIPULATION,
+			ACTION_TIMING,
+			ACTION_STATEMENT
+		FROM information_schema.TRIGGERS
+		WHERE EVENT_OBJECT_SCHEMA = DATABASE()
+		  AND EVENT_OBJECT_TABLE = ?
+		ORDER BY TRIGGER_NAME
+	`
+	rows, err := si.db.Query(query, tableName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query triggers: %w", err)
+	}
+	defer rows.Close()
+
+	var triggers []TriggerInfo
+	for rows.Next() {
+		var trig TriggerInfo
+		trig.TableName = tableName
+		if err := rows.Scan(&trig.Name, &trig.Event, &trig.Timing, &trig.Statement); err != nil {
+			return nil, err
+		}
+		triggers = append(triggers, trig)
+	}
+	return triggers, rows.Err()
+}
+
 // DetectDrift compares expected schema with current schema
 func (si *SchemaInspector) DetectDrift(tableName string, expectedColumns []string) (*SchemaDrift, error) {
 	currentSchema, err := si.GetTableSchema(tableName)
@@ -202,6 +392,69 @@ func (si *SchemaInspector) generateAddColumnStatement(table string, col ColumnIn
 	}
 
 	return strings.Join(parts, " ") + ";"
+}
+
+// GenerateCreateIndexStatements generates CREATE INDEX statements for missing indexes.
+func (si *SchemaInspector) GenerateCreateIndexStatements(drift *SchemaDrift) []string {
+	if len(drift.MissingIndexes) == 0 {
+		return nil
+	}
+
+	var statements []string
+	for _, idx := range drift.MissingIndexes {
+		unique := ""
+		if idx.IsUnique {
+			unique = "UNIQUE "
+		}
+		cols := strings.Join(idx.Columns, ", ")
+		var stmt string
+		if si.dialect == PostgreSQL {
+			stmt = fmt.Sprintf("CREATE %sINDEX IF NOT EXISTS %s ON %s (%s);",
+				unique, idx.Name, idx.TableName, cols)
+		} else {
+			// MySQL / MariaDB
+			if idx.IsUnique {
+				stmt = fmt.Sprintf("CREATE UNIQUE INDEX IF NOT EXISTS %s ON %s (%s);",
+					idx.Name, idx.TableName, cols)
+			} else {
+				stmt = fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s ON %s (%s);",
+					idx.Name, idx.TableName, cols)
+			}
+		}
+		statements = append(statements, stmt)
+	}
+	return statements
+}
+
+// GenerateCreateTriggerStatements returns a comment for each missing trigger
+// reminding the user to recreate it, since trigger bodies require the original SQL.
+func (si *SchemaInspector) GenerateCreateTriggerStatements(drift *SchemaDrift) []string {
+	if len(drift.MissingTriggers) == 0 {
+		return nil
+	}
+
+	var statements []string
+	for _, trig := range drift.MissingTriggers {
+		// Emit a reminder comment — trigger bodies can be complex and dialect-specific;
+		// the DBA should re-apply the original migration or write a targeted fix migration.
+		stmt := fmt.Sprintf(
+			"-- MISSING TRIGGER: %s (%s %s ON %s) — re-apply or create a new migration to restore it.",
+			trig.Name, trig.Timing, trig.Event, trig.TableName,
+		)
+		statements = append(statements, stmt)
+	}
+	return statements
+}
+
+// GenerateAllStatements returns all SQL statements needed to fix drift:
+// ALTER TABLE for missing columns, CREATE INDEX for missing indexes,
+// and advisory comments for missing triggers.
+func (si *SchemaInspector) GenerateAllStatements(drift *SchemaDrift) []string {
+	var all []string
+	all = append(all, si.GenerateAlterStatements(drift)...)
+	all = append(all, si.GenerateCreateIndexStatements(drift)...)
+	all = append(all, si.GenerateCreateTriggerStatements(drift)...)
+	return all
 }
 
 // GetAllTables returns all user tables in the database

@@ -330,6 +330,32 @@ func getNextBatchNumber(conn db.DB) (int, error) {
 	return batch, err
 }
 
+// isUpMarker returns true if a (trimmed) line is a recognised Up section header.
+func isUpMarker(line string) bool {
+	// Arrow style:  -- ⬆ Up (Run when migrating forward)
+	if strings.Contains(line, "⬆") {
+		return true
+	}
+	// Goose style:  -- +goose Up
+	if strings.Contains(line, "+goose Up") {
+		return true
+	}
+	return false
+}
+
+// isDownMarker returns true if a (trimmed) line is a recognised Down section header.
+func isDownMarker(line string) bool {
+	// Arrow style:  -- ⬇ Down (Run when rolling back)
+	if strings.Contains(line, "⬇") {
+		return true
+	}
+	// Goose style:  -- +goose Down
+	if strings.Contains(line, "+goose Down") {
+		return true
+	}
+	return false
+}
+
 func extractSection(content string, section string) string {
 	lines := strings.Split(content, "\n")
 	var inSection bool
@@ -338,27 +364,24 @@ func extractSection(content string, section string) string {
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 
-		// Check if we're entering the section
-		if strings.Contains(trimmed, "⬆") && strings.Contains(trimmed, section) {
-			inSection = true
-			continue
-		}
-
-		// Check if we're exiting the section
-		if strings.Contains(trimmed, "⬇") {
-			inSection = false
-			break
-		}
-
-		// If we're entering another section marker, stop
-		if strings.HasPrefix(trimmed, "--") && (strings.Contains(trimmed, "⬆") || strings.Contains(trimmed, "⬇")) {
-			if inSection {
-				inSection = false
-				break
+		switch section {
+		case "Up":
+			if isUpMarker(trimmed) {
+				inSection = true
+				continue
 			}
+			// Down marker ends the Up section
+			if inSection && isDownMarker(trimmed) {
+				return strings.TrimSpace(strings.Join(sectionContent, "\n"))
+			}
+		case "Down":
+			if isDownMarker(trimmed) {
+				inSection = true
+				continue
+			}
+			// Nothing ends the Down section — it runs to EOF
 		}
 
-		// Collect lines from the current section
 		if inSection && !strings.HasPrefix(trimmed, "--") {
 			sectionContent = append(sectionContent, line)
 		}

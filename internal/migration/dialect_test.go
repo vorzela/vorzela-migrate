@@ -80,6 +80,25 @@ func TestCreateMigrationTableSQL(t *testing.T) {
 }
 
 func TestExtractSection(t *testing.T) {
+	standardMigration := `-- Migration: TEST
+-- Created at: 2026-01-01 00:00:00
+
+-- ⬆ Up (Run when migrating forward)
+CREATE TABLE users (id BIGSERIAL PRIMARY KEY);
+CREATE INDEX idx_users_id ON users(id);
+
+-- ⬇ Down (Run when rolling back)
+DROP TABLE IF EXISTS users;
+`
+
+	gooseMigration := `-- Migration: TEST
+-- +goose Up
+CREATE TABLE roles (id BIGSERIAL PRIMARY KEY);
+
+-- +goose Down
+DROP TABLE IF EXISTS roles;
+`
+
 	tests := []struct {
 		name    string
 		content string
@@ -87,25 +106,33 @@ func TestExtractSection(t *testing.T) {
 		want    string
 	}{
 		{
-			name: "Extract UP section",
-			content: `-- Migration: TEST
--- ⬆ Up (Run when migrating forward)
-BEGIN;
-CREATE TABLE users (id INT);
-COMMIT;
--- ⬇ Down (Run when rolling back)
-BEGIN;
-DROP TABLE users;
-COMMIT;`,
+			name:    "Extract Up section (arrow format)",
+			content: standardMigration,
 			section: "Up",
-			want:    "BEGIN;\nCREATE TABLE users (id INT);\nCOMMIT;",
+			want:    "CREATE TABLE users (id BIGSERIAL PRIMARY KEY);\nCREATE INDEX idx_users_id ON users(id);",
+		},
+		{
+			name:    "Extract Down section (arrow format)",
+			content: standardMigration,
+			section: "Down",
+			want:    "DROP TABLE IF EXISTS users;",
+		},
+		{
+			name:    "Extract Up section (goose format)",
+			content: gooseMigration,
+			section: "Up",
+			want:    "CREATE TABLE roles (id BIGSERIAL PRIMARY KEY);",
+		},
+		{
+			name:    "Extract Down section (goose format)",
+			content: gooseMigration,
+			section: "Down",
+			want:    "DROP TABLE IF EXISTS roles;",
 		},
 		{
 			name: "No section found",
 			content: `-- Migration: TEST
-BEGIN;
-CREATE TABLE users (id INT);
-COMMIT;`,
+CREATE TABLE users (id INT);`,
 			section: "Up",
 			want:    "",
 		},

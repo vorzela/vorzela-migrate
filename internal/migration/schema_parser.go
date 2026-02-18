@@ -225,3 +225,112 @@ func uniqueStrings(s []string) []string {
 	}
 	return out
 }
+
+// -----------------------------------------------------------------------
+// Index + trigger extraction from migration SQL
+// -----------------------------------------------------------------------
+
+// createIndexRe matches: CREATE [UNIQUE] INDEX [IF NOT EXISTS] name ON table (cols)
+var createIndexRe = regexp.MustCompile(
+	`(?is)CREATE\s+(UNIQUE\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?([` + "`" + `"\w]+)\s+ON\s+([` + "`" + `"\w]+)\s*\(([^)]+)\)`)
+
+// createTriggerRe matches: CREATE [OR REPLACE] TRIGGER name {BEFORE|AFTER} event ON table
+var createTriggerRe = regexp.MustCompile(
+	`(?is)CREATE\s+(?:OR\s+REPLACE\s+)?TRIGGER\s+([` + "`" + `"\w]+)\s+(BEFORE|AFTER|INSTEAD\s+OF)\s+(INSERT|UPDATE|DELETE|TRUNCATE)\s+ON\s+([` + "`" + `"\w]+)`)
+
+// buildExpectedIndexesFromFiles parses executed migration files and returns
+// a map of tableName -> []IndexInfo listing indexes that should exist.
+func buildExpectedIndexesFromFiles(migrationPath string, executedFiles []string) map[string][]IndexInfo {
+	expected := make(map[string][]IndexInfo)
+	seen := make(map[string]bool) // deduplicate by index name
+
+	for _, filename := range executedFiles {
+		content, err := os.ReadFile(filepath.Join(migrationPath, filename))
+		if err != nil {
+			continue
+		}
+		for _, idx := range extractIndexesFromSQL(string(content)) {
+			key := strings.ToLower(idx.TableName) + "." + strings.ToLower(idx.Name)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			tbl := strings.ToLower(idx.TableName)
+			expected[tbl] = append(expected[tbl], idx)
+		}
+	}
+	return expected
+}
+
+// buildExpectedTriggersFromFiles parses executed migration files and returns
+// a map of tableName -> []TriggerInfo listing triggers that should exist.
+func buildExpectedTriggersFromFiles(migrationPath string, executedFiles []string) map[string][]TriggerInfo {
+	expected := make(map[string][]TriggerInfo)
+	seen := make(map[string]bool)
+
+	for _, filename := range executedFiles {
+		content, err := os.ReadFile(filepath.Join(migrationPath, filename))
+		if err != nil {
+			continue
+		}
+		for _, trig := range extractTriggersFromSQL(string(content)) {
+			key := strings.ToLower(trig.TableName) + "." + strings.ToLower(trig.Name)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			tbl := strings.ToLower(trig.TableName)
+			expected[tbl] = append(expected[tbl], trig)
+		}
+	}
+	return expected
+}
+
+// extractIndexesFromSQL parses CREATE INDEX statements from a SQL string.
+func extractIndexesFromSQL(sql string) []IndexInfo {
+	var indexes []IndexInfo
+	for _, m := range createIndexRe.FindAllStringSubmatch(sql, -1) {
+		isUnique := strings.TrimSpace(m[1]) != ""
+		name := stripQuotes(m[2])
+		table := stripQuotes(m[3])
+		rawCols := m[4]
+
+		var cols []string
+		for _, c := range strings.Split(rawCols, ",") {
+			c = strings.TrimSpace(c)
+			// Strip any index-direction keyword or parenthesised length — keep identifier only
+			c = strings.Fields(c)[0]
+			c = stripQuotes(c)
+			if c != "" {
+				cols = append(cols, strings.ToLower(c))
+			}
+		}
+
+		indexes = append(indexes, IndexInfo{
+			Name:      strings.ToLower(name),
+			TableName: strings.ToLower(table),
+			Columns:   cols,
+			IsUnique:  isUnique,
+		})
+	}
+	return indexes
+}
+
+// extractTriggersFromSQL parses CREATE TRIGGER statements from a SQL string.
+func extractTriggersFromSQL(sql string) []TriggerInfo {
+	var triggers []TriggerInfo
+	for _, m := range createTriggerRe.FindAllStringSubmatch(sql, -1) {
+		name := stripQuotes(m[1])
+		timing := strings.ToUpper(strings.TrimSpace(m[2]))
+		event := strings.ToUpper(strings.TrimSpace(m[3]))
+		table := stripQuotes(m[4])
+
+		triggers = append(triggers, TriggerInfo{
+			Name:      strings.ToLower(name),
+			TableName: strings.ToLower(table),
+			Event:     event,
+			Timing:    timing,
+		})
+	}
+	return triggers
+}

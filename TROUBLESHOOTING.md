@@ -133,17 +133,13 @@ vm make migration create_users_table_v2
 #### "No UP section found in migration"
 **Problem**: Migration file missing UP section
 
-**Solution**: Ensure migration file has proper format:
+**Solution**: Ensure migration file has proper format. Transactions are managed automatically — do not add `BEGIN`/`COMMIT`:
 ```sql
 -- ⬆ Up (Run when migrating forward)
-BEGIN;
--- Your SQL here
-COMMIT;
+-- Your SQL here (no BEGIN/COMMIT needed)
 
 -- ⬇ Down (Run when rolling back)
-BEGIN;
--- Your SQL here
-COMMIT;
+-- Your SQL here (no BEGIN/COMMIT needed)
 ```
 
 #### "No DOWN section found in migration"
@@ -152,9 +148,7 @@ COMMIT;
 **Solution**: Add DOWN section to migration file:
 ```sql
 -- ⬇ Down (Run when rolling back)
-BEGIN;
 DROP TABLE IF EXISTS users CASCADE;
-COMMIT;
 ```
 
 #### "migrations table does not exist"
