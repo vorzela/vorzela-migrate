@@ -42,6 +42,11 @@ var ExtensionsCommand = &cli.Command{
 					return err
 				}
 
+				// Extensions are a PostgreSQL-only feature
+				if d := migration.DetectDialect(cfg.DatabaseURL); d != migration.PostgreSQL {
+					return fmt.Errorf("vm extensions is not supported on %s — CREATE EXTENSION is a PostgreSQL-only feature", d)
+				}
+
 				// Check if extensions.sql exists, create if not
 				extensionsPath := filepath.Join(cfg.MigrationPath, "extensions.sql")
 				if _, err := os.Stat(extensionsPath); os.IsNotExist(err) {

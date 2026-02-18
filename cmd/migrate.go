@@ -106,11 +106,15 @@ var MigrateCommand = &cli.Command{
 		}
 		defer db.Close()
 
-		// Auto-run extensions and functions if enabled (default: true)
-		// This prevents errors like "function does not exist" during migrations
+		// Auto-run extensions, functions and enums if enabled (default: true)
+		// These are PostgreSQL-only features — skip silently on MySQL/MariaDB
+		dialect := migration.DetectDialect(cfg.DatabaseURL)
+		isPostgres := dialect == migration.PostgreSQL
+
 		if cfg.AutoRunExtensions {
-			if err := runExtensionsIfNeeded(db, cfg); err != nil {
-				// Only show error if extensions.sql exists
+			if !isPostgres {
+				output.Info("Skipping auto-run extensions (PostgreSQL only)")
+			} else if err := runExtensionsIfNeeded(db, cfg); err != nil {
 				extensionsPath := filepath.Join(cfg.MigrationPath, "extensions.sql")
 				if _, statErr := os.Stat(extensionsPath); statErr == nil {
 					output.Warning("Failed to run extensions: %v", err)
@@ -120,8 +124,9 @@ var MigrateCommand = &cli.Command{
 		}
 
 		if cfg.AutoRunFunctions {
-			if err := runFunctionsIfNeeded(db, cfg); err != nil {
-				// Only show error if functions.sql exists
+			if !isPostgres {
+				output.Info("Skipping auto-run functions (PostgreSQL only)")
+			} else if err := runFunctionsIfNeeded(db, cfg); err != nil {
 				functionsPath := filepath.Join(cfg.MigrationPath, "functions.sql")
 				if _, statErr := os.Stat(functionsPath); statErr == nil {
 					output.Warning("Failed to run functions: %v", err)
@@ -131,8 +136,9 @@ var MigrateCommand = &cli.Command{
 		}
 
 		if cfg.AutoRunEnums {
-			if err := runEnumsIfNeeded(db, cfg); err != nil {
-				// Only show error if enums.sql exists
+			if !isPostgres {
+				output.Info("Skipping auto-run enums (PostgreSQL only)")
+			} else if err := runEnumsIfNeeded(db, cfg); err != nil {
 				enumsPath := filepath.Join(cfg.MigrationPath, "enums.sql")
 				if _, statErr := os.Stat(enumsPath); statErr == nil {
 					output.Warning("Failed to run enums: %v", err)

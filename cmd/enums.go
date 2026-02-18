@@ -42,6 +42,11 @@ var EnumsCommand = &cli.Command{
 					return err
 				}
 
+				// CREATE TYPE AS ENUM is a PostgreSQL-only feature
+				if d := migration.DetectDialect(cfg.DatabaseURL); d != migration.PostgreSQL {
+					return fmt.Errorf("vm enums is not supported on %s — CREATE TYPE AS ENUM is a PostgreSQL-only feature", d)
+				}
+
 				enumsPath := filepath.Join(cfg.MigrationPath, "enums.sql")
 				if _, err := os.Stat(enumsPath); os.IsNotExist(err) {
 					output.Info("enums.sql not found, creating template...")

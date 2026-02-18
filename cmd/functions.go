@@ -9,6 +9,7 @@ import (
 	"github.com/urfave/cli/v2"
 	"github.com/vorzela/vorzela-migrate/internal/config"
 	"github.com/vorzela/vorzela-migrate/internal/database"
+	"github.com/vorzela/vorzela-migrate/internal/migration"
 	"github.com/vorzela/vorzela-migrate/internal/output"
 )
 
@@ -38,6 +39,11 @@ var FunctionsCommand = &cli.Command{
 				if err != nil {
 					output.Error(err.Error())
 					return err
+				}
+
+				// Functions use PL/pgSQL — PostgreSQL only
+				if d := migration.DetectDialect(cfg.DatabaseURL); d != migration.PostgreSQL {
+					return fmt.Errorf("vm functions is not supported on %s — PL/pgSQL trigger functions are a PostgreSQL-only feature", d)
 				}
 
 				// Connect to database
