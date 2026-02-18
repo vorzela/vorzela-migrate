@@ -45,7 +45,7 @@ func CreateMigrationTableSQL(dialect Dialect) string {
 			migration VARCHAR(255) NOT NULL UNIQUE,
 			batch INTEGER NOT NULL,
 			checksum VARCHAR(64),
-			executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			executed_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
 			execution_time_ms INTEGER DEFAULT 0
 		);
 		`

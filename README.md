@@ -300,7 +300,7 @@ vm make migration posts -sd -t
 - `add_email_to_users_table` → Used as-is (no table creation)
 
 **Soft Delete Support (`--soft-delete` / `-sd`):**
-- Adds `deleted_at TIMESTAMP DEFAULT NULL` column
+- Adds `deleted_at TIMESTAMPTZ DEFAULT NULL` column
 - Creates index on `deleted_at` for efficient queries
 - Enables soft delete pattern: `WHERE deleted_at IS NULL`
 
@@ -649,8 +649,8 @@ CREATE TABLE users (
     id BIGSERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX idx_users_email ON users(email);
@@ -699,7 +699,7 @@ export SQLC_SUPPORT=true
 CREATE TABLE IF NOT EXISTS users (
     id BIGSERIAL PRIMARY KEY,
     email VARCHAR(255) NOT NULL UNIQUE,
-    created_at TIMESTAMP DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- ⬇ Down (Run when rolling back)
@@ -717,7 +717,7 @@ DROP TABLE IF EXISTS users CASCADE;
 CREATE TABLE IF NOT EXISTS users (
     id BIGSERIAL PRIMARY KEY,
     email VARCHAR(255) NOT NULL UNIQUE,
-    created_at TIMESTAMP DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- +goose Down
@@ -1079,9 +1079,9 @@ vm make migration users --soft-delete
 ```sql
 CREATE TABLE users (
     id BIGSERIAL PRIMARY KEY,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    deleted_at TIMESTAMP DEFAULT NULL
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMPTZ DEFAULT NULL
 );
 
 CREATE INDEX idx_users_deleted_at ON users(deleted_at);

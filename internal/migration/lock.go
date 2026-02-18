@@ -131,7 +131,7 @@ func (ml *MigrationLock) acquireTableLock(ctx context.Context) error {
 		CREATE TABLE IF NOT EXISTS migrations_lock (
 			id INTEGER PRIMARY KEY DEFAULT 1,
 			locked BOOLEAN NOT NULL DEFAULT FALSE,
-			locked_at TIMESTAMP,
+			locked_at TIMESTAMPTZ,
 			locked_by VARCHAR(255),
 			CHECK (id = 1)
 		);

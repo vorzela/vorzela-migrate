@@ -72,8 +72,8 @@ func TestGenerateMigrationTemplate(t *testing.T) {
 			wantStrings: []string{
 				"CREATE TABLE IF NOT EXISTS users",
 				"id BIGSERIAL PRIMARY KEY",
-				"created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
-				"updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+				"created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP",
+				"updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP",
 				"DROP TABLE IF EXISTS users CASCADE",
 			},
 		},
@@ -82,7 +82,7 @@ func TestGenerateMigrationTemplate(t *testing.T) {
 			migName: "create_posts_table",
 			opts:    CreateMigrationOptions{SoftDelete: true},
 			wantStrings: []string{
-				"deleted_at TIMESTAMP DEFAULT NULL",
+				"deleted_at TIMESTAMPTZ DEFAULT NULL",
 				"CREATE INDEX IF NOT EXISTS idx_posts_deleted_at",
 			},
 		},

@@ -127,11 +127,11 @@ func generateMigrationTemplate(name string, opts CreateMigrationOptions) string 
 		}
 	}
 
-	columnParts = append(columnParts, "    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
-	columnParts = append(columnParts, "    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+	columnParts = append(columnParts, "    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP")
+	columnParts = append(columnParts, "    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP")
 
 	if opts.SoftDelete {
-		columnParts = append(columnParts, "    deleted_at TIMESTAMP DEFAULT NULL")
+		columnParts = append(columnParts, "    deleted_at TIMESTAMPTZ DEFAULT NULL")
 	}
 
 	// Add FK constraints

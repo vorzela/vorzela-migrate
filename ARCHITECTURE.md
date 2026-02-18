@@ -355,7 +355,7 @@ SQL generation adapts to database type:
 ```sql
 CREATE TABLE users (
     id SERIAL PRIMARY KEY,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 ```
 

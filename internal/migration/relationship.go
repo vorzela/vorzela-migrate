@@ -117,10 +117,10 @@ func GeneratePivotMigration(table1, table2 string, opts CreateMigrationOptions) 
 	columnParts = append(columnParts, "    id BIGSERIAL PRIMARY KEY")
 	columnParts = append(columnParts, fmt.Sprintf("    %s BIGINT NOT NULL", fk1))
 	columnParts = append(columnParts, fmt.Sprintf("    %s BIGINT NOT NULL", fk2))
-	columnParts = append(columnParts, "    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+	columnParts = append(columnParts, "    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP")
 
 	if opts.SoftDelete {
-		columnParts = append(columnParts, "    deleted_at TIMESTAMP DEFAULT NULL")
+		columnParts = append(columnParts, "    deleted_at TIMESTAMPTZ DEFAULT NULL")
 	}
 
 	// Add constraints

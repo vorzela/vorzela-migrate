@@ -261,7 +261,7 @@ func TestGenerateMigrationTemplate_SoftDelete(t *testing.T) {
 	got := generateMigrationTemplate("create_users_table", opts)
 
 	wantStrings := []string{
-		"deleted_at TIMESTAMP DEFAULT NULL",
+		"deleted_at TIMESTAMPTZ DEFAULT NULL",
 		"CREATE INDEX IF NOT EXISTS idx_users_deleted_at ON users(deleted_at)",
 	}
 	for _, want := range wantStrings {

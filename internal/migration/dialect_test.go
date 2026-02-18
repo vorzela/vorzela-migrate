@@ -43,7 +43,7 @@ func TestCreateMigrationTableSQL(t *testing.T) {
 				"id SERIAL PRIMARY KEY",
 				"migration VARCHAR(255) NOT NULL UNIQUE",
 				"batch INTEGER NOT NULL",
-				"executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+				"executed_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP",
 			},
 		},
 		{
