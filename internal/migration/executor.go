@@ -29,12 +29,23 @@ func InitMigrationTable(conn db.DB, dsn string) error {
 	return nil
 }
 
-// RunMigrations runs all pending migrations
-func RunMigrations(conn db.DB, migrationPath string, dsn string) (int, error) {
+// formatDuration returns a compact human-readable duration.
+func formatDuration(d time.Duration) string {
+	if d < time.Second {
+		return fmt.Sprintf("%dms", d.Milliseconds())
+	}
+	return fmt.Sprintf("%.2fs", d.Seconds())
+}
+
+// RunMigrations runs all pending migrations.
+// Returns (count, totalDuration, error).
+func RunMigrations(conn db.DB, migrationPath string, dsn string) (int, time.Duration, error) {
+	totalStart := time.Now()
+
 	// Get all migration files
 	files, err := getMigrationFiles(migrationPath)
 	if err != nil {
-		return 0, fmt.Errorf("failed to read migration files: %w", err)
+		return 0, 0, fmt.Errorf("failed to read migration files: %w", err)
 	}
 
 	// Sort by timestamp
@@ -46,7 +57,7 @@ func RunMigrations(conn db.DB, migrationPath string, dsn string) (int, error) {
 	dialect := DetectDialect(dsn)
 	executed, err := getExecutedMigrations(conn)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get executed migrations: %w", err)
+		return 0, 0, fmt.Errorf("failed to get executed migrations: %w", err)
 	}
 
 	executedMap := make(map[string]bool)
@@ -58,7 +69,7 @@ func RunMigrations(conn db.DB, migrationPath string, dsn string) (int, error) {
 	var _ Dialect = dialect
 	batch, err := getNextBatchNumber(conn)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get batch number: %w", err)
+		return 0, 0, fmt.Errorf("failed to get batch number: %w", err)
 	}
 
 	// Run pending migrations
@@ -71,7 +82,7 @@ func RunMigrations(conn db.DB, migrationPath string, dsn string) (int, error) {
 		// Read migration file
 		content, err := os.ReadFile(filepath.Join(migrationPath, file.Filename))
 		if err != nil {
-			return count, fmt.Errorf("❌ FAILED to read migration file %s: %v\n   Reason: %w\n   Action: Fix the file path and run migrate again", file.Filename, err, err)
+			return count, time.Since(totalStart), fmt.Errorf("❌ FAILED to read migration file %s: %v\n   Reason: %w\n   Action: Fix the file path and run migrate again", file.Filename, err, err)
 		}
 
 		// Extract UP part
@@ -82,6 +93,7 @@ func RunMigrations(conn db.DB, migrationPath string, dsn string) (int, error) {
 		}
 
 		// Execute migration with better error handling
+		itemStart := time.Now()
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		err = conn.Exec(ctx, upSQL)
 		cancel()
@@ -90,33 +102,36 @@ func RunMigrations(conn db.DB, migrationPath string, dsn string) (int, error) {
 			// Enhance error message for common issues
 			errorMsg := enhanceMigrationError(err, file.Filename)
 			output.Error(errorMsg)
-			return count, fmt.Errorf("%s", errorMsg)
+			return count, time.Since(totalStart), fmt.Errorf("%s", errorMsg)
 		}
 
 		// Record migration
 		err = recordMigration(conn, file.Filename, batch)
 		if err != nil {
-			return count, fmt.Errorf("failed to record migration %s: %w", file.Filename, err)
+			return count, time.Since(totalStart), fmt.Errorf("failed to record migration %s: %w", file.Filename, err)
 		}
 
-		fmt.Printf("✓ Migrated: %s\n", file.Filename)
+		fmt.Printf("✓ Migrated: %s (%s)\n", file.Filename, formatDuration(time.Since(itemStart)))
 		count++
 	}
 
-	return count, nil
+	return count, time.Since(totalStart), nil
 }
 
-// RollbackMigrations rolls back the last N batches of migrations
-func RollbackMigrations(conn db.DB, migrationPath string, steps int, dsn string) (int, error) {
+// RollbackMigrations rolls back the last N batches of migrations.
+// Returns (count, totalDuration, error).
+func RollbackMigrations(conn db.DB, migrationPath string, steps int, dsn string) (int, time.Duration, error) {
+	totalStart := time.Now()
+
 	// Get executed migrations in reverse order
 	dialect := DetectDialect(dsn)
 	executed, err := getExecutedMigrations(conn)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get executed migrations: %w", err)
+		return 0, 0, fmt.Errorf("failed to get executed migrations: %w", err)
 	}
 
 	if len(executed) == 0 {
-		return 0, nil
+		return 0, 0, nil
 	}
 
 	// Determine latest N batches to rollback
@@ -147,18 +162,19 @@ func RollbackMigrations(conn db.DB, migrationPath string, steps int, dsn string)
 		filePath := filepath.Join(migrationPath, mig.Migration)
 		content, err := os.ReadFile(filePath)
 		if err != nil {
-			fmt.Printf("⚠ Warning: Failed to read migration file %s: %v\n", mig.Migration, err)
+			output.Warning("Failed to read migration file %s: %v", mig.Migration, err)
 			continue
 		}
 
 		// Extract DOWN part
 		downSQL := extractSection(string(content), "Down")
 		if downSQL == "" {
-			fmt.Printf("⚠ Warning: No DOWN section found in migration %s, skipping\n", mig.Migration)
+			output.Warning("No DOWN section found in migration %s, skipping", mig.Migration)
 			continue
 		}
 
 		// Execute rollback
+		itemStart := time.Now()
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		err = conn.Exec(ctx, downSQL)
 		cancel()
@@ -171,32 +187,39 @@ func RollbackMigrations(conn db.DB, migrationPath string, steps int, dsn string)
 			errorMsg += "   Important: No migration records were removed\n"
 
 			output.Error(errorMsg)
-			return count, fmt.Errorf("%s", errorMsg)
+			return count, time.Since(totalStart), fmt.Errorf("%s", errorMsg)
 		}
 
 		// Remove migration record
 		var _ Dialect = dialect
 		err = removeMigrationRecord(conn, mig)
 		if err != nil {
-			return count, fmt.Errorf("failed to remove migration record %s: %w", mig.Migration, err)
+			return count, time.Since(totalStart), fmt.Errorf("failed to remove migration record %s: %w", mig.Migration, err)
 		}
 
-		fmt.Printf("✓ Rolled back: %s\n", mig.Migration)
+		fmt.Printf("✓ Rolled back: %s (%s)\n", mig.Migration, formatDuration(time.Since(itemStart)))
 		count++
 	}
 
-	return count, nil
+	return count, time.Since(totalStart), nil
 }
 
-// RollbackAllMigrations rolls back all migrations
-func RollbackAllMigrations(conn db.DB, migrationPath string, dsn string) (int, error) {
+// RollbackAllMigrations rolls back all migrations.
+// label is the past-tense verb shown per item, e.g. "Rolled back" or "Dropped".
+// Returns (count, totalDuration, error).
+func RollbackAllMigrations(conn db.DB, migrationPath string, dsn string, label string) (int, time.Duration, error) {
+	totalStart := time.Now()
+	if label == "" {
+		label = "Rolled back"
+	}
+
 	dialect := DetectDialect(dsn)
 	executed, err := getExecutedMigrations(conn)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 
-	// Sort by batch descending then migration name
+	// Sort by batch descending then migration name (reverse alphabetical within batch)
 	sort.Slice(executed, func(i, j int) bool {
 		if executed[i].Batch != executed[j].Batch {
 			return executed[i].Batch > executed[j].Batch
@@ -209,35 +232,87 @@ func RollbackAllMigrations(conn db.DB, migrationPath string, dsn string) (int, e
 		filePath := filepath.Join(migrationPath, mig.Migration)
 		content, err := os.ReadFile(filePath)
 		if err != nil {
-			fmt.Printf("⚠ Warning: Failed to read migration file %s: %v\n", mig.Migration, err)
+			output.Warning("Failed to read migration file %s: %v", mig.Migration, err)
 			continue
 		}
 
 		downSQL := extractSection(string(content), "Down")
 		if downSQL == "" {
-			fmt.Printf("⚠ Warning: No DOWN section found in migration %s, skipping\n", mig.Migration)
+			output.Warning("No DOWN section found in migration %s, skipping", mig.Migration)
 			continue
 		}
 
+		itemStart := time.Now()
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		err = conn.Exec(ctx, downSQL)
 		cancel()
 
 		if err != nil {
-			return count, fmt.Errorf("failed to rollback migration %s: %w", mig.Migration, err)
+			return count, time.Since(totalStart), fmt.Errorf("failed to drop migration %s: %w", mig.Migration, err)
 		}
 
 		var _ Dialect = dialect
 		err = removeMigrationRecord(conn, mig)
 		if err != nil {
-			return count, fmt.Errorf("failed to remove migration record: %w", err)
+			return count, time.Since(totalStart), fmt.Errorf("failed to remove migration record: %w", err)
 		}
 
-		fmt.Printf("✓ Rolled back: %s\n", mig.Migration)
+		fmt.Printf("✓ %s: %s (%s)\n", label, mig.Migration, formatDuration(time.Since(itemStart)))
 		count++
 	}
 
-	return count, nil
+	return count, time.Since(totalStart), nil
+}
+
+// RollbackMigrationByName rolls back a single executed migration whose filename
+// contains name (case-insensitive). Returns the time taken or an error.
+func RollbackMigrationByName(conn db.DB, migrationPath string, name string, dsn string) (time.Duration, error) {
+	start := time.Now()
+
+	executed, err := getExecutedMigrations(conn)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get executed migrations: %w", err)
+	}
+
+	lower := strings.ToLower(name)
+	var found *Migration
+	for i := range executed {
+		if strings.Contains(strings.ToLower(executed[i].Migration), lower) {
+			copy := executed[i]
+			found = &copy
+			break
+		}
+	}
+
+	if found == nil {
+		return 0, fmt.Errorf("no executed migration matching %q was found", name)
+	}
+
+	filePath := filepath.Join(migrationPath, found.Migration)
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return 0, fmt.Errorf("failed to read migration file %s: %w", found.Migration, err)
+	}
+
+	downSQL := extractSection(string(content), "Down")
+	if downSQL == "" {
+		return 0, fmt.Errorf("no DOWN section found in migration %s", found.Migration)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	err = conn.Exec(ctx, downSQL)
+	cancel()
+
+	if err != nil {
+		return time.Since(start), fmt.Errorf("rollback failed for %s: %w", found.Migration, err)
+	}
+
+	if err := removeMigrationRecord(conn, *found); err != nil {
+		return time.Since(start), fmt.Errorf("failed to remove migration record: %w", err)
+	}
+
+	fmt.Printf("✓ Rolled back: %s (%s)\n", found.Migration, formatDuration(time.Since(start)))
+	return time.Since(start), nil
 }
 
 // Helper functions

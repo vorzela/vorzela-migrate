@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/urfave/cli/v2"
 	"github.com/vorzela/vorzela-migrate/internal/config"
@@ -89,22 +90,22 @@ var FreshCommand = &cli.Command{
 		}
 
 		// Rollback all migrations
-		output.Warning("\nRolling back all migrations...")
-		rollbackCount, err := migration.RollbackAllMigrations(db, cfg.MigrationPath, cfg.DatabaseURL)
+		output.Warning("\nDropping all migrations...")
+		rollbackCount, dropDur, err := migration.RollbackAllMigrations(db, cfg.MigrationPath, cfg.DatabaseURL, "Dropped")
 		if err != nil {
-			output.Error("Rollback failed: %v", err)
-			return fmt.Errorf("rollback failed: %w", err)
+			output.Error("Drop failed: %v", err)
+			return fmt.Errorf("drop failed: %w", err)
 		}
-		output.Success("Rolled back %d migration(s)", rollbackCount)
+		output.Success("Dropped %d migration(s) in %s", rollbackCount, dropDur.Round(time.Millisecond))
 
 		// Re-run all migrations
 		output.Warning("Re-running all migrations...")
-		migrateCount, err := migration.RunMigrations(db, cfg.MigrationPath, cfg.DatabaseURL)
+		migrateCount, migrateDur, err := migration.RunMigrations(db, cfg.MigrationPath, cfg.DatabaseURL)
 		if err != nil {
 			output.Error("Migration failed: %v", err)
 			return fmt.Errorf("migration failed: %w", err)
 		}
-		output.Success("Successfully ran %d migration(s)", migrateCount)
+		output.Success("Ran %d migration(s) in %s", migrateCount, migrateDur.Round(time.Millisecond))
 
 		output.Success("\n✨ Fresh completed successfully!")
 		return nil

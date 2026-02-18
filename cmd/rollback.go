@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/urfave/cli/v2"
 	"github.com/vorzela/vorzela-migrate/internal/config"
@@ -32,6 +33,11 @@ var RollbackCommand = &cli.Command{
 			Value:   "1",
 			Usage:   "number of batches to rollback: 1, 2, or 'all'",
 		},
+		&cli.StringFlag{
+			Name:    "migration",
+			Aliases: []string{"m"},
+			Usage:   "rollback a specific migration by name or partial table name (e.g. 'users' or '1771076648_create_users_table.sql')",
+		},
 		&cli.BoolFlag{
 			Name:    "enhanced",
 			Aliases: []string{"e"},
@@ -59,6 +65,7 @@ var RollbackCommand = &cli.Command{
 		dsn := c.String("dsn")
 		migrationPath := c.String("path")
 		stepsStr := c.String("steps")
+		specificMigration := c.String("migration")
 
 		// Load config with overrides
 		cfg, err := config.LoadConfig(dsn, migrationPath)
@@ -80,6 +87,17 @@ var RollbackCommand = &cli.Command{
 			return fmt.Errorf("failed to connect to database: %w", err)
 		}
 		defer db.Close()
+
+		// --- Rollback a specific migration by name ---
+		if specificMigration != "" {
+			dur, err := migration.RollbackMigrationByName(db, cfg.MigrationPath, specificMigration, cfg.DatabaseURL)
+			if err != nil {
+				output.Error("%v", err)
+				return err
+			}
+			output.Success("Rollback completed in %s", dur.Round(time.Millisecond))
+			return nil
+		}
 
 		// Check if enhanced mode is requested
 		useEnhanced := c.Bool("enhanced") || c.Bool("dry-run")
@@ -132,10 +150,11 @@ var RollbackCommand = &cli.Command{
 			return nil
 		}
 
-		// Use standard rollback (legacy mode)
+		// Use standard rollback
 		var count int
+		var dur time.Duration
 		if stepsStr == "all" {
-			count, err = migration.RollbackAllMigrations(db, cfg.MigrationPath, cfg.DatabaseURL)
+			count, dur, err = migration.RollbackAllMigrations(db, cfg.MigrationPath, cfg.DatabaseURL, "Rolled back")
 			if err != nil {
 				output.Error("Rollback failed: %v", err)
 				return fmt.Errorf("rollback failed: %w", err)
@@ -147,7 +166,7 @@ var RollbackCommand = &cli.Command{
 				steps = 1
 			}
 
-			count, err = migration.RollbackMigrations(db, cfg.MigrationPath, steps, cfg.DatabaseURL)
+			count, dur, err = migration.RollbackMigrations(db, cfg.MigrationPath, steps, cfg.DatabaseURL)
 			if err != nil {
 				output.Error("Rollback failed: %v", err)
 				return fmt.Errorf("rollback failed: %w", err)
@@ -157,7 +176,7 @@ var RollbackCommand = &cli.Command{
 		if count == 0 {
 			output.Info("No migrations to rollback")
 		} else {
-			output.Success("Successfully rolled back %d migration(s)", count)
+			output.Success("Rolled back %d migration(s) in %s", count, dur.Round(time.Millisecond))
 		}
 
 		return nil

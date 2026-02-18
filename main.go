@@ -27,8 +27,11 @@ func main() {
 			cmd.UninstallCommand,
 		},
 		After: func(c *cli.Context) error {
-			// Skip version notice for upgrade command (it handles its own messaging)
-			if c.Command != nil && c.Command.Name != "upgrade" {
+			// In urfave/cli/v2 the app-level After hook context does not expose
+			// the invoked subcommand name via c.Command, so we inspect os.Args directly.
+			// Skip the version notice after upgrade/uninstall — they handle their own output.
+			skip := len(os.Args) > 1 && (os.Args[1] == "upgrade" || os.Args[1] == "uninstall")
+			if !skip {
 				version.PrintVersionNotice()
 			}
 			return nil

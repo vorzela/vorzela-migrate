@@ -225,7 +225,7 @@ var MigrateCommand = &cli.Command{
 		}
 
 		// Use standard executor (legacy mode)
-		count, err := migration.RunMigrations(db, cfg.MigrationPath, cfg.DatabaseURL)
+		count, _, err := migration.RunMigrations(db, cfg.MigrationPath, cfg.DatabaseURL)
 		if err != nil {
 			output.Error("Migration failed: %v", err)
 			return fmt.Errorf("migration failed: %w", err)

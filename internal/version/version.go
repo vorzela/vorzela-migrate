@@ -73,7 +73,7 @@ func CheckForUpdate() (newVersion string, available bool, err error) {
 	latestVer := normalize(version)
 
 	if latestVer != "" && currentVer != latestVer {
-		return latestVer, true, nil
+		return version, true, nil // return the original tag (e.g. "v2.0.3")
 	}
 
 	return "", false, nil

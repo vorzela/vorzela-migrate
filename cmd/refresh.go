@@ -1,7 +1,11 @@
 package cmd
 
 import (
+	"bufio"
 	"fmt"
+	"os"
+	"strings"
+	"time"
 
 	"github.com/urfave/cli/v2"
 	"github.com/vorzela/vorzela-migrate/internal/config"
@@ -12,7 +16,7 @@ import (
 
 var RefreshCommand = &cli.Command{
 	Name:  "refresh",
-	Usage: "Rollback all migrations and re-run them",
+	Usage: "Drop all tables (via DOWN migrations) then re-run all migrations",
 	Flags: []cli.Flag{
 		&cli.StringFlag{
 			Name:    "dsn",
@@ -25,6 +29,11 @@ var RefreshCommand = &cli.Command{
 			Aliases: []string{"p"},
 			Value:   "./migrations",
 			Usage:   "path to migrations directory",
+		},
+		&cli.BoolFlag{
+			Name:  "force",
+			Usage: "skip confirmation prompt",
+			Value: false,
 		},
 	},
 	Action: func(c *cli.Context) error {
@@ -44,6 +53,19 @@ var RefreshCommand = &cli.Command{
 			return err
 		}
 
+		// Confirmation prompt
+		if !c.Bool("force") {
+			output.Warning("⚠️  This will DROP all tables and re-run every migration. Data will be lost!")
+			fmt.Print("Are you sure you want to continue? (yes/no): ")
+			reader := bufio.NewReader(os.Stdin)
+			answer, _ := reader.ReadString('\n')
+			answer = strings.TrimSpace(strings.ToLower(answer))
+			if answer != "yes" && answer != "y" {
+				output.Info("Refresh cancelled.")
+				return nil
+			}
+		}
+
 		// Connect to database
 		db, err := database.Connect(cfg.DatabaseURL)
 		if err != nil {
@@ -58,22 +80,25 @@ var RefreshCommand = &cli.Command{
 			return fmt.Errorf("failed to initialize migration table: %w", err)
 		}
 
-		output.Info("Rolling back all migrations...")
-		rollbackCount, err := migration.RollbackAllMigrations(db, cfg.MigrationPath, cfg.DatabaseURL)
+		overall := time.Now()
+
+		output.Info("Dropping all migrations...")
+		dropCount, dropDur, err := migration.RollbackAllMigrations(db, cfg.MigrationPath, cfg.DatabaseURL, "Dropped")
 		if err != nil {
-			output.Error("Rollback failed: %v", err)
-			return fmt.Errorf("rollback failed: %w", err)
+			output.Error("Drop failed: %v", err)
+			return fmt.Errorf("drop failed: %w", err)
 		}
-		output.Success("Rolled back %d migration(s)", rollbackCount)
+		output.Success("Dropped %d migration(s) in %s", dropCount, dropDur.Round(time.Millisecond))
 
 		output.Info("Running all migrations...")
-		migrateCount, err := migration.RunMigrations(db, cfg.MigrationPath, cfg.DatabaseURL)
+		migrateCount, migrateDur, err := migration.RunMigrations(db, cfg.MigrationPath, cfg.DatabaseURL)
 		if err != nil {
 			output.Error("Migration failed: %v", err)
 			return fmt.Errorf("migration failed: %w", err)
 		}
-		output.Success("Ran %d migration(s)", migrateCount)
+		output.Success("Ran %d migration(s) in %s", migrateCount, migrateDur.Round(time.Millisecond))
 
+		output.Success("✨ Refresh completed in %s", time.Since(overall).Round(time.Millisecond))
 		return nil
 	},
 }
