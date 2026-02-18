@@ -2,6 +2,112 @@
 
 All notable changes to Vorzela Migration Tool are documented in this file.
 
+## [2.0.2] - 2026-02-18
+
+### New Features
+
+- **Transactional Migrations** 🔒
+  - All migration statements now execute within a single database transaction
+  - Failed migrations automatically rollback - no partial state left in database
+  - Prevents orphaned tables, indexes, or constraints from failed migrations
+  - Ensures database is either fully migrated or unchanged
+
+- **Auto-Update Checksums with --force** 🔄
+  - Using `--force` flag now automatically updates checksums to match current file state
+  - Useful when you've intentionally modified already-run migrations
+  - No more manual checksum updates needed
+  - Provides clear feedback on which checksums were updated
+
+- **Auto-Run Extensions and Functions Before Migrations** 🚀
+  - `vm migrate` now automatically runs extensions and functions first
+  - Prevents "function does not exist" and "extension does not exist" errors
+  - Execution order: Extensions → Functions → Migrations
+  - New config options: `AUTO_RUN_EXTENSIONS` and `AUTO_RUN_FUNCTIONS` (default: `true`)
+  - Set to `false` in `.vm` file to disable auto-run behavior
+
+- **Migration File Validation** 🛡️
+  - Automatically validates migration files before execution
+  - Prevents mixing extensions, functions, and schema migrations
+  - Enforces proper execution order: extensions → functions → migrations
+  - Clear error messages showing which files violate rules
+  - Helpful guidance on correct migration workflow
+
+- **Step-Limited Migration Runs** 🪜
+  - New `--step N` / `-s N` flag for `vm migrate`: run only N pending migrations then stop
+  - `--step 0` (default) means "run all pending" — fully backward-compatible
+  - Drift detection is automatically skipped when `--step` would leave remaining migrations (avoids mid-run false positives)
+  - Example: `vm migrate --step 3` runs only the next 3 pending migrations
+
+- **Schema Drift SQL Parser** 🔬
+  - New `internal/migration/schema_parser.go` builds an accurate expected schema directly from your migration SQL files
+  - Parses `CREATE TABLE`, `ALTER TABLE ADD COLUMN`, and `ALTER TABLE DROP COLUMN` statements
+  - Skips constraint lines (`PRIMARY KEY`, `FOREIGN KEY`, `UNIQUE`, `CHECK`, `INDEX`) to remove false positives
+  - Drift detection now compares actual DB columns against columns that should exist per your migrations — not an empty map
+  - Handles multiple tables modified across many migration files
+
+- **Drift Applies Missing Columns, Then Continues** 🔧
+  - When drift is detected and the user answers **yes** to "Apply these changes?", `vm migrate` now immediately runs `ALTER TABLE … ADD COLUMN` for each drifted column
+  - Execution then continues to pending migrations — it no longer stops after drift detection
+  - User choices at the drift prompt: `yes` (apply + continue), `no` (skip + continue), `generate` (print SQL only + continue)
+  - The `auto` drift mode also applies columns and continues without prompting
+
+- **Checksum-Mismatch Drift Interaction** 🔄
+  - When migration file checksums differ from stored hashes, the tool now offers to run drift detection anyway
+  - If the user accepts: missing columns are detected, applied via `ALTER TABLE`, and pending migrations run normally
+  - If the user declines: pending migrations run without interruption
+  - Either way, execution always continues — the old behaviour of stopping with an error is removed
+
+- **Argument Validation for `vm migrate`** ✅
+  - `vm migrate fresh` (and any other stray arguments) now prints a clear error: *"'vm migrate' takes no arguments (got "fresh"). Did you mean 'vm fresh'?"*
+  - Prevents silent no-ops from typos in subcommand names
+
+### Bug Fixes
+
+- **Fixed VERBOSE Setting Being Overridden** 🔇
+  - Fixed issue where `VERBOSE=false` in `.vm` file was ignored
+  - Environment defaults (development/production) no longer override explicit user settings
+  - Added `explicitVerbose` tracking to preserve user configuration
+  - Users can now properly disable verbose output
+
+- **Fixed Schema Drift False Positives** ✅
+  - Fixed drift detection reporting false positives for just-migrated tables
+  - Drift detection now skips when pending migrations exist (unless `--step` exhausts all of them)
+  - Prevents comparing against empty expected schema — SQL parser provides accurate baseline
+  - Only runs drift detection after all pending migrations are applied
+  - Eliminates confusing "drift" warnings for legitimate migration columns
+
+- **Fixed Test Nil Condition** ✅
+  - Fixed impossible nil check in drift detection test
+  - Removed unreachable code that caused linter warning
+
+### Configuration
+
+New `.vm` file options:
+```
+AUTO_RUN_EXTENSIONS=true   # Automatically run extensions.sql before migrations
+AUTO_RUN_FUNCTIONS=true    # Automatically run functions.sql before migrations
+```
+
+### Validation Rules
+
+- **Migration files** (.sql) should ONLY contain schema changes (CREATE TABLE, ALTER TABLE, etc.)
+- **Functions** must be in `functions.sql` - run `vm functions migrate` first (or let auto-run handle it)
+- **Extensions** must be in `extensions.sql` - run `vm extensions migrate` first (or let auto-run handle it)
+- Files are automatically validated before migration execution
+- Violations halt migration with clear error messages and resolution steps
+
+### Technical Changes
+
+- Updated `internal/config/config.go` - Added `explicitVerbose`, `AutoRunExtensions`, and `AutoRunFunctions` fields
+- Updated `internal/migration/enhanced_executor.go` - Drift detection timing, step-gate logic, mismatch interactive flow, apply-and-continue drift behaviour
+- Updated `cmd/migrate.go` - Added `--step`/`-s` flag, argument validation, pre-migration validation checks and auto-run helpers
+- Added `internal/migration/schema_parser.go` - SQL-file based expected schema builder (CREATE TABLE + ALTER TABLE parsing)
+- Added `internal/migration/validation.go` - Comprehensive migration file validation logic
+- Added `internal/migration/drift_pending_test.go` - Tests for drift/step interactions and checksum-mismatch drift flow
+- Added `internal/migration/schema_parser_test.go` - Unit tests for SQL parsing (CREATE TABLE, ALTER TABLE ADD/DROP, constraints)
+- Added `internal/migration/validation_test.go` - Complete test coverage for validation rules
+- Extended `internal/migration/relationship_test.go` - BelongsTo, OneToOne, Multiple, SoftDelete, Triggers, sqlc, MigrationOptionsStep
+
 ## [2.0.1] - 2026-02-18
 
 ### Bug Fixes

@@ -1,5 +1,47 @@
-# Vorzela Migration Tool (v2.0.0)
+# Vorzela Migration Tool (v2.0.2)
 
+## 📖 Table of Contents
+
+- [Features](#-features)
+- [Requirements](#requirements)
+- [Installation](#installation)
+  - [Quick Install Script](#method-1-quick-install-script-recommended)
+  - [Pre-built Binary](#method-2-download-pre-built-binary)
+  - [Build from Source](#method-3-build-from-source)
+- [Supported Databases](#supported-databases)
+- [Usage](#usage)
+  - [Environment-Based Auto Config](#-super-quick-start-environment-based-auto-config)
+  - [Quick Start](#quick-start-no---dsn-needed)
+  - [Create a Migration](#create-a-new-migration)
+  - [Run Migrations](#run-migrations)
+  - [Check Status](#check-migration-status)
+  - [Rollback](#rollback-migrations)
+  - [Refresh](#refresh-rollback-all-and-re-run)
+- [Command Reference](#-command-reference)
+- [Enhanced Migration Features](#-enhanced-migration-features)
+  - [Checksum Validation](#checksum-validation)
+  - [Migration Locking](#migration-locking)
+  - [Schema Drift Detection](#schema-drift-detection)
+  - [Step-Limited Runs](#step-limited-runs)
+  - [Colored Logging with Timing](#colored-logging-with-timing)
+  - [Partial Failure Recovery](#partial-failure-recovery)
+  - [Safe Rollback with Warnings](#safe-rollback-with-warnings)
+  - [Online Migrations](#online-migrations-zero-downtime)
+  - [Dry Run Mode](#dry-run-mode)
+- [Migration File Format](#migration-file-format)
+- [Integration with sqlc & goose](#-integration-with-sqlc--goose)
+- [Configuration](#configuration)
+- [Soft Delete Patterns](#soft-delete-patterns)
+- [PostgreSQL Extensions](#postgresql-extensions)
+- [Auto-Update Triggers](#auto-update-triggers)
+- [Database Relationships](#database-relationships)
+- [Error Handling](#error-handling)
+- [Project Structure](#project-structure)
+- [Tips & Best Practices](#tips--best-practices)
+- [Troubleshooting](#troubleshooting)
+- [License](#license)
+
+---
 
 ## ✨ Features
 
@@ -14,7 +56,7 @@
 - � **sqlc & goose Compatible** - Full integration with sqlc (type-safe queries) and goose migrations
 - �📚 **Comprehensive Docs** - Full documentation and examples
 
-### 🚀 Enhanced Features (v2.0.0)
+### 🚀 Enhanced Features (v2.0.2)
 
 - 🌍 **Environment-Based Auto Config** - Set ENVIRONMENT in .vm file, tool auto-configures everything
 - ✅ **Checksum Validation** - Detect if migration files have been modified after execution
@@ -77,7 +119,7 @@ Download the appropriate binary for your platform from the [releases page](https
 **Linux/macOS:**
 ```bash
 # Download (replace URL with your platform)
-wget https://github.com/vorzela/vorzela-migrate/releases/download/v2.0.0/vm-linux-amd64
+wget https://github.com/vorzela/vorzela-migrate/releases/download/v2.0.2/vm-linux-amd64
 
 # Rename and make executable
 chmod +x vm-linux-amd64
@@ -127,7 +169,7 @@ sudo mv vm /usr/local/bin/  # Linux/macOS
 
 **Build with version info:**
 ```bash
-go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=v2.0.0'" -o vm main.go
+go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=v2.0.2'" -o vm main.go
 ```
 
 ### Verify Installation
@@ -136,7 +178,7 @@ After installation, verify it works:
 
 ```bash
 vm --version
-# Should output: vorzela-migrate v2.0.0
+# Should output: vorzela-migrate v2.0.2
 
 vm --help
 # Shows all available commands
@@ -409,10 +451,34 @@ vm migrate --enhanced --detect-drift
 ```
 
 **Capabilities:**
-- Compares current schema with migration history
+- Compares current schema with migration history using your actual SQL migration files (no false positives)
 - Detects manually added columns
-- Generates ALTER TABLE statements
+- Applies `ALTER TABLE … ADD COLUMN` immediately when user answers **yes** — then continues to pending migrations
+- Generates ALTER TABLE statements for review (`generate` option)
 - Helps maintain migration consistency
+
+**Drift prompt choices:**
+- `yes` — apply the ALTER statements now, then continue with pending migrations
+- `no` — skip drift and continue with pending migrations
+- `generate` — print the ALTER SQL without executing, then continue
+
+### Step-Limited Runs
+
+Run only a specific number of pending migrations, then stop:
+
+```bash
+# Run the next 3 pending migrations only
+vm migrate --step 3
+vm migrate -s 3
+
+# Run all pending (default behaviour)
+vm migrate
+```
+
+**How it works:**
+- `--step 0` (default) means "run all pending migrations" — fully backward-compatible
+- Drift detection is automatically skipped when `--step` would leave remaining pending migrations (avoids false positives mid-run)
+- Drift detection runs normally after the step if it exhausts all pending migrations
 
 ### Colored Logging with Timing
 
@@ -886,21 +952,82 @@ vm migrate --dsn "postgres://user:pass@localhost:5432/db"
 
 See [CONFIG_ENHANCED.md](CONFIG_ENHANCED.md) for detailed configuration guide.
 
-## Migration File Format
+## 📋 Command Reference
+
+### Core Commands
 
 | Command | Description |
 |---------|-------------|
-| `make migration <name>` | Create a new migration file |
-| `migrate` | Run all pending migrations |
-| `rollback [--steps N]` | Rollback last N batches |
-| `refresh` | Rollback all and re-run all migrations |
-| `status` | Show migration status |
+| `vm migrate` | Run all pending migrations |
+| `vm migrate --step N` | Run only N pending migrations (0 = unlimited) |
+| `vm rollback` | Rollback the last batch of migrations |
+| `vm rollback --steps N` | Rollback last N batches (`all` to rollback everything) |
+| `vm refresh` | Rollback all migrations then re-run all |
+| `vm fresh` | Drop all tables and re-run all migrations (⚠ destructive) |
+| `vm status` | Show current migration status (pending / executed) |
+| `vm make migration <name>` | Create a new migration file |
+| `vm upgrade` | Upgrade the `vm` binary to the latest release |
 
-## Flags
+### `vm make migration` Flags
 
-- `-d, --dsn` - Database connection string
-- `-p, --path` - Path to migrations directory (default: migrations)
-- `--steps` - Number of batches to rollback (only for rollback command)
+| Flag | Alias | Description |
+|------|-------|-------------|
+| `--soft-delete` | `-sd` | Add `deleted_at` column + index for soft deletes |
+| `--triggers` | `-t` | Add `updated_at` auto-update trigger |
+| `--belongs-to <table>` | `-bt` | Add foreign key column (one-to-many relationship) |
+| `--one-to-one <table>` | `-oto` | Add unique foreign key column (one-to-one relationship) |
+| `--many-to-many <table>` | `-mm`, `--pivot` | Generate a pivot/junction table |
+
+### `vm migrate` Flags
+
+| Flag | Alias | Description |
+|------|-------|-------------|
+| `--step N` | `-s N` | Run only N pending migrations, then stop |
+| `--enhanced` | `-e` | Enable all enhanced features (checksums, locking, drift) |
+| `--verify-checksums` | | Verify that executed migration files haven't been modified |
+| `--detect-drift` | | Detect manually added columns not tracked in migrations |
+| `--online` | | Use zero-downtime migration strategies (PostgreSQL & MySQL 8+) |
+| `--dry-run` | | Preview SQL without executing |
+| `--force` | | Override checksum mismatches / skip confirmation prompts |
+| `--verbose` | `-v` | Detailed colored logging with execution timing |
+| `--dsn <url>` | `-d` | Database connection string (overrides `.vm` / env var) |
+| `--path <dir>` | `-p` | Path to migrations directory (default: `migrations`) |
+
+### `vm rollback` Flags
+
+| Flag | Alias | Description |
+|------|-------|-------------|
+| `--steps N` | | Number of batches to rollback (`all` for everything) |
+| `--enhanced` | `-e` | Enhanced rollback with warnings and confirmation prompts |
+| `--dry-run` | | Preview what would be rolled back |
+| `--force` | | Skip confirmation prompts |
+| `--verbose` | `-v` | Detailed logging |
+| `--dsn <url>` | `-d` | Database connection string |
+
+### `vm extensions` Sub-commands
+
+| Command | Description |
+|---------|-------------|
+| `vm extensions migrate` | Create `extensions.sql` template (first run) or install extensions |
+| `vm extensions drop` | Drop all extensions defined in `extensions.sql` |
+| `vm extensions drop --step` | Drop extensions one at a time with confirmation |
+
+### `vm functions` Sub-commands
+
+| Command | Description |
+|---------|-------------|
+| `vm functions migrate` | Create `functions.sql` template (first run) or install functions |
+| `vm functions drop` | Drop all common trigger functions |
+| `vm functions drop --step` | Drop functions one at a time with confirmation |
+
+### Global Flags (all commands)
+
+| Flag | Alias | Description |
+|------|-------|-------------|
+| `--dsn <url>` | `-d` | Database connection string |
+| `--path <dir>` | `-p` | Path to migrations directory |
+| `--version` | | Print the current version |
+| `--help` | `-h` | Show help for a command |
 
 ## Examples
 
