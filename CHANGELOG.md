@@ -2,6 +2,34 @@
 
 All notable changes to Vorzela Migration Tool are documented in this file.
 
+## [2.0.7] - 2026-02-19
+
+### Bug Fixes
+
+- **MySQL/MariaDB: Guard PostgreSQL-only Commands** 🛡️
+  - `vm extensions`, `vm functions`, and `vm enums` now return a clear error when the DSN is MySQL/MariaDB instead of crashing with a cryptic SQL syntax error
+  - `vm migrate` auto-run of extensions/functions/enums is silently skipped on non-PostgreSQL databases with an informational message
+
+---
+
+## [2.0.6] - 2026-02-19
+
+### New Features
+
+- **TIMESTAMPTZ for All PostgreSQL Columns** 🕐
+  - All generated migration templates now use `TIMESTAMPTZ` instead of `TIMESTAMP` for `created_at`, `updated_at`, `deleted_at`
+  - Applies to standard migrations, pivot/relationship tables, the migrations tracking table (`executed_at`), and the migrations lock table (`locked_at`)
+  - MySQL/MariaDB dialect retains `TIMESTAMP` (TIMESTAMPTZ is PostgreSQL-specific)
+
+### Bug Fixes
+
+- **`prevent_hard_delete()` Missing Return** 🐛
+  - Added `RETURN NULL;` to the `prevent_hard_delete` trigger function
+  - PL/pgSQL requires a reachable return path in all trigger functions; without it some PostgreSQL versions reject the function definition
+  - `RETURN NULL` is the correct value for a BEFORE DELETE trigger to cancel the delete operation if the exception were ever bypassed
+
+---
+
 ## [2.0.5] - 2026-02-19
 
 ### New Features
