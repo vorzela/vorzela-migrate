@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -160,4 +161,37 @@ func RegenerateFunctions(migrationPath string) error {
 
 	fmt.Printf("✓ Regenerated auto-generated functions (custom functions preserved)\n")
 	return nil
+}
+
+// createFunctionRe matches the first line of a CREATE [OR REPLACE] FUNCTION definition.
+var createFunctionRe = regexp.MustCompile(`(?i)CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+([\w"]+)\s*\(`)
+
+// ParseEnabledFunctions returns function names from non-commented
+// CREATE FUNCTION / CREATE OR REPLACE FUNCTION lines.
+func ParseEnabledFunctions(content string) []string {
+	enabled, _ := ParseAllFunctionNames(content)
+	return enabled
+}
+
+// ParseAllFunctionNames returns (enabled, disabled) function names.
+// enabled  = names on active CREATE FUNCTION lines.
+// disabled = names found on commented-out CREATE FUNCTION lines.
+func ParseAllFunctionNames(content string) (enabled, disabled []string) {
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "--") {
+			uncommented := strings.TrimSpace(strings.TrimLeft(trimmed, "-"))
+			if m := createFunctionRe.FindStringSubmatch(uncommented); len(m) > 1 {
+				disabled = append(disabled, strings.Trim(m[1], `"`))
+			}
+		} else {
+			if m := createFunctionRe.FindStringSubmatch(trimmed); len(m) > 1 {
+				enabled = append(enabled, strings.Trim(m[1], `"`))
+			}
+		}
+	}
+	return
 }

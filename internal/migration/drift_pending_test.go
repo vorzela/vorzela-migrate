@@ -507,3 +507,154 @@ func TestChecksumMismatchDriftFlow(t *testing.T) {
 		})
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Regression tests for drift false-positive bugs
+// ---------------------------------------------------------------------------
+
+// TestBuildExpectedSchema_UpSectionOnlyParsing verifies that DROP COLUMN
+// statements in a migration's Down section do NOT cancel out ADD COLUMN
+// statements in the Up section (regression for the "Down cancels Up" bug).
+func TestBuildExpectedSchema_UpSectionOnlyParsing(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Migration that adds columns in Up and removes them in Down.
+	// Before the fix, buildExpectedSchemaFromFiles would parse both sections
+	// and the DROP COLUMN would cancel the ADD COLUMN, leaving the columns
+	// absent from the expected schema and causing false-positive drift warnings.
+	migContent := `-- ⬆ Up (Run when migrating forward)
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(255) NOT NULL;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(20);
+
+-- ⬇ Down (Run when rolling back)
+ALTER TABLE users DROP COLUMN IF EXISTS phone;
+ALTER TABLE users DROP COLUMN IF EXISTS email;
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "001_add_email_to_users.sql"), []byte(migContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	schema := buildExpectedSchemaFromFiles(tmpDir, []string{"001_add_email_to_users.sql"})
+
+	userCols, ok := schema["users"]
+	if !ok {
+		t.Fatal("expected 'users' entry in schema, got none")
+	}
+	colSet := make(map[string]bool)
+	for _, c := range userCols {
+		colSet[c] = true
+	}
+	for _, col := range []string{"email", "phone"} {
+		if !colSet[col] {
+			t.Errorf("column %q should be in expected schema (from Up section) but is missing; got %v", col, userCols)
+		}
+	}
+}
+
+// TestBuildExpectedSchema_SimpleUpDownMarkers checks that the simple
+// "-- Up" / "-- Down" marker format is handled correctly.
+func TestBuildExpectedSchema_SimpleUpDownMarkers(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	migContent := `-- Up
+CREATE TABLE products (
+    id BIGSERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    price NUMERIC(10,2) NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Down
+DROP TABLE IF EXISTS products;
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "001_create_products.sql"), []byte(migContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	schema := buildExpectedSchemaFromFiles(tmpDir, []string{"001_create_products.sql"})
+
+	cols, ok := schema["products"]
+	if !ok {
+		t.Fatal("expected 'products' in schema")
+	}
+	colSet := make(map[string]bool)
+	for _, c := range cols {
+		colSet[c] = true
+	}
+	for _, want := range []string{"name", "price"} {
+		if !colSet[want] {
+			t.Errorf("missing %q in products; got %v", want, cols)
+		}
+	}
+}
+
+// TestBuildExpectedSchema_ExtensionTableNotIncluded verifies that a table
+// that is NOT defined in any migration file (e.g. PostGIS's spatial_ref_sys)
+// produces no entry in the expected schema map, so drift detection skips it.
+func TestBuildExpectedSchema_ExtensionTableNotIncluded(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	migContent := `-- ⬆ Up (Run when migrating forward)
+CREATE TABLE IF NOT EXISTS admins (
+    id BIGSERIAL PRIMARY KEY,
+    email VARCHAR(255) NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ⬇ Down (Run when rolling back)
+DROP TABLE IF EXISTS admins CASCADE;
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "001_create_admins.sql"), []byte(migContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	schema := buildExpectedSchemaFromFiles(tmpDir, []string{"001_create_admins.sql"})
+
+	// 'admins' must be present with its columns.
+	adminCols, ok := schema["admins"]
+	if !ok {
+		t.Fatal("expected 'admins' in schema after running its create migration")
+	}
+	colSet := make(map[string]bool)
+	for _, c := range adminCols {
+		colSet[c] = true
+	}
+	if !colSet["email"] {
+		t.Errorf("expected 'email' in admins schema; got %v", adminCols)
+	}
+
+	// Extension-created tables (no migration defines them) must NOT appear.
+	if _, found := schema["spatial_ref_sys"]; found {
+		t.Error("spatial_ref_sys should not be in expected schema (no migration defines it)")
+	}
+}
+
+// TestIsUpDownMarkerFormats verifies that all supported section-marker
+// formats are recognised by isUpMarker / isDownMarker.
+func TestIsUpDownMarkerFormats(t *testing.T) {
+	upLines := []string{
+		"-- ⬆ Up (Run when migrating forward)",
+		"-- +goose Up",
+		"-- migrate:up",
+		"-- Up",
+		"  -- Up  ",
+	}
+	for _, line := range upLines {
+		if !isUpMarker(line) {
+			t.Errorf("isUpMarker(%q) = false, want true", line)
+		}
+	}
+
+	downLines := []string{
+		"-- ⬇ Down (Run when rolling back)",
+		"-- +goose Down",
+		"-- migrate:down",
+		"-- Down",
+		"  -- Down  ",
+	}
+	for _, line := range downLines {
+		if !isDownMarker(line) {
+			t.Errorf("isDownMarker(%q) = false, want true", line)
+		}
+	}
+}

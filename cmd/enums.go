@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/urfave/cli/v2"
 	"github.com/vorzela/vorzela-migrate/internal/config"
@@ -64,12 +63,8 @@ var EnumsCommand = &cli.Command{
 					return err
 				}
 
-				enabled := migration.ParseEnabledEnums(string(sqlContent))
-				if len(enabled) == 0 {
-					output.Warning("No enum types enabled in enums.sql")
-					output.Info("Uncomment the types you need in migrations/enums.sql")
-					return nil
-				}
+				content := string(sqlContent)
+				enabled, disabled := migration.ParseAllEnumNames(content)
 
 				db, err := database.Connect(cfg.DatabaseURL)
 				if err != nil {
@@ -78,35 +73,62 @@ var EnumsCommand = &cli.Command{
 				}
 				defer db.Close()
 
-				output.Info("Creating enum types from %s...", enumsPath)
-				// Execute each enabled CREATE TYPE statement individually so we can
-				// wrap it with CREATE TYPE IF NOT EXISTS semantics on older Postgres
-				// versions that don't support that syntax.
 				ctx := context.Background()
-				for _, name := range enabled {
-					// Check if type already exists first
-					checkSQL := fmt.Sprintf(
-						`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = '%s') THEN `,
-						strings.ReplaceAll(name, "'", "''"),
-					)
-					_ = checkSQL // we'll just exec the full content; Postgres will error on dup
 
-					// Extract the specific statement for this enum from the file
-					stmt := extractEnumStatement(string(sqlContent), name)
+				// ── Create / update enabled enums ─────────────────────────────────
+				if len(enabled) > 0 {
+					output.Info("Syncing enum types from %s...", enumsPath)
+				}
+				for _, name := range enabled {
+					stmt := migration.ExtractEnumStatement(content, name)
 					if stmt == "" {
 						continue
 					}
-
-					// Wrap in a DO block so duplicate type errors are ignored gracefully
-					doBlock := fmt.Sprintf(`DO $$ BEGIN %s EXCEPTION WHEN duplicate_object THEN NULL; END $$;`, stmt)
-					if err := db.Exec(ctx, doBlock); err != nil {
-						output.Error("Failed to create enum '%s': %v", name, err)
+					vals := migration.ParseEnumValues(stmt)
+					syncSQL := migration.GenerateEnumSyncSQL(name, vals)
+					if syncSQL == "" {
+						continue
+					}
+					if err := db.Exec(ctx, syncSQL); err != nil {
+						output.Error("Failed to sync enum '%s': %v", name, err)
 						return err
 					}
 					output.Success("✓ %s", name)
 				}
 
-				output.Success("Enum types created successfully (%d total)", len(enabled))
+				// ── Drop disabled / commented-out enums ────────────────────────────
+				// Only drop types that appear somewhere in the file (managed by vm).
+				for _, name := range disabled {
+					// Check if it actually exists in the DB before trying to drop.
+					rows, err := db.Query(ctx,
+						`SELECT 1 FROM pg_type t
+						  JOIN pg_namespace n ON n.oid = t.typnamespace
+						 WHERE t.typname = $1 AND n.nspname = 'public' AND t.typtype = 'e'`,
+						name)
+					if err != nil {
+						output.Warning("Could not check enum '%s': %v", name, err)
+						continue
+					}
+					exists := rows.Next()
+					rows.Close()
+					if !exists {
+						continue
+					}
+					dropSQL := fmt.Sprintf("DROP TYPE IF EXISTS %s CASCADE;", name)
+					if err := db.Exec(ctx, dropSQL); err != nil {
+						output.Warning("Failed to drop enum '%s': %v", name, err)
+						continue
+					}
+					output.Info("↓ Removed disabled enum: %s", name)
+				}
+
+				if len(enabled) == 0 && len(disabled) == 0 {
+					output.Warning("No enum types found in enums.sql")
+					output.Info("Uncomment the types you need in migrations/enums.sql")
+					return nil
+				}
+
+				output.Success("Enum sync complete (enabled: %d, removed: %d)", len(enabled), len(disabled))
 				return nil
 			},
 		},
@@ -311,54 +333,4 @@ var EnumsCommand = &cli.Command{
 			},
 		},
 	},
-}
-
-// extractEnumStatement finds the full CREATE TYPE ... AS ENUM (...); statement
-// for a given type name within a SQL file's content.
-func extractEnumStatement(content, name string) string {
-	// We need to find the CREATE TYPE <name> AS ENUM (...) statement,
-	// possibly spanning multiple lines.
-	lines := strings.Split(content, "\n")
-	var buf strings.Builder
-	capturing := false
-	depth := 0
-
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "--") {
-			continue
-		}
-
-		upper := strings.ToUpper(trimmed)
-		if !capturing {
-			// Look for CREATE TYPE <name>
-			if strings.Contains(upper, "CREATE") && strings.Contains(upper, "TYPE") &&
-				strings.Contains(strings.ToLower(trimmed), strings.ToLower(name)) &&
-				strings.Contains(upper, "ENUM") {
-				capturing = true
-				buf.Reset()
-			}
-		}
-
-		if capturing {
-			buf.WriteString(" ")
-			buf.WriteString(trimmed)
-			for _, ch := range trimmed {
-				switch ch {
-				case '(':
-					depth++
-				case ')':
-					depth--
-				}
-			}
-			if depth == 0 && buf.Len() > 0 {
-				stmt := strings.TrimSpace(buf.String())
-				if !strings.HasSuffix(stmt, ";") {
-					stmt += ";"
-				}
-				return stmt
-			}
-		}
-	}
-	return ""
 }

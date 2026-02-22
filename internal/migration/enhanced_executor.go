@@ -571,6 +571,18 @@ func (e *EnhancedExecutor) detectAndHandleDrift(opts MigrationOptions, executedF
 
 		// --- Column drift ---
 		expectedCols := expectedSchema[tblKey]
+		_, hasExpectedIndexes := expectedIndexes[tblKey]
+		_, hasExpectedTriggers := expectedTriggers[tblKey]
+
+		// If this table isn't mentioned in any migration file (no columns,
+		// indexes, or triggers expected), skip it entirely.  This avoids false
+		// positives for extension-created tables (e.g. PostGIS's spatial_ref_sys)
+		// and for tables that were created manually outside of the migration system.
+		if len(expectedCols) == 0 && !hasExpectedIndexes && !hasExpectedTriggers {
+			e.logger.Debug("Skipping drift check for '%s' — not defined in any migration file", table)
+			continue
+		}
+
 		drift, err := e.inspector.DetectDrift(table, expectedCols)
 		if err != nil {
 			e.logger.Debug("Failed to check column drift for %s: %v", table, err)

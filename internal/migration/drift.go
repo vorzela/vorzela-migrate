@@ -457,19 +457,34 @@ func (si *SchemaInspector) GenerateAllStatements(drift *SchemaDrift) []string {
 	return all
 }
 
-// GetAllTables returns all user tables in the database
+// GetAllTables returns all user-managed tables in the database.
+// For PostgreSQL, tables that were created by an installed extension
+// (e.g. PostGIS's spatial_ref_sys) are excluded so that drift detection
+// never reports false positives against them.
 func (si *SchemaInspector) GetAllTables() ([]string, error) {
 	var query string
 
 	switch si.dialect {
 	case PostgreSQL:
+		// Exclude the migration bookkeeping tables and any table that is owned
+		// by a pg_extension (deptype = 'e'), which covers PostGIS tables such as
+		// spatial_ref_sys, geometry_columns, geography_columns, etc.
 		query = `
-			SELECT tablename 
-			FROM pg_tables 
-			WHERE schemaname = 'public' 
-			AND tablename != 'migrations'
-			AND tablename != 'migrations_lock'
-			ORDER BY tablename
+			SELECT c.relname AS tablename
+			FROM pg_class c
+			JOIN pg_namespace n ON n.oid = c.relnamespace
+			WHERE n.nspname = 'public'
+			  AND c.relkind = 'r'
+			  AND c.relname NOT IN ('migrations', 'migrations_lock')
+			  AND NOT EXISTS (
+			      SELECT 1
+			      FROM pg_depend d
+			      JOIN pg_extension e ON e.oid = d.refobjid
+			      WHERE d.classid = 'pg_class'::regclass
+			        AND d.objid = c.oid
+			        AND d.deptype = 'e'
+			  )
+			ORDER BY c.relname
 		`
 	case MySQL, MariaDB:
 		query = `

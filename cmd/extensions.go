@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/urfave/cli/v2"
 	"github.com/vorzela/vorzela-migrate/internal/config"
@@ -74,27 +73,42 @@ var ExtensionsCommand = &cli.Command{
 					return err
 				}
 
-				// Parse enabled extensions (non-commented CREATE EXTENSION lines)
-				enabledExtensions := parseEnabledExtensions(string(sqlContent))
-				if len(enabledExtensions) == 0 {
-					output.Warning("No extensions enabled in extensions.sql")
+				content := string(sqlContent)
+				enabled, disabled := migration.ParseAllExtensionNames(content)
+
+				ctx := context.Background()
+
+				// ── Install enabled extensions (CREATE EXTENSION IF NOT EXISTS handles idempotency) ──
+				if len(enabled) > 0 {
+					output.Info(fmt.Sprintf("Syncing extensions from %s...", extensionsPath))
+					if err := db.Exec(ctx, content); err != nil {
+						output.Error(fmt.Sprintf("Failed to install extensions: %v", err))
+						return err
+					}
+					for _, ext := range enabled {
+						output.Success(fmt.Sprintf("✓ %s", ext))
+					}
+				}
+
+				// ── Drop disabled / commented-out extensions ──────────────────────────
+				droppedCount := 0
+				for _, ext := range disabled {
+					dropSQL := fmt.Sprintf("DROP EXTENSION IF EXISTS %s CASCADE;", ext)
+					if err := db.Exec(ctx, dropSQL); err != nil {
+						output.Warning(fmt.Sprintf("Failed to drop extension %s: %v", ext, err))
+						continue
+					}
+					output.Info(fmt.Sprintf("↓ Removed disabled extension: %s", ext))
+					droppedCount++
+				}
+
+				if len(enabled) == 0 && len(disabled) == 0 {
+					output.Warning("No extensions found in extensions.sql")
 					output.Info("Uncomment the extensions you need in migrations/extensions.sql")
 					return nil
 				}
 
-				// Execute the SQL
-				output.Info(fmt.Sprintf("Installing extensions from %s...", extensionsPath))
-				ctx := context.Background()
-				if err := db.Exec(ctx, string(sqlContent)); err != nil {
-					output.Error(fmt.Sprintf("Failed to install extensions: %v", err))
-					return err
-				}
-
-				output.Success(fmt.Sprintf("PostgreSQL extensions installed successfully (%d total)", len(enabledExtensions)))
-				for _, ext := range enabledExtensions {
-					output.Info(fmt.Sprintf("✓ %s", ext))
-				}
-
+				output.Success(fmt.Sprintf("Extension sync complete (enabled: %d, removed: %d)", len(enabled), droppedCount))
 				return nil
 			},
 		},
@@ -137,7 +151,7 @@ var ExtensionsCommand = &cli.Command{
 				}
 
 				// Parse enabled extensions
-				enabledExtensions := parseEnabledExtensions(string(sqlContent))
+				enabledExtensions := migration.ParseEnabledExtensions(string(sqlContent))
 				if len(enabledExtensions) == 0 {
 					output.Warning("No extensions found in extensions.sql")
 					return nil
@@ -197,39 +211,4 @@ var ExtensionsCommand = &cli.Command{
 			},
 		},
 	},
-}
-
-// parseEnabledExtensions extracts enabled (non-commented) extension names from SQL
-func parseEnabledExtensions(content string) []string {
-	var extensions []string
-	lines := strings.Split(content, "\n")
-
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		// Skip empty lines and comments
-		if trimmed == "" || strings.HasPrefix(trimmed, "--") {
-			continue
-		}
-
-		// Look for CREATE EXTENSION statements
-		if strings.Contains(strings.ToUpper(trimmed), "CREATE EXTENSION") {
-			// Extract extension name
-			// Handle: CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-			// or: CREATE EXTENSION IF NOT EXISTS pg_trgm;
-			parts := strings.Fields(trimmed)
-			for i, part := range parts {
-				if strings.ToUpper(part) == "EXISTS" && i+1 < len(parts) {
-					extName := parts[i+1]
-					// Remove quotes and semicolon
-					extName = strings.Trim(extName, `"';`)
-					if extName != "" {
-						extensions = append(extensions, extName)
-					}
-					break
-				}
-			}
-		}
-	}
-
-	return extensions
 }

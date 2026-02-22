@@ -79,16 +79,147 @@ var createTypeRe = regexp.MustCompile(`(?i)CREATE\s+TYPE\s+(["\w]+)\s+AS\s+ENUM`
 
 // ParseEnabledEnums extracts enum type names from enabled (non-commented) CREATE TYPE lines.
 func ParseEnabledEnums(content string) []string {
-	var enums []string
+	enabled, _ := ParseAllEnumNames(content)
+	return enabled
+}
+
+// ParseAllEnumNames returns (enabled, disabled) enum type names.
+// enabled  = names on active (non-commented) CREATE TYPE lines.
+// disabled = names found on commented-out CREATE TYPE lines.
+// Only enum names that appear in the file at all are managed; anything that
+// exists in the DB but never appeared in the file is left untouched.
+func ParseAllEnumNames(content string) (enabled, disabled []string) {
 	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "--") {
+			// Uncomment and check for a CREATE TYPE statement.
+			uncommented := strings.TrimSpace(strings.TrimLeft(trimmed, "-"))
+			if m := createTypeRe.FindStringSubmatch(uncommented); len(m) > 1 {
+				disabled = append(disabled, strings.Trim(m[1], `"`))
+			}
+		} else {
+			if m := createTypeRe.FindStringSubmatch(trimmed); len(m) > 1 {
+				enabled = append(enabled, strings.Trim(m[1], `"`))
+			}
+		}
+	}
+	return
+}
+
+// ExtractEnumStatement finds the full CREATE TYPE ... AS ENUM (...); statement
+// for a given type name within a SQL file's content.
+func ExtractEnumStatement(content, name string) string {
+	lines := strings.Split(content, "\n")
+	var buf strings.Builder
+	capturing := false
+	depth := 0
+
+	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" || strings.HasPrefix(trimmed, "--") {
 			continue
 		}
-		if m := createTypeRe.FindStringSubmatch(trimmed); len(m) > 1 {
-			name := strings.Trim(m[1], `"`)
-			enums = append(enums, name)
+
+		upper := strings.ToUpper(trimmed)
+		if !capturing {
+			if strings.Contains(upper, "CREATE") && strings.Contains(upper, "TYPE") &&
+				strings.Contains(strings.ToLower(trimmed), strings.ToLower(name)) &&
+				strings.Contains(upper, "ENUM") {
+				capturing = true
+				buf.Reset()
+			}
+		}
+
+		if capturing {
+			buf.WriteString(" ")
+			buf.WriteString(trimmed)
+			for _, ch := range trimmed {
+				switch ch {
+				case '(':
+					depth++
+				case ')':
+					depth--
+				}
+			}
+			if depth == 0 && buf.Len() > 0 {
+				stmt := strings.TrimSpace(buf.String())
+				if !strings.HasSuffix(stmt, ";") {
+					stmt += ";"
+				}
+				return stmt
+			}
 		}
 	}
-	return enums
+	return ""
+}
+
+// enumValuesRe extracts individual quoted values from inside an ENUM (...) definition.
+var enumValuesRe = regexp.MustCompile(`'([^']*)'`)
+
+// ParseEnumValues extracts the ordered list of quoted enum labels from a
+// CREATE TYPE ... AS ENUM (...) statement.
+func ParseEnumValues(stmt string) []string {
+	// Find the content between the first ( and the matching )
+	open := strings.Index(stmt, "(")
+	if open == -1 {
+		return nil
+	}
+	close := strings.LastIndex(stmt, ")")
+	if close <= open {
+		return nil
+	}
+	body := stmt[open+1 : close]
+	var vals []string
+	for _, m := range enumValuesRe.FindAllStringSubmatch(body, -1) {
+		vals = append(vals, m[1])
+	}
+	return vals
+}
+
+// GenerateEnumSyncSQL returns a DO block that:
+//   - Creates the enum type if it does not exist yet.
+//   - Adds any missing values (from wantValues) to an already-existing type using
+//     ALTER TYPE … ADD VALUE IF NOT EXISTS, which is idempotent.
+//
+// Note: PostgreSQL does not support removing values from an existing enum type
+// without dropping and recreating it (which requires CASCADE and loses data).
+// If you need to remove a value, create a new migration that drops and recreates
+// the type, or use a different approach (e.g. CHECK constraint on text column).
+func GenerateEnumSyncSQL(name string, wantValues []string) string {
+	if len(wantValues) == 0 {
+		return ""
+	}
+
+	// Build the CREATE TYPE literal list  'v1', 'v2', ...
+	escaped := make([]string, len(wantValues))
+	for i, v := range wantValues {
+		escaped[i] = "'" + strings.ReplaceAll(v, "'", "''") + "'"
+	}
+	createList := strings.Join(escaped, ", ")
+
+	// Build ALTER TYPE ... ADD VALUE IF NOT EXISTS statements for each value.
+	var alterStmts []string
+	for _, e := range escaped {
+		alterStmts = append(alterStmts,
+			fmt.Sprintf("    ALTER TYPE %s ADD VALUE IF NOT EXISTS %s;", name, e))
+	}
+	alterBlock := strings.Join(alterStmts, "\n")
+
+	safeName := strings.ReplaceAll(name, "'", "''")
+
+	return fmt.Sprintf(`DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_type t
+    JOIN pg_namespace n ON n.oid = t.typnamespace
+    WHERE t.typname = '%s' AND n.nspname = 'public' AND t.typtype = 'e'
+  ) THEN
+    CREATE TYPE %s AS ENUM (%s);
+  ELSE
+%s
+  END IF;
+END $$;`, safeName, name, createList, alterBlock)
 }

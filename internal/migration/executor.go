@@ -415,6 +415,15 @@ func isUpMarker(line string) bool {
 	if strings.Contains(line, "+goose Up") {
 		return true
 	}
+	// golang-migrate style: -- migrate:up
+	if strings.Contains(line, "migrate:up") {
+		return true
+	}
+	// Simple style: -- Up  (exact match, case-insensitive, with optional trailing spaces)
+	stripped := strings.TrimRight(strings.TrimPrefix(strings.TrimSpace(line), "--"), " \t")
+	if strings.EqualFold(strings.TrimSpace(stripped), "up") {
+		return true
+	}
 	return false
 }
 
@@ -426,6 +435,15 @@ func isDownMarker(line string) bool {
 	}
 	// Goose style:  -- +goose Down
 	if strings.Contains(line, "+goose Down") {
+		return true
+	}
+	// golang-migrate style: -- migrate:down
+	if strings.Contains(line, "migrate:down") {
+		return true
+	}
+	// Simple style: -- Down  (exact match, case-insensitive)
+	stripped := strings.TrimRight(strings.TrimPrefix(strings.TrimSpace(line), "--"), " \t")
+	if strings.EqualFold(strings.TrimSpace(stripped), "down") {
 		return true
 	}
 	return false

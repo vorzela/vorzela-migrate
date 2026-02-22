@@ -1,10 +1,22 @@
 package output
 
 import (
+	"bufio"
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/fatih/color"
 )
+
+// Confirm displays a Y/N prompt and returns true if the user answers "y".
+func Confirm(question string) bool {
+	Yellow.Printf("\n%s [y/N]: ", question)
+	reader := bufio.NewReader(os.Stdin)
+	answer, _ := reader.ReadString('\n')
+	fmt.Println()
+	return strings.ToLower(strings.TrimSpace(answer)) == "y"
+}
 
 // Color constants
 var (

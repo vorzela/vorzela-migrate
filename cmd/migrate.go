@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/urfave/cli/v2"
 	"github.com/vorzela/vorzela-migrate/internal/config"
@@ -259,7 +258,18 @@ var MigrateCommand = &cli.Command{
 	},
 }
 
-// runEnumsIfNeeded runs enums.sql if it exists
+// enumOp describes a single pending enum change for display before prompting.
+type enumOp struct {
+	kind string // "create" | "add-values" | "drop"
+	name string
+	vals []string
+}
+
+// runEnumsIfNeeded syncs enum types from enums.sql:
+//   - Creates each enabled enum if it does not exist yet.
+//   - Adds missing values to existing enums.
+//   - Drops enums that appear in the file as comments (disabled / removed).
+//   - Prompts the user before applying any changes.
 func runEnumsIfNeeded(conn db.DB, cfg *config.Config) error {
 	enumsPath := filepath.Join(cfg.MigrationPath, "enums.sql")
 
@@ -272,71 +282,356 @@ func runEnumsIfNeeded(conn db.DB, cfg *config.Config) error {
 		return fmt.Errorf("failed to read enums.sql: %w", err)
 	}
 
-	if len(strings.TrimSpace(string(sqlContent))) == 0 {
+	content := string(sqlContent)
+	enabled, disabled := migration.ParseAllEnumNames(content)
+	ctx := context.Background()
+
+	// ── Pre-flight: determine what actually needs changing ──────────────────
+	var ops []enumOp
+
+	for _, name := range enabled {
+		stmt := migration.ExtractEnumStatement(content, name)
+		if stmt == "" {
+			continue
+		}
+		wantVals := migration.ParseEnumValues(stmt)
+
+		rows, err := conn.Query(ctx,
+			`SELECT 1 FROM pg_type t
+			  JOIN pg_namespace n ON n.oid = t.typnamespace
+			 WHERE t.typname = $1 AND n.nspname = 'public' AND t.typtype = 'e'`, name)
+		if err != nil {
+			ops = append(ops, enumOp{"create", name, wantVals})
+			continue
+		}
+		exists := rows.Next()
+		rows.Close()
+
+		if !exists {
+			ops = append(ops, enumOp{"create", name, wantVals})
+			continue
+		}
+
+		// Enum exists — find values not yet present in the DB
+		var missing []string
+		for _, v := range wantVals {
+			vrows, verr := conn.Query(ctx,
+				`SELECT 1 FROM pg_enum e
+				  JOIN pg_type t ON t.oid = e.enumtypid
+				  JOIN pg_namespace n ON n.oid = t.typnamespace
+				 WHERE t.typname = $1 AND n.nspname = 'public' AND e.enumlabel = $2`, name, v)
+			if verr != nil {
+				missing = append(missing, v)
+				continue
+			}
+			found := vrows.Next()
+			vrows.Close()
+			if !found {
+				missing = append(missing, v)
+			}
+		}
+		if len(missing) > 0 {
+			ops = append(ops, enumOp{"add-values", name, missing})
+		}
+	}
+
+	for _, name := range disabled {
+		rows, err := conn.Query(ctx,
+			`SELECT 1 FROM pg_type t
+			  JOIN pg_namespace n ON n.oid = t.typnamespace
+			 WHERE t.typname = $1 AND n.nspname = 'public' AND t.typtype = 'e'`, name)
+		if err != nil {
+			continue
+		}
+		exists := rows.Next()
+		rows.Close()
+		if exists {
+			ops = append(ops, enumOp{"drop", name, nil})
+		}
+	}
+
+	if len(ops) == 0 {
+		return nil // Nothing to do
+	}
+
+	// ── Display plan ────────────────────────────────────────────────────────
+	output.Info("Enum sync plan:")
+	for _, op := range ops {
+		switch op.kind {
+		case "create":
+			output.Println("  + create type %s (%d values)", op.name, len(op.vals))
+		case "add-values":
+			output.Println("  ~ update type %s: add values %v", op.name, op.vals)
+		case "drop":
+			output.Warning("  - drop type %s CASCADE", op.name)
+		}
+	}
+
+	if !output.Confirm("Apply enum sync?") {
+		output.Info("Skipping enum sync")
 		return nil
 	}
 
-	ctx := context.Background()
-	if err := conn.Exec(ctx, string(sqlContent)); err != nil {
-		return fmt.Errorf("failed to install enums: %w", err)
+	// ── Execute ─────────────────────────────────────────────────────────────
+	createCount, updateCount, dropCount := 0, 0, 0
+
+	for _, name := range enabled {
+		stmt := migration.ExtractEnumStatement(content, name)
+		if stmt == "" {
+			continue
+		}
+		vals := migration.ParseEnumValues(stmt)
+		syncSQL := migration.GenerateEnumSyncSQL(name, vals)
+		if syncSQL == "" {
+			continue
+		}
+		if err := conn.Exec(ctx, syncSQL); err != nil {
+			return fmt.Errorf("failed to sync enum '%s': %w", name, err)
+		}
+	}
+	for _, op := range ops {
+		switch op.kind {
+		case "create":
+			createCount++
+		case "add-values":
+			updateCount++
+		case "drop":
+			dropCount++
+		}
 	}
 
-	output.Info("✓ Enum types installed")
+	for _, name := range disabled {
+		rows, err := conn.Query(ctx,
+			`SELECT 1 FROM pg_type t
+			  JOIN pg_namespace n ON n.oid = t.typnamespace
+			 WHERE t.typname = $1 AND n.nspname = 'public' AND t.typtype = 'e'`, name)
+		if err != nil {
+			continue
+		}
+		exists := rows.Next()
+		rows.Close()
+		if !exists {
+			continue
+		}
+		conn.Exec(ctx, fmt.Sprintf("DROP TYPE IF EXISTS %s CASCADE;", name)) //nolint:errcheck
+	}
+
+	output.Success("✓ Enum types synced (created: %d, updated: %d, dropped: %d)", createCount, updateCount, dropCount)
 	return nil
 }
 
-// runExtensionsIfNeeded runs extensions.sql if it exists
-func runExtensionsIfNeeded(db db.DB, cfg *config.Config) error {
+// runExtensionsIfNeeded syncs extensions from extensions.sql:
+//   - Installs enabled extensions that are not yet present in pg_extension.
+//   - Drops extensions that are commented out or removed from the file.
+//   - Prompts the user before applying any changes.
+func runExtensionsIfNeeded(conn db.DB, cfg *config.Config) error {
 	extensionsPath := filepath.Join(cfg.MigrationPath, "extensions.sql")
 
-	// Check if file exists
 	if _, err := os.Stat(extensionsPath); os.IsNotExist(err) {
 		return nil // No extensions file, skip
 	}
 
-	// Read and execute extensions
 	sqlContent, err := os.ReadFile(extensionsPath)
 	if err != nil {
 		return fmt.Errorf("failed to read extensions.sql: %w", err)
 	}
 
-	// Parse enabled extensions (non-commented CREATE EXTENSION lines)
-	enabledExtensions := parseEnabledExtensions(string(sqlContent))
-	if len(enabledExtensions) == 0 {
-		return nil // No extensions enabled, skip
-	}
-
-	// Execute the SQL silently
+	content := string(sqlContent)
+	enabled, disabled := migration.ParseAllExtensionNames(content)
 	ctx := context.Background()
-	if err := db.Exec(ctx, string(sqlContent)); err != nil {
-		return fmt.Errorf("failed to install extensions: %w", err)
+
+	// ── Pre-flight ──────────────────────────────────────────────────────────
+	type extOp struct {
+		kind string // "install" | "drop"
+		name string
+	}
+	var ops []extOp
+
+	for _, ext := range enabled {
+		rows, err := conn.Query(ctx,
+			`SELECT 1 FROM pg_extension WHERE extname = $1`, ext)
+		if err != nil {
+			ops = append(ops, extOp{"install", ext})
+			continue
+		}
+		found := rows.Next()
+		rows.Close()
+		if !found {
+			ops = append(ops, extOp{"install", ext})
+		}
 	}
 
-	output.Info("✓ PostgreSQL extensions installed (%d)", len(enabledExtensions))
+	for _, ext := range disabled {
+		rows, err := conn.Query(ctx,
+			`SELECT 1 FROM pg_extension WHERE extname = $1`, ext)
+		if err != nil {
+			continue
+		}
+		found := rows.Next()
+		rows.Close()
+		if found {
+			ops = append(ops, extOp{"drop", ext})
+		}
+	}
+
+	if len(ops) == 0 {
+		return nil // Nothing to do
+	}
+
+	// ── Display plan ────────────────────────────────────────────────────────
+	output.Info("Extension sync plan:")
+	for _, op := range ops {
+		switch op.kind {
+		case "install":
+			output.Println("  + install extension %s", op.name)
+		case "drop":
+			output.Warning("  - drop extension %s CASCADE", op.name)
+		}
+	}
+
+	if !output.Confirm("Apply extension sync?") {
+		output.Info("Skipping extension sync")
+		return nil
+	}
+
+	// ── Execute ─────────────────────────────────────────────────────────────
+	installCount, dropCount := 0, 0
+
+	// Install all enabled extensions (file uses CREATE EXTENSION IF NOT EXISTS — idempotent)
+	if len(enabled) > 0 {
+		if err := conn.Exec(ctx, content); err != nil {
+			return fmt.Errorf("failed to install extensions: %w", err)
+		}
+	}
+	for _, op := range ops {
+		if op.kind == "install" {
+			installCount++
+		}
+	}
+
+	for _, ext := range disabled {
+		if err := conn.Exec(ctx, fmt.Sprintf("DROP EXTENSION IF EXISTS %s CASCADE;", ext)); err == nil {
+			dropCount++
+		}
+	}
+
+	output.Success("✓ PostgreSQL extensions synced (installed: %d, dropped: %d)", installCount, dropCount)
 	return nil
 }
 
-// runFunctionsIfNeeded runs functions.sql if it exists
-func runFunctionsIfNeeded(db db.DB, cfg *config.Config) error {
+// runFunctionsIfNeeded syncs functions from functions.sql:
+//   - Installs / updates all enabled functions (CREATE OR REPLACE is idempotent).
+//   - Drops functions that are commented out or removed from the file.
+//   - Prompts the user before applying any changes (new functions or drops).
+func runFunctionsIfNeeded(conn db.DB, cfg *config.Config) error {
 	functionsPath := filepath.Join(cfg.MigrationPath, "functions.sql")
 
-	// Check if file exists
 	if _, err := os.Stat(functionsPath); os.IsNotExist(err) {
 		return nil // No functions file, skip
 	}
 
-	// Read and execute functions
 	sqlContent, err := os.ReadFile(functionsPath)
 	if err != nil {
 		return fmt.Errorf("failed to read functions.sql: %w", err)
 	}
 
-	// Execute the SQL silently
+	content := string(sqlContent)
+	enabled, disabled := migration.ParseAllFunctionNames(content)
 	ctx := context.Background()
-	if err := db.Exec(ctx, string(sqlContent)); err != nil {
+
+	// ── Pre-flight ──────────────────────────────────────────────────────────
+	type fnOp struct {
+		kind string // "create" | "update" | "drop"
+		name string
+	}
+	var ops []fnOp
+
+	for _, fn := range enabled {
+		rows, err := conn.Query(ctx,
+			`SELECT 1 FROM pg_proc p
+			  JOIN pg_namespace n ON n.oid = p.pronamespace
+			 WHERE p.proname = $1 AND n.nspname = 'public'`, fn)
+		if err != nil {
+			ops = append(ops, fnOp{"create", fn})
+			continue
+		}
+		found := rows.Next()
+		rows.Close()
+		if !found {
+			ops = append(ops, fnOp{"create", fn})
+		} else {
+			ops = append(ops, fnOp{"update", fn})
+		}
+	}
+
+	for _, fn := range disabled {
+		rows, err := conn.Query(ctx,
+			`SELECT 1 FROM pg_proc p
+			  JOIN pg_namespace n ON n.oid = p.pronamespace
+			 WHERE p.proname = $1 AND n.nspname = 'public'`, fn)
+		if err != nil {
+			continue
+		}
+		found := rows.Next()
+		rows.Close()
+		if found {
+			ops = append(ops, fnOp{"drop", fn})
+		}
+	}
+
+	// Only prompt if there are new functions to create or drops — updates are silent
+	promptOps := make([]fnOp, 0, len(ops))
+	for _, op := range ops {
+		if op.kind != "update" {
+			promptOps = append(promptOps, op)
+		}
+	}
+
+	if len(promptOps) > 0 {
+		output.Info("Function sync plan:")
+		for _, op := range ops {
+			switch op.kind {
+			case "create":
+				output.Println("  + create function %s", op.name)
+			case "update":
+				output.Println("  ~ update function %s", op.name)
+			case "drop":
+				output.Warning("  - drop function %s CASCADE", op.name)
+			}
+		}
+		if !output.Confirm("Apply function sync?") {
+			output.Info("Skipping function sync")
+			return nil
+		}
+	}
+
+	if len(ops) == 0 {
+		return nil // Nothing to do
+	}
+
+	// ── Execute ─────────────────────────────────────────────────────────────
+	// Install / update all enabled functions (CREATE OR REPLACE handles idempotency)
+	if err := conn.Exec(ctx, content); err != nil {
 		return fmt.Errorf("failed to install functions: %w", err)
 	}
 
-	output.Info("✓ Database functions installed")
+	dropCount := 0
+	for _, fn := range disabled {
+		if err := conn.Exec(ctx, fmt.Sprintf("DROP FUNCTION IF EXISTS %s() CASCADE;", fn)); err == nil {
+			dropCount++
+		}
+	}
+
+	createCount, updateCount := 0, 0
+	for _, op := range ops {
+		switch op.kind {
+		case "create":
+			createCount++
+		case "update":
+			updateCount++
+		}
+	}
+
+	output.Success("✓ Database functions synced (created: %d, updated: %d, dropped: %d)", createCount, updateCount, dropCount)
 	return nil
 }

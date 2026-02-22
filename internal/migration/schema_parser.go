@@ -9,6 +9,12 @@ import (
 
 // buildExpectedSchemaFromFiles parses executed migration SQL files and returns
 // a map of tableName -> []columnName representing what each table should contain.
+//
+// Only the Up section of each migration file is parsed.  Reading the full file
+// (including the Down section) would cause ADD COLUMN statements in Up and the
+// corresponding DROP COLUMN statements in Down to cancel each other out, making
+// those columns disappear from the expected schema and triggering false-positive
+// drift warnings.
 func buildExpectedSchemaFromFiles(migrationPath string, executedFiles []string) map[string][]string {
 	expected := make(map[string][]string)
 
@@ -18,7 +24,15 @@ func buildExpectedSchemaFromFiles(migrationPath string, executedFiles []string) 
 			continue
 		}
 
-		cols := extractColumnsFromSQL(string(content))
+		// Parse only the Up section so that Down-section DROP/ALTER statements
+		// do not cancel out columns that were added in the Up section.
+		sqlContent := extractSection(string(content), "Up")
+		if sqlContent == "" {
+			// No section markers found – treat the whole file as Up SQL.
+			sqlContent = string(content)
+		}
+
+		cols := extractColumnsFromSQL(sqlContent)
 		for table, columns := range cols {
 			expected[table] = append(expected[table], columns...)
 		}
@@ -240,6 +254,8 @@ var createTriggerRe = regexp.MustCompile(
 
 // buildExpectedIndexesFromFiles parses executed migration files and returns
 // a map of tableName -> []IndexInfo listing indexes that should exist.
+// Only the Up section of each file is parsed to avoid false negatives from
+// DROP INDEX statements in the Down section.
 func buildExpectedIndexesFromFiles(migrationPath string, executedFiles []string) map[string][]IndexInfo {
 	expected := make(map[string][]IndexInfo)
 	seen := make(map[string]bool) // deduplicate by index name
@@ -249,7 +265,11 @@ func buildExpectedIndexesFromFiles(migrationPath string, executedFiles []string)
 		if err != nil {
 			continue
 		}
-		for _, idx := range extractIndexesFromSQL(string(content)) {
+		sqlContent := extractSection(string(content), "Up")
+		if sqlContent == "" {
+			sqlContent = string(content)
+		}
+		for _, idx := range extractIndexesFromSQL(sqlContent) {
 			key := strings.ToLower(idx.TableName) + "." + strings.ToLower(idx.Name)
 			if seen[key] {
 				continue
@@ -264,6 +284,8 @@ func buildExpectedIndexesFromFiles(migrationPath string, executedFiles []string)
 
 // buildExpectedTriggersFromFiles parses executed migration files and returns
 // a map of tableName -> []TriggerInfo listing triggers that should exist.
+// Only the Up section is parsed so that DOWN-section DROP TRIGGER statements
+// do not shadow triggers that should be present.
 func buildExpectedTriggersFromFiles(migrationPath string, executedFiles []string) map[string][]TriggerInfo {
 	expected := make(map[string][]TriggerInfo)
 	seen := make(map[string]bool)
@@ -273,7 +295,11 @@ func buildExpectedTriggersFromFiles(migrationPath string, executedFiles []string
 		if err != nil {
 			continue
 		}
-		for _, trig := range extractTriggersFromSQL(string(content)) {
+		sqlContent := extractSection(string(content), "Up")
+		if sqlContent == "" {
+			sqlContent = string(content)
+		}
+		for _, trig := range extractTriggersFromSQL(sqlContent) {
 			key := strings.ToLower(trig.TableName) + "." + strings.ToLower(trig.Name)
 			if seen[key] {
 				continue

@@ -2,6 +2,39 @@
 
 All notable changes to Vorzela Migration Tool are documented in this file.
 
+## [2.0.8] - 2026-02-22
+
+### New Features
+
+- **Smart Enum / Extension / Function Sync** 🔄
+  - `vm enums migrate` now **syncs** rather than just creates:
+    - If the type does **not** exist → `CREATE TYPE … AS ENUM (…)`
+    - If the type **already exists** → `ALTER TYPE … ADD VALUE IF NOT EXISTS` for every value in the file, so adding a new label to an existing enum works automatically
+    - If a `CREATE TYPE` line is **commented out** → the type is dropped from the database with `DROP TYPE IF EXISTS … CASCADE`
+  - `vm extensions migrate` now **syncs**: installs enabled extensions, drops any that have been commented out
+  - `vm functions migrate` now **syncs**: applies all enabled functions with `CREATE OR REPLACE`, drops any whose `CREATE FUNCTION` lines have been commented out
+  - All three auto-run hooks inside `vm migrate` apply the same sync logic
+  - **Interactive confirmation prompt** — before any auto-sync makes changes (`vm migrate`), a plan of pending operations is displayed and the user is asked to confirm; if no changes are detected the prompt is skipped entirely
+
+- **Drift: False-positives Eliminated** 🎯
+  - Schema drift now parses **only the Up section** of each migration file — Down-section `DROP COLUMN` / `DROP INDEX` / `DROP TRIGGER` statements no longer cancel out what the Up section added, preventing false "column added outside migration" warnings
+  - Extension-managed tables (e.g. PostGIS's `spatial_ref_sys`, `geometry_columns`) are excluded via `pg_depend` — they are no longer reported as drift
+  - Tables that have no corresponding migration file are silently skipped instead of flooding the output
+
+- **Section Marker Format Support** 📝
+  - `-- Up` / `-- Down` (simple style) and `-- migrate:up` / `-- migrate:down` (golang-migrate style) are now recognised in addition to the existing `-- ⬆`, `-- ⬇`, `+goose Up` / `+goose Down` formats
+
+### Internal
+
+- Added `ParseAllEnumNames`, `ParseEnumValues`, `GenerateEnumSyncSQL`, `ExtractEnumStatement` to `internal/migration` for reusable enum sync logic
+- Added `ParseAllExtensionNames` / `ParseEnabledExtensions` to `internal/migration`
+- Added `ParseAllFunctionNames` / `ParseEnabledFunctions` to `internal/migration`
+- Added `output.Confirm` helper for interactive Y/N prompts
+- Removed duplicate `extractEnumStatement` / `parseEnabledExtensions` private helpers from the `cmd` layer
+- Added regression tests: `TestBuildExpectedSchema_UpSectionOnlyParsing`, `TestBuildExpectedSchema_SimpleUpDownMarkers`, `TestBuildExpectedSchema_ExtensionTableNotIncluded`, `TestIsUpDownMarkerFormats`, `TestParseEnumValues`, `TestGenerateEnumSyncSQL`
+
+---
+
 ## [2.0.7] - 2026-02-19
 
 ### Bug Fixes

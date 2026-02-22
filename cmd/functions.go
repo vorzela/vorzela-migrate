@@ -63,20 +63,34 @@ var FunctionsCommand = &cli.Command{
 					return err
 				}
 
-				// Execute the SQL
-				output.Info(fmt.Sprintf("Applying functions from %s...", functionsPath))
+				content := string(sqlContent)
+				enabled, disabled := migration.ParseAllFunctionNames(content)
+
 				ctx := context.Background()
-				if err := db.Exec(ctx, string(sqlContent)); err != nil {
+
+				// ── Install / update enabled functions (CREATE OR REPLACE handles idempotency) ──
+				output.Info(fmt.Sprintf("Syncing functions from %s...", functionsPath))
+				if err := db.Exec(ctx, content); err != nil {
 					output.Error(fmt.Sprintf("Failed to apply functions: %v", err))
 					return err
 				}
+				for _, fn := range enabled {
+					output.Success(fmt.Sprintf("✓ %s()", fn))
+				}
 
-				output.Success("Database functions installed successfully")
-				output.Info("✓ auto_update_timestamp()")
-				output.Info("✓ protect_soft_deleted()")
-				output.Info("✓ auto_update_with_soft_delete_protection()")
-				output.Info("✓ prevent_hard_delete()")
+				// ── Drop disabled / commented-out functions ───────────────────────
+				droppedCount := 0
+				for _, fn := range disabled {
+					dropSQL := fmt.Sprintf("DROP FUNCTION IF EXISTS %s() CASCADE;", fn)
+					if err := db.Exec(ctx, dropSQL); err != nil {
+						output.Warning(fmt.Sprintf("Failed to drop function %s: %v", fn, err))
+						continue
+					}
+					output.Info(fmt.Sprintf("↓ Removed disabled function: %s()", fn))
+					droppedCount++
+				}
 
+				output.Success(fmt.Sprintf("Function sync complete (enabled: %d, removed: %d)", len(enabled), droppedCount))
 				return nil
 			},
 		},
