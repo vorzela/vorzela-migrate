@@ -50,8 +50,64 @@ var createTableRe = regexp.MustCompile(`(?is)CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXIS
 var alterTableAddRe = regexp.MustCompile(`(?i)ALTER\s+TABLE\s+(?:(?:IF\s+EXISTS\s+)?(?:[\w"` + "`" + `]+\.)?([` + "`" + `"\w]+))\s+ADD\s+(?:COLUMN\s+)?(?:IF\s+NOT\s+EXISTS\s+)?([` + "`" + `"\w]+)`)
 var alterTableDropRe = regexp.MustCompile(`(?i)ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:[\w"` + "`" + `]+\.)?([` + "`" + `"\w]+)\s+DROP\s+(?:COLUMN\s+)?(?:IF\s+EXISTS\s+)?([` + "`" + `"\w]+)`)
 
+// stripSQLLineComments removes SQL line comments (-- …) from a SQL string
+// while preserving string literals and newlines.  Newlines inside comments are
+// kept so that the line structure (and therefore any regex offsets) stays intact.
+func stripSQLLineComments(sql string) string {
+	var b strings.Builder
+	b.Grow(len(sql))
+
+	inString := false
+	stringChar := byte(0)
+	i := 0
+	for i < len(sql) {
+		ch := sql[i]
+
+		if inString {
+			b.WriteByte(ch)
+			if ch == '\\' && i+1 < len(sql) {
+				// escaped character inside a string — write both bytes
+				i++
+				b.WriteByte(sql[i])
+			} else if ch == stringChar {
+				inString = false
+			}
+			i++
+			continue
+		}
+
+		if ch == '\'' || ch == '"' {
+			inString = true
+			stringChar = ch
+			b.WriteByte(ch)
+			i++
+			continue
+		}
+
+		// Detect the start of a line comment
+		if ch == '-' && i+1 < len(sql) && sql[i+1] == '-' {
+			// Skip everything up to (but not including) the newline
+			for i < len(sql) && sql[i] != '\n' {
+				i++
+			}
+			// The newline itself (if present) is written on the next iteration
+			continue
+		}
+
+		b.WriteByte(ch)
+		i++
+	}
+	return b.String()
+}
+
 // extractColumnsFromSQL parses SQL and returns a map of table -> []columnName.
 func extractColumnsFromSQL(sql string) map[string][]string {
+	// Strip SQL line comments first so that inline comments like
+	//   avatar_metadata JSONB, -- field for storing metadata
+	// do not confuse the comma-splitter into treating the comment text
+	// as the next column definition.
+	sql = stripSQLLineComments(sql)
+
 	result := make(map[string][]string)
 
 	// Find all CREATE TABLE statements

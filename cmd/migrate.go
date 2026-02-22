@@ -519,10 +519,11 @@ func runExtensionsIfNeeded(conn db.DB, cfg *config.Config) error {
 	return nil
 }
 
-// runFunctionsIfNeeded syncs functions from functions.sql:
-//   - Installs / updates all enabled functions (CREATE OR REPLACE is idempotent).
+// runFunctionsIfNeeded syncs functions from functions.sql during auto-run:
+//   - Creates functions that don't yet exist in the DB.
 //   - Drops functions that are commented out or removed from the file.
-//   - Prompts the user before applying any changes (new functions or drops).
+//   - Skips silently when all functions already exist and none need to be dropped.
+//   - Body-change updates are intentionally NOT applied here — run `vm functions migrate` explicitly.
 func runFunctionsIfNeeded(conn db.DB, cfg *config.Config) error {
 	functionsPath := filepath.Join(cfg.MigrationPath, "functions.sql")
 
@@ -539,9 +540,9 @@ func runFunctionsIfNeeded(conn db.DB, cfg *config.Config) error {
 	enabled, disabled := migration.ParseAllFunctionNames(content)
 	ctx := context.Background()
 
-	// ── Pre-flight ──────────────────────────────────────────────────────────
+	// ── Pre-flight: only care about truly new or removed functions ──────────
 	type fnOp struct {
-		kind string // "create" | "update" | "drop"
+		kind string // "create" | "drop"
 		name string
 	}
 	var ops []fnOp
@@ -559,9 +560,9 @@ func runFunctionsIfNeeded(conn db.DB, cfg *config.Config) error {
 		rows.Close()
 		if !found {
 			ops = append(ops, fnOp{"create", fn})
-		} else {
-			ops = append(ops, fnOp{"update", fn})
 		}
+		// Already exists → skip silently during auto-run.
+		// To update function bodies, run `vm functions migrate` explicitly.
 	}
 
 	for _, fn := range disabled {
@@ -579,59 +580,45 @@ func runFunctionsIfNeeded(conn db.DB, cfg *config.Config) error {
 		}
 	}
 
-	// Only prompt if there are new functions to create or drops — updates are silent
-	promptOps := make([]fnOp, 0, len(ops))
-	for _, op := range ops {
-		if op.kind != "update" {
-			promptOps = append(promptOps, op)
-		}
-	}
-
-	if len(promptOps) > 0 {
-		output.Info("Function sync plan:")
-		for _, op := range ops {
-			switch op.kind {
-			case "create":
-				output.Println("  + create function %s", op.name)
-			case "update":
-				output.Println("  ~ update function %s", op.name)
-			case "drop":
-				output.Warning("  - drop function %s CASCADE", op.name)
-			}
-		}
-		if !output.Confirm("Apply function sync?") {
-			output.Info("Skipping function sync")
-			return nil
-		}
-	}
-
 	if len(ops) == 0 {
-		return nil // Nothing to do
+		return nil // Nothing to do — all functions already installed, none removed
+	}
+
+	// ── Display plan and prompt ─────────────────────────────────────────────
+	output.Info("Function sync plan:")
+	for _, op := range ops {
+		switch op.kind {
+		case "create":
+			output.Println("  + create function %s", op.name)
+		case "drop":
+			output.Warning("  - drop function %s CASCADE", op.name)
+		}
+	}
+
+	if !output.Confirm("Apply function sync?") {
+		output.Info("Skipping function sync")
+		return nil
 	}
 
 	// ── Execute ─────────────────────────────────────────────────────────────
-	// Install / update all enabled functions (CREATE OR REPLACE handles idempotency)
+	createCount, dropCount := 0, 0
+
+	// Install new functions by running the full file (CREATE OR REPLACE is safe)
 	if err := conn.Exec(ctx, content); err != nil {
 		return fmt.Errorf("failed to install functions: %w", err)
 	}
+	for _, op := range ops {
+		if op.kind == "create" {
+			createCount++
+		}
+	}
 
-	dropCount := 0
 	for _, fn := range disabled {
 		if err := conn.Exec(ctx, fmt.Sprintf("DROP FUNCTION IF EXISTS %s() CASCADE;", fn)); err == nil {
 			dropCount++
 		}
 	}
 
-	createCount, updateCount := 0, 0
-	for _, op := range ops {
-		switch op.kind {
-		case "create":
-			createCount++
-		case "update":
-			updateCount++
-		}
-	}
-
-	output.Success("✓ Database functions synced (created: %d, updated: %d, dropped: %d)", createCount, updateCount, dropCount)
+	output.Success("✓ Database functions synced (created: %d, dropped: %d)", createCount, dropCount)
 	return nil
 }

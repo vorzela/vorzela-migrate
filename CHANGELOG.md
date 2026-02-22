@@ -2,6 +2,37 @@
 
 All notable changes to Vorzela Migration Tool are documented in this file.
 
+## [2.0.9] - 2026-02-22
+
+### Bug Fixes
+
+- **Functions/Extensions/Enums: no longer re-apply when nothing has changed** 🔇
+  - `vm migrate` auto-run: `runFunctionsIfNeeded` was marking every already-installed
+    function as `"update"`, so it always executed the full `functions.sql` and printed
+    `"synced (created: 0, updated: 7, dropped: 0)"` even when nothing changed.
+    Fixed: auto-run now **only fires** when there are truly new functions to create or
+    commented-out functions to drop. If all functions already exist the step is skipped
+    silently.
+  - `vm functions migrate` / `vm extensions migrate` / `vm enums migrate`: now use a
+    **SHA-256 hash** of the respective `.sql` file stored as `.vm_functions_hash`,
+    `.vm_extensions_hash`, `.vm_enums_hash` in the migration directory.  
+    If the file hasn't changed since the last successful sync, the command prints
+    `"already up to date"` and exits — no DB round-trips, no noise.  
+    On any file change the hash is recomputed and stored after a successful sync.
+  - `vm extensions migrate` now correctly reports `+ installed` vs `· already` per
+    extension instead of printing every extension as newly installed every time.
+  - `vm functions migrate` now correctly reports `+ created` vs `~ updated` per function.
+
+- **Drift: inline SQL comments no longer hide column definitions** 🐛
+  - Columns annotated with trailing `-- comments` after a comma (e.g.
+    `avatar_metadata JSONB, -- field note`) caused the next column (`status`, etc.)
+    to be silently dropped from the expected schema → false drift on every run.
+    Fixed via `stripSQLLineComments()` called before comma-splitting in
+    `extractColumnsFromSQL`.
+  - Regression tests: `TestStripSQLLineComments`, `TestInlineCommentsDontHideColumns`
+
+---
+
 ## [2.0.8] - 2026-02-22
 
 ### New Features

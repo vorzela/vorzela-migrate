@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -61,6 +62,17 @@ var EnumsCommand = &cli.Command{
 				if err != nil {
 					output.Error("Failed to read %s: %v", enumsPath, err)
 					return err
+				}
+
+				// ── Hash-based change detection ─────────────────────────────────
+				hashFile := filepath.Join(cfg.MigrationPath, ".vm_enums_hash")
+				currentHash := fmt.Sprintf("%x", sha256.Sum256(sqlContent))
+
+				if existing, readErr := os.ReadFile(hashFile); readErr == nil {
+					if string(existing) == currentHash {
+						output.Info("Enums already up to date (no changes since last sync)")
+						return nil
+					}
 				}
 
 				content := string(sqlContent)
@@ -127,6 +139,9 @@ var EnumsCommand = &cli.Command{
 					output.Info("Uncomment the types you need in migrations/enums.sql")
 					return nil
 				}
+
+				// Persist hash so next run detects no-change
+				_ = os.WriteFile(hashFile, []byte(currentHash), 0644)
 
 				output.Success("Enum sync complete (enabled: %d, removed: %d)", len(enabled), len(disabled))
 				return nil

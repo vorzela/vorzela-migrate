@@ -658,3 +658,85 @@ func TestIsUpDownMarkerFormats(t *testing.T) {
 		}
 	}
 }
+
+// TestStripSQLLineComments verifies that stripSQLLineComments removes
+// -- comments without touching string literals or newlines.
+func TestStripSQLLineComments(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "standalone comment line",
+			input: "-- this is a comment\nSELECT 1;\n",
+			want:  "\nSELECT 1;\n",
+		},
+		{
+			name:  "inline comment after SQL",
+			input: "avatar_metadata JSONB, -- field note\nstatus TEXT,\n",
+			want:  "avatar_metadata JSONB, \nstatus TEXT,\n",
+		},
+		{
+			name:  "comment inside string literal preserved",
+			input: "DEFAULT 'hello -- world',\n",
+			want:  "DEFAULT 'hello -- world',\n",
+		},
+		{
+			name:  "no comment",
+			input: "CREATE TABLE foo (id BIGINT);",
+			want:  "CREATE TABLE foo (id BIGINT);",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := stripSQLLineComments(tc.input)
+			if got != tc.want {
+				t.Errorf("stripSQLLineComments(%q)\n  got  %q\n  want %q", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestInlineCommentsDontHideColumns is a regression test for the bug where
+// an inline SQL comment after a comma caused the next column to be missed.
+//
+//	avatar_metadata JSONB, -- field note
+//	-- Account Status
+//	status admin_account_status NOT NULL DEFAULT 'pending',
+//
+// The column `status` must still appear in the expected schema.
+func TestInlineCommentsDontHideColumns(t *testing.T) {
+	sql := `-- +goose Up
+CREATE TABLE IF NOT EXISTS admins (
+    id BIGSERIAL PRIMARY KEY,
+    avatar_fid CITEXT UNIQUE, -- SeaweedFS file ID
+    avatar_metadata JSONB, -- field for storing metadata about the icon
+
+    -- Account Status
+    status TEXT NOT NULL DEFAULT 'pending',
+    email VARCHAR(255) NOT NULL UNIQUE,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+-- +goose Down
+DROP TABLE IF EXISTS admins CASCADE;
+`
+	dir := t.TempDir()
+	f := filepath.Join(dir, "0001_admins.sql")
+	if err := os.WriteFile(f, []byte(sql), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	schema := buildExpectedSchemaFromFiles(dir, []string{"0001_admins.sql"})
+	cols := schema["admins"]
+	colSet := make(map[string]bool, len(cols))
+	for _, c := range cols {
+		colSet[c] = true
+	}
+
+	for _, want := range []string{"avatar_metadata", "status", "email"} {
+		if !colSet[want] {
+			t.Errorf("expected column %q in admins schema; got %v", want, cols)
+		}
+	}
+}

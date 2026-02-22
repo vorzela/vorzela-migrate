@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -64,21 +65,61 @@ var FunctionsCommand = &cli.Command{
 				}
 
 				content := string(sqlContent)
-				enabled, disabled := migration.ParseAllFunctionNames(content)
 
+				// ── Hash-based change detection ─────────────────────────────────
+				// Store a SHA256 of functions.sql next to the file.  If the hash
+				// hasn't changed since the last run, there is nothing to re-apply.
+				hashFile := filepath.Join(cfg.MigrationPath, ".vm_functions_hash")
+				currentHash := fmt.Sprintf("%x", sha256.Sum256(sqlContent))
+
+				if existing, readErr := os.ReadFile(hashFile); readErr == nil {
+					if string(existing) == currentHash {
+						output.Info("Functions already up to date (no changes since last sync)")
+						return nil
+					}
+				}
+
+				// ── Pre-flight: classify each function ──────────────────────────
+				enabled, disabled := migration.ParseAllFunctionNames(content)
 				ctx := context.Background()
 
-				// ── Install / update enabled functions (CREATE OR REPLACE handles idempotency) ──
+				type fnState struct {
+					name    string
+					existed bool
+				}
+				states := make([]fnState, 0, len(enabled))
+				for _, fn := range enabled {
+					rows, qErr := db.Query(ctx,
+						`SELECT 1 FROM pg_proc p
+						  JOIN pg_namespace n ON n.oid = p.pronamespace
+						 WHERE p.proname = $1 AND n.nspname = 'public'`, fn)
+					existed := false
+					if qErr == nil {
+						existed = rows.Next()
+						rows.Close()
+					}
+					states = append(states, fnState{fn, existed})
+				}
+
+				// ── Apply ───────────────────────────────────────────────────────
 				output.Info(fmt.Sprintf("Syncing functions from %s...", functionsPath))
 				if err := db.Exec(ctx, content); err != nil {
 					output.Error(fmt.Sprintf("Failed to apply functions: %v", err))
 					return err
 				}
-				for _, fn := range enabled {
-					output.Success(fmt.Sprintf("✓ %s()", fn))
+
+				createdCount, updatedCount := 0, 0
+				for _, s := range states {
+					if s.existed {
+						output.Println("  ~ updated  %s()", s.name)
+						updatedCount++
+					} else {
+						output.Println("  + created  %s()", s.name)
+						createdCount++
+					}
 				}
 
-				// ── Drop disabled / commented-out functions ───────────────────────
+				// ── Drop disabled / commented-out functions ──────────────────────
 				droppedCount := 0
 				for _, fn := range disabled {
 					dropSQL := fmt.Sprintf("DROP FUNCTION IF EXISTS %s() CASCADE;", fn)
@@ -86,11 +127,14 @@ var FunctionsCommand = &cli.Command{
 						output.Warning(fmt.Sprintf("Failed to drop function %s: %v", fn, err))
 						continue
 					}
-					output.Info(fmt.Sprintf("↓ Removed disabled function: %s()", fn))
+					output.Println("  - dropped  %s()", fn)
 					droppedCount++
 				}
 
-				output.Success(fmt.Sprintf("Function sync complete (enabled: %d, removed: %d)", len(enabled), droppedCount))
+				// ── Persist hash so next run can detect no-change ───────────────
+				_ = os.WriteFile(hashFile, []byte(currentHash), 0644)
+
+				output.Success(fmt.Sprintf("Function sync complete (created: %d, updated: %d, dropped: %d)", createdCount, updatedCount, droppedCount))
 				return nil
 			},
 		},

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -73,24 +74,61 @@ var ExtensionsCommand = &cli.Command{
 					return err
 				}
 
+				// ── Hash-based change detection ─────────────────────────────────
+				hashFile := filepath.Join(cfg.MigrationPath, ".vm_extensions_hash")
+				currentHash := fmt.Sprintf("%x", sha256.Sum256(sqlContent))
+
+				if existing, readErr := os.ReadFile(hashFile); readErr == nil {
+					if string(existing) == currentHash {
+						output.Info("Extensions already up to date (no changes since last sync)")
+						return nil
+					}
+				}
+
 				content := string(sqlContent)
 				enabled, disabled := migration.ParseAllExtensionNames(content)
-
 				ctx := context.Background()
 
-				// ── Install enabled extensions (CREATE EXTENSION IF NOT EXISTS handles idempotency) ──
+				if len(enabled) == 0 && len(disabled) == 0 {
+					output.Warning("No extensions found in extensions.sql")
+					output.Info("Uncomment the extensions you need in extensions.sql")
+					return nil
+				}
+
+				// ── Pre-flight: which extensions are already installed ───────────
+				type extState struct {
+					name    string
+					existed bool
+				}
+				states := make([]extState, 0, len(enabled))
+				for _, ext := range enabled {
+					rows, qErr := db.Query(ctx,
+						`SELECT 1 FROM pg_extension WHERE extname = $1`, ext)
+					existed := false
+					if qErr == nil {
+						existed = rows.Next()
+						rows.Close()
+					}
+					states = append(states, extState{ext, existed})
+				}
+
+				// ── Apply enabled extensions (CREATE EXTENSION IF NOT EXISTS is idempotent) ──
 				if len(enabled) > 0 {
 					output.Info(fmt.Sprintf("Syncing extensions from %s...", extensionsPath))
 					if err := db.Exec(ctx, content); err != nil {
 						output.Error(fmt.Sprintf("Failed to install extensions: %v", err))
 						return err
 					}
-					for _, ext := range enabled {
-						output.Success(fmt.Sprintf("✓ %s", ext))
+					for _, s := range states {
+						if s.existed {
+							output.Println("  · already  %s", s.name)
+						} else {
+							output.Println("  + installed %s", s.name)
+						}
 					}
 				}
 
-				// ── Drop disabled / commented-out extensions ──────────────────────────
+				// ── Drop disabled / commented-out extensions ──────────────────────
 				droppedCount := 0
 				for _, ext := range disabled {
 					dropSQL := fmt.Sprintf("DROP EXTENSION IF EXISTS %s CASCADE;", ext)
@@ -98,17 +136,20 @@ var ExtensionsCommand = &cli.Command{
 						output.Warning(fmt.Sprintf("Failed to drop extension %s: %v", ext, err))
 						continue
 					}
-					output.Info(fmt.Sprintf("↓ Removed disabled extension: %s", ext))
+					output.Println("  - dropped  %s", ext)
 					droppedCount++
 				}
 
-				if len(enabled) == 0 && len(disabled) == 0 {
-					output.Warning("No extensions found in extensions.sql")
-					output.Info("Uncomment the extensions you need in migrations/extensions.sql")
-					return nil
-				}
+				// ── Persist hash ────────────────────────────────────────────────
+				_ = os.WriteFile(hashFile, []byte(currentHash), 0644)
 
-				output.Success(fmt.Sprintf("Extension sync complete (enabled: %d, removed: %d)", len(enabled), droppedCount))
+				installedCount := 0
+				for _, s := range states {
+					if !s.existed {
+						installedCount++
+					}
+				}
+				output.Success(fmt.Sprintf("Extension sync complete (installed: %d, dropped: %d)", installedCount, droppedCount))
 				return nil
 			},
 		},
