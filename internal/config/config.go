@@ -31,8 +31,14 @@ type Config struct {
 	// Drift handling: auto, reject, prompt
 	DriftHandling string
 
-	// Internal: track explicitly set values
-	explicitVerbose bool
+	// Internal: track which fields were explicitly set in the .vm file
+	explicitVerbose           bool
+	explicitEnhanced          bool
+	explicitDetectDrift       bool
+	explicitVerifyChecksums   bool
+	explicitAutoRunExtensions bool
+	explicitAutoRunFunctions  bool
+	explicitAutoRunEnums      bool
 }
 
 // LoadConfig loads configuration with optional DSN and path overrides
@@ -128,7 +134,16 @@ func loadVorzelaFile(filepath string, cfg *Config) error {
 		}
 
 		key := strings.TrimSpace(parts[0])
-		value := strings.TrimSpace(parts[1])
+		// Strip inline # comments from values: `true   # comment` → `true`
+		rawValue := parts[1]
+		if idx := strings.Index(rawValue, " #"); idx != -1 {
+			rawValue = rawValue[:idx]
+		}
+		value := strings.TrimSpace(rawValue)
+
+		parseBool := func(v string) bool {
+			return strings.ToLower(v) == "true" || v == "1"
+		}
 
 		switch key {
 		case "DATABASE_URL":
@@ -136,26 +151,32 @@ func loadVorzelaFile(filepath string, cfg *Config) error {
 		case "MIGRATION_PATH":
 			cfg.MigrationPath = value
 		case "SQLC_SUPPORT":
-			cfg.SqlcSupport = strings.ToLower(value) == "true" || value == "1"
+			cfg.SqlcSupport = parseBool(value)
 		case "ENVIRONMENT", "ENV":
 			cfg.Environment = strings.ToLower(value)
 		case "ENHANCED":
-			cfg.Enhanced = strings.ToLower(value) == "true" || value == "1"
+			cfg.Enhanced = parseBool(value)
+			cfg.explicitEnhanced = true
 		case "ONLINE":
-			cfg.Online = strings.ToLower(value) == "true" || value == "1"
+			cfg.Online = parseBool(value)
 		case "VERIFY_CHECKSUMS":
-			cfg.VerifyChecksums = strings.ToLower(value) == "true" || value == "1"
+			cfg.VerifyChecksums = parseBool(value)
+			cfg.explicitVerifyChecksums = true
 		case "DETECT_DRIFT":
-			cfg.DetectDrift = strings.ToLower(value) == "true" || value == "1"
+			cfg.DetectDrift = parseBool(value)
+			cfg.explicitDetectDrift = true
 		case "VERBOSE":
-			cfg.Verbose = strings.ToLower(value) == "true" || value == "1"
+			cfg.Verbose = parseBool(value)
 			cfg.explicitVerbose = true
 		case "AUTO_RUN_EXTENSIONS":
-			cfg.AutoRunExtensions = strings.ToLower(value) == "true" || value == "1"
+			cfg.AutoRunExtensions = parseBool(value)
+			cfg.explicitAutoRunExtensions = true
 		case "AUTO_RUN_FUNCTIONS":
-			cfg.AutoRunFunctions = strings.ToLower(value) == "true" || value == "1"
+			cfg.AutoRunFunctions = parseBool(value)
+			cfg.explicitAutoRunFunctions = true
 		case "AUTO_RUN_ENUMS":
-			cfg.AutoRunEnums = strings.ToLower(value) == "true" || value == "1"
+			cfg.AutoRunEnums = parseBool(value)
+			cfg.explicitAutoRunEnums = true
 		case "DRIFT_HANDLING":
 			val := strings.ToLower(value)
 			if val == "auto" || val == "reject" || val == "prompt" {
@@ -243,26 +264,28 @@ func (c *Config) ApplyEnvironmentDefaults() {
 		}
 	}
 
-	// Set auto-run defaults (both environments)
-	// These defaults are true to prevent common errors
-	if !c.hasExplicitAutoRunSettings() {
+	// Set auto-run defaults (both environments) — only when not explicitly set by user.
+	if !c.explicitAutoRunExtensions {
 		c.AutoRunExtensions = true
+	}
+	if !c.explicitAutoRunFunctions {
 		c.AutoRunFunctions = true
+	}
+	if !c.explicitAutoRunEnums {
 		c.AutoRunEnums = true
 	}
 }
 
-// hasExplicitAutoRunSettings checks if auto-run settings were explicitly configured
+// hasExplicitAutoRunSettings returns true if the user explicitly configured any
+// AUTO_RUN_* key in their .vm file so that ApplyEnvironmentDefaults doesn't
+// overwrite the user's intent.
 func (c *Config) hasExplicitAutoRunSettings() bool {
-	// If user explicitly set either to false, don't override
-	// In practice, this returns false to always apply defaults
-	// unless we track explicit settings (future enhancement)
-	return false
+	return c.explicitAutoRunExtensions || c.explicitAutoRunFunctions || c.explicitAutoRunEnums
 }
 
-// hasExplicitSettings checks if any migration settings were explicitly configured
+// hasExplicitSettings returns true if the user explicitly set any migration
+// strategy key (ENHANCED, DETECT_DRIFT, VERIFY_CHECKSUMS) in their .vm file.
+// When true, ApplyEnvironmentDefaults will not override those values.
 func (c *Config) hasExplicitSettings() bool {
-	// If any setting was explicitly set in config, don't apply defaults
-	// This is a simplified check - in a real scenario, you'd track which were set
-	return false // For now, always apply environment-based defaults
+	return c.explicitEnhanced || c.explicitDetectDrift || c.explicitVerifyChecksums
 }

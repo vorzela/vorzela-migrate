@@ -565,24 +565,25 @@ func (e *EnhancedExecutor) detectAndHandleDrift(opts MigrationOptions, executedF
 	}
 
 	var drifts []*SchemaDrift
+	checkedCount := 0
 
 	for _, table := range tables {
 		tblKey := strings.ToLower(table)
 
-		// --- Column drift ---
 		expectedCols := expectedSchema[tblKey]
 		_, hasExpectedIndexes := expectedIndexes[tblKey]
 		_, hasExpectedTriggers := expectedTriggers[tblKey]
 
-		// If this table isn't mentioned in any migration file (no columns,
-		// indexes, or triggers expected), skip it entirely.  This avoids false
-		// positives for extension-created tables (e.g. PostGIS's spatial_ref_sys)
-		// and for tables that were created manually outside of the migration system.
+		// Skip tables not referenced in any migration file — these are either
+		// manually created tables or extension tables not caught by pg_depend.
 		if len(expectedCols) == 0 && !hasExpectedIndexes && !hasExpectedTriggers {
 			e.logger.Debug("Skipping drift check for '%s' — not defined in any migration file", table)
 			continue
 		}
 
+		checkedCount++
+
+		// --- Column drift (both directions) ---
 		drift, err := e.inspector.DetectDrift(table, expectedCols)
 		if err != nil {
 			e.logger.Debug("Failed to check column drift for %s: %v", table, err)
@@ -591,6 +592,10 @@ func (e *EnhancedExecutor) detectAndHandleDrift(opts MigrationOptions, executedF
 
 		if len(drift.AddedColumns) > 0 {
 			e.logger.SchemaDrift(table, extractColumnNames(drift.AddedColumns))
+		}
+		if len(drift.MissingColumns) > 0 {
+			e.logger.Warning("Schema drift in table '%s': columns defined in migrations but missing from DB: %v",
+				table, drift.MissingColumns)
 		}
 
 		// --- Index drift: indexes defined in migrations but missing from DB ---
@@ -631,20 +636,21 @@ func (e *EnhancedExecutor) detectAndHandleDrift(opts MigrationOptions, executedF
 			}
 		}
 
-		if len(drift.AddedColumns) > 0 || len(drift.MissingIndexes) > 0 || len(drift.MissingTriggers) > 0 {
+		if len(drift.AddedColumns) > 0 || len(drift.MissingColumns) > 0 ||
+			len(drift.MissingIndexes) > 0 || len(drift.MissingTriggers) > 0 {
 			drifts = append(drifts, drift)
 		}
 	}
 
 	if len(drifts) == 0 {
-		e.logger.Success("No schema drift detected")
+		e.logger.Success("No schema drift detected (%d table(s) checked)", checkedCount)
 		return false, nil
 	}
 
 	// Handle drift based on configuration
 	driftHandling := opts.DriftHandling
 	if driftHandling == "" {
-		driftHandling = "prompt" // Default to prompt
+		driftHandling = "prompt" // Default to interactive prompt
 	}
 
 	switch driftHandling {
@@ -669,6 +675,14 @@ func (e *EnhancedExecutor) detectAndHandleDrift(opts MigrationOptions, executedF
 func (e *EnhancedExecutor) autoApplyDrift(drifts []*SchemaDrift, opts MigrationOptions) (bool, error) {
 	applied := false
 	for _, drift := range drifts {
+		// Report columns that exist in migrations but are missing from the DB.
+		// These require a new migration to add — cannot be auto-applied.
+		if len(drift.MissingColumns) > 0 {
+			e.logger.Warning("Table '%s': columns defined in migrations but absent from DB: %v",
+				drift.Table, drift.MissingColumns)
+			e.logger.Warning("  → Run 'vm migrate' or add a new migration to restore these columns.")
+		}
+
 		statements := e.inspector.GenerateAllStatements(drift)
 
 		for _, stmt := range statements {
@@ -718,9 +732,19 @@ func (e *EnhancedExecutor) promptAndApplyDrift(drifts []*SchemaDrift, opts Migra
 	// Show all drift details
 	for _, drift := range drifts {
 		statements := e.inspector.GenerateAllStatements(drift)
-		e.logger.Info("Detected drift in '%s':", drift.Table)
-		for _, stmt := range statements {
-			fmt.Println("  " + stmt)
+		if len(statements) > 0 {
+			e.logger.Info("Detected drift in '%s':", drift.Table)
+			for _, stmt := range statements {
+				fmt.Println("  " + stmt)
+			}
+		}
+		// Report columns that exist in migrations but are missing from the DB.
+		// These require a new migration to add — cannot be auto-applied here.
+		if len(drift.MissingColumns) > 0 {
+			e.logger.Warning("Table '%s': columns defined in migrations but absent from DB: %v",
+				drift.Table, drift.MissingColumns)
+			fmt.Println("  → These columns should exist per your migrations but are missing from the database.")
+			fmt.Println("  → Run 'vm migrate' or create a new migration to restore them.")
 		}
 	}
 

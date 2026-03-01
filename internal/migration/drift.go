@@ -42,7 +42,8 @@ type TableSchema struct {
 // SchemaDrift represents detected schema differences
 type SchemaDrift struct {
 	Table           string
-	AddedColumns    []ColumnInfo
+	AddedColumns    []ColumnInfo // columns in DB not defined in any migration
+	MissingColumns  []string     // columns defined in migrations but absent from DB
 	ModifiedColumns []ColumnModification
 	MissingIndexes  []IndexInfo
 	MissingTriggers []TriggerInfo
@@ -328,7 +329,10 @@ func (si *SchemaInspector) getMySQLTableTriggers(tableName string) ([]TriggerInf
 	return triggers, rows.Err()
 }
 
-// DetectDrift compares expected schema with current schema
+// DetectDrift compares expected schema with current schema.
+// It checks BOTH drift directions:
+//   - AddedColumns:   columns that exist in the DB but are not in any migration file
+//   - MissingColumns: columns that migrations define but are absent from the DB
 func (si *SchemaInspector) DetectDrift(tableName string, expectedColumns []string) (*SchemaDrift, error) {
 	currentSchema, err := si.GetTableSchema(tableName)
 	if err != nil {
@@ -340,21 +344,40 @@ func (si *SchemaInspector) DetectDrift(tableName string, expectedColumns []strin
 		AddedColumns: []ColumnInfo{},
 	}
 
-	// Create a map of expected columns
-	expectedMap := make(map[string]bool)
+	// Build a set of columns currently in the DB
+	dbColMap := make(map[string]bool, len(currentSchema.Columns))
+	for _, col := range currentSchema.Columns {
+		dbColMap[col.Name] = true
+	}
+
+	// Build a set of columns expected from migration files
+	expectedMap := make(map[string]bool, len(expectedColumns))
 	for _, col := range expectedColumns {
 		expectedMap[col] = true
 	}
 
-	// Find columns that exist in DB but not in expected schema
+	// Standard columns that are always auto-added and should be ignored in both directions
+	autoColumns := map[string]bool{
+		"id": true, "created_at": true, "updated_at": true, "deleted_at": true,
+	}
+
+	// Direction 1: columns in DB not defined in any migration → "added outside migration"
 	for _, col := range currentSchema.Columns {
+		if autoColumns[col.Name] {
+			continue
+		}
 		if !expectedMap[col.Name] {
-			// Skip standard columns that are auto-added
-			if col.Name == "id" || col.Name == "created_at" ||
-				col.Name == "updated_at" || col.Name == "deleted_at" {
-				continue
-			}
 			drift.AddedColumns = append(drift.AddedColumns, col)
+		}
+	}
+
+	// Direction 2: columns defined in migrations but not present in DB → "missing column"
+	for _, col := range expectedColumns {
+		if autoColumns[col] {
+			continue
+		}
+		if !dbColMap[col] {
+			drift.MissingColumns = append(drift.MissingColumns, col)
 		}
 	}
 

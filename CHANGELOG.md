@@ -2,6 +2,47 @@
 
 All notable changes to Vorzela Migration Tool are documented in this file.
 
+## [2.1.0] - 2026-02-22
+
+### Bug Fixes
+
+- **Drift: bidirectional detection — missing columns now reported** 🔍
+  - Previously drift only checked one direction: "column exists in DB but not in
+    any migration file" (`AddedColumns`).  
+    The reverse — "column is defined in a migration file but absent from the DB"
+    (`MissingColumns`) — was never checked, so dropped or never-created columns
+    went silently undetected.
+  - `DetectDrift()` now checks **both directions**:
+    - `AddedColumns` — column in DB but not in migrations (added outside migrations)
+    - `MissingColumns` — column in migrations but not in DB (lost / never applied)
+  - `SchemaDrift` struct gains a `MissingColumns []string` field.
+  - `detectAndHandleDrift`, `promptAndApplyDrift`, and `autoApplyDrift` all log
+    `MissingColumns` as advisory warnings with a hint to run `vm migrate` or create
+    a fix migration (they cannot be auto-corrected via `ALTER TABLE ADD COLUMN`
+    without the original type information).
+  - Tables now report "(N table(s) checked)" in the no-drift success message.
+
+- **Config: inline `#` comments in `.vm` file no longer break settings** 🐛
+  - Values like `AUTO_RUN_EXTENSIONS=true   # enable auto-run` were parsed as
+    `"true   # enable auto-run"` which silently failed boolean conversion, leaving
+    the config key at its empty/default value even when explicitly set.
+  - Fixed: `loadVorzelaFile` now strips everything from ` #` onward before
+    trimming whitespace.
+
+- **Config: user-set values in `.vm` now correctly override environment defaults** 🐛
+  - `hasExplicitSettings()` and `hasExplicitAutoRunSettings()` always returned
+    `false`, so any `.vm` setting that conflicted with a detected environment
+    default (e.g. `DETECT_DRIFT=false` on a non-CI environment) was silently
+    overridden.
+  - Fixed: `Config` now tracks which keys were explicitly parsed via six
+    `explicitXxx` bool fields. Each helper checks the real tracking field instead
+    of always returning `false`.
+  - Individual auto-run defaults (`AutoRunExtensions`, `AutoRunFunctions`,
+    `AutoRunEnums`) are now applied per-field so an explicit `false` in `.vm` is
+    always respected.
+
+---
+
 ## [2.0.9] - 2026-02-22
 
 ### Bug Fixes
