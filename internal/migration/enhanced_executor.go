@@ -753,14 +753,100 @@ func (e *EnhancedExecutor) promptAndApplyDrift(drifts []*SchemaDrift, opts Migra
 		return e.autoApplyDrift(drifts, opts)
 
 	case "generate", "g":
-		// Just generate migration file
-		e.logger.Info("You can add these to a new migration file")
+		filename, err := e.generateDriftMigration(drifts)
+		if err != nil {
+			e.logger.Error("Failed to generate migration file: %v", err)
+			return false, err
+		}
+		e.logger.Success("Generated migration file: %s", filename)
+		e.logger.Info("Review it then run 'vm migrate' to apply.")
 		return false, nil
 
 	default:
 		e.logger.Info("Drift fixes skipped")
 		return false, nil
 	}
+}
+
+// generateDriftMigration creates a timestamped migration file that fixes all
+// detected drift: ALTER TABLE ADD COLUMN for missing columns, CREATE INDEX for
+// missing indexes, and advisory comments for missing triggers.
+// The Down section contains the exact reversal (DROP COLUMN / DROP INDEX).
+// Returns the generated filename.
+func (e *EnhancedExecutor) generateDriftMigration(drifts []*SchemaDrift) (string, error) {
+	timestamp := time.Now().Unix()
+	filename := fmt.Sprintf("%d_fix_schema_drift.sql", timestamp)
+	fullPath := filepath.Join(e.migrationPath, filename)
+
+	var up, down strings.Builder
+
+	for _, drift := range drifts {
+		// --- Up: ADD missing columns ---
+		for _, col := range drift.MissingColumns {
+			if col.Type == "" {
+				up.WriteString(fmt.Sprintf(
+					"-- MISSING COLUMN: %s.%s — type unknown, add manually.\n",
+					drift.Table, col.Name))
+			} else {
+				up.WriteString(fmt.Sprintf(
+					"ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s;\n",
+					drift.Table, col.Name, col.Type))
+			}
+			// Down: DROP the column
+			down.WriteString(fmt.Sprintf(
+				"ALTER TABLE %s DROP COLUMN IF EXISTS %s;\n",
+				drift.Table, col.Name))
+		}
+
+		// --- Up: columns that exist in DB but not migrations (AddedColumns) ---
+		// These appear in the DB outside of any migration — generate ALTER TABLE
+		// so the fix migration documents them properly.
+		for _, col := range drift.AddedColumns {
+			nullable := ""
+			if !col.Nullable {
+				nullable = " NOT NULL"
+			}
+			def := ""
+			if col.Default.Valid {
+				def = fmt.Sprintf(" DEFAULT %s", col.Default.String)
+			}
+			up.WriteString(fmt.Sprintf(
+				"ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s%s%s;\n",
+				drift.Table, col.Name, col.Type, nullable, def))
+			down.WriteString(fmt.Sprintf(
+				"ALTER TABLE %s DROP COLUMN IF EXISTS %s;\n",
+				drift.Table, col.Name))
+		}
+
+		// --- Up: CREATE missing indexes ---
+		for _, idx := range drift.MissingIndexes {
+			unique := ""
+			if idx.IsUnique {
+				unique = "UNIQUE "
+			}
+			cols := strings.Join(idx.Columns, ", ")
+			up.WriteString(fmt.Sprintf(
+				"CREATE %sINDEX IF NOT EXISTS %s ON %s (%s);\n",
+				unique, idx.Name, idx.TableName, cols))
+			down.WriteString(fmt.Sprintf(
+				"DROP INDEX IF EXISTS %s;\n", idx.Name))
+		}
+
+		// --- Up: advisory comments for missing triggers ---
+		for _, trig := range drift.MissingTriggers {
+			up.WriteString(fmt.Sprintf(
+				"-- MISSING TRIGGER: %s (%s %s ON %s) — re-apply the original SQL here.\n",
+				trig.Name, trig.Timing, trig.Event, trig.TableName))
+		}
+	}
+
+	content := fmt.Sprintf("-- Up\n%s\n-- Down\n%s", up.String(), down.String())
+
+	if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+		return "", fmt.Errorf("failed to write migration file: %w", err)
+	}
+
+	return filename, nil
 }
 
 // recordMigrationWithMetadata records migration with checksum and timing

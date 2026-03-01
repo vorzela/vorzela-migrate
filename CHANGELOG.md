@@ -2,6 +2,20 @@
 
 All notable changes to Vorzela Migration Tool are documented in this file.
 
+## [2.1.2] - 2026-03-01
+
+### New Features
+
+- **Drift `generate` option now creates a real migration file** 📄
+  - Previously typing `generate` printed `"You can add these to a new migration file"` and did nothing.
+  - Now it writes a timestamped `<ts>_fix_schema_drift.sql` file directly into the migration directory containing:
+    - **`-- Up`** section: `ALTER TABLE … ADD COLUMN IF NOT EXISTS` for every missing column (with correct SQL type parsed from migration files), `CREATE INDEX IF NOT EXISTS` for missing indexes, and advisory `-- MISSING TRIGGER` comments for triggers.
+    - **`-- Down`** section: the exact reversal — `DROP COLUMN IF EXISTS` for each added column, `DROP INDEX IF EXISTS` for each index.
+  - After generation, `vm migrate` picks it up as a normal pending migration and applies it.
+  - Accepts both `generate` and `g` as shorthand.
+
+---
+
 ## [2.1.1] - 2026-03-01
 
 ### Bug Fixes
