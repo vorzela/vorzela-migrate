@@ -820,16 +820,8 @@ func (e *EnhancedExecutor) generateDriftMigration(drifts []*SchemaDrift) (string
 
 		// --- Up: CREATE missing indexes ---
 		for _, idx := range drift.MissingIndexes {
-			unique := ""
-			if idx.IsUnique {
-				unique = "UNIQUE "
-			}
-			cols := strings.Join(idx.Columns, ", ")
-			up.WriteString(fmt.Sprintf(
-				"CREATE %sINDEX IF NOT EXISTS %s ON %s (%s);\n",
-				unique, idx.Name, idx.TableName, cols))
-			down.WriteString(fmt.Sprintf(
-				"DROP INDEX IF EXISTS %s;\n", idx.Name))
+			up.WriteString(generateCreateIndexSQL(idx, e.inspector.dialect) + "\n")
+			down.WriteString(fmt.Sprintf("DROP INDEX IF EXISTS %s;\n", idx.Name))
 		}
 
 		// --- Up: advisory comments for missing triggers ---

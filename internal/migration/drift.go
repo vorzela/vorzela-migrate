@@ -445,28 +445,40 @@ func (si *SchemaInspector) GenerateCreateIndexStatements(drift *SchemaDrift) []s
 
 	var statements []string
 	for _, idx := range drift.MissingIndexes {
-		unique := ""
-		if idx.IsUnique {
-			unique = "UNIQUE "
-		}
-		cols := strings.Join(idx.Columns, ", ")
-		var stmt string
-		if si.dialect == PostgreSQL {
-			stmt = fmt.Sprintf("CREATE %sINDEX IF NOT EXISTS %s ON %s (%s);",
-				unique, idx.Name, idx.TableName, cols)
-		} else {
-			// MySQL / MariaDB
-			if idx.IsUnique {
-				stmt = fmt.Sprintf("CREATE UNIQUE INDEX IF NOT EXISTS %s ON %s (%s);",
-					idx.Name, idx.TableName, cols)
-			} else {
-				stmt = fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s ON %s (%s);",
-					idx.Name, idx.TableName, cols)
-			}
-		}
+		stmt := generateCreateIndexSQL(idx, si.dialect)
 		statements = append(statements, stmt)
 	}
 	return statements
+}
+
+// generateCreateIndexSQL builds a CREATE INDEX statement for the given IndexInfo.
+// It is shared between the live executor and the migration file generator.
+func generateCreateIndexSQL(idx IndexInfo, dialect Dialect) string {
+	unique := ""
+	if idx.IsUnique {
+		unique = "UNIQUE "
+	}
+	cols := strings.Join(idx.Columns, ", ")
+
+	// USING <type> goes BEFORE the column list in PostgreSQL:
+	//   CREATE INDEX name ON table USING gist (col);
+	// Omit it when it is empty or is the default "btree".
+	usingClause := ""
+	if t := strings.ToLower(strings.TrimSpace(idx.IndexType)); t != "" && t != "btree" {
+		usingClause = fmt.Sprintf("USING %s ", t)
+	}
+
+	if dialect == PostgreSQL {
+		return fmt.Sprintf("CREATE %sINDEX IF NOT EXISTS %s ON %s %s(%s);",
+			unique, idx.Name, idx.TableName, usingClause, cols)
+	}
+	// MySQL / MariaDB — no USING clause for standard indexes
+	if idx.IsUnique {
+		return fmt.Sprintf("CREATE UNIQUE INDEX IF NOT EXISTS %s ON %s (%s);",
+			idx.Name, idx.TableName, cols)
+	}
+	return fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s ON %s (%s);",
+		idx.Name, idx.TableName, cols)
 }
 
 // GenerateCreateTriggerStatements returns a comment for each missing trigger

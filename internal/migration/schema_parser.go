@@ -518,9 +518,13 @@ func buildExpectedColumnDefsFromFiles(migrationPath string, executedFiles []stri
 // Index + trigger extraction from migration SQL
 // -----------------------------------------------------------------------
 
-// createIndexRe matches: CREATE [UNIQUE] INDEX [IF NOT EXISTS] name ON table (cols)
+// createIndexRe matches:
+//
+//	CREATE [UNIQUE] INDEX [IF NOT EXISTS] name ON table [USING type] (cols)
+//
+// Capture groups: 1=UNIQUE, 2=name, 3=table, 4=USING type (optional), 5=cols
 var createIndexRe = regexp.MustCompile(
-	`(?is)CREATE\s+(UNIQUE\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?([` + "`" + `"\w]+)\s+ON\s+([` + "`" + `"\w]+)\s*\(([^)]+)\)`)
+	`(?is)CREATE\s+(UNIQUE\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?([` + "`" + `"\w]+)\s+ON\s+([` + "`" + `"\w]+)\s+(?:USING\s+(\w+)\s+)?\(([^)]+)\)`)
 
 // createTriggerRe matches: CREATE [OR REPLACE] TRIGGER name {BEFORE|AFTER} event ON table
 var createTriggerRe = regexp.MustCompile(
@@ -590,14 +594,19 @@ func buildExpectedTriggersFromFiles(migrationPath string, executedFiles []string
 func extractIndexesFromSQL(sql string) []IndexInfo {
 	var indexes []IndexInfo
 	for _, m := range createIndexRe.FindAllStringSubmatch(sql, -1) {
+		// Groups: 1=UNIQUE, 2=name, 3=table, 4=USING type, 5=cols
 		isUnique := strings.TrimSpace(m[1]) != ""
 		name := stripQuotes(m[2])
 		table := stripQuotes(m[3])
-		rawCols := m[4]
+		idxType := strings.ToLower(strings.TrimSpace(m[4])) // e.g. "gist", "gin", "hash"
+		rawCols := m[5]
 
 		var cols []string
 		for _, c := range strings.Split(rawCols, ",") {
 			c = strings.TrimSpace(c)
+			if len(strings.Fields(c)) == 0 {
+				continue
+			}
 			// Strip any index-direction keyword or parenthesised length — keep identifier only
 			c = strings.Fields(c)[0]
 			c = stripQuotes(c)
@@ -611,6 +620,7 @@ func extractIndexesFromSQL(sql string) []IndexInfo {
 			TableName: strings.ToLower(table),
 			Columns:   cols,
 			IsUnique:  isUnique,
+			IndexType: idxType,
 		})
 	}
 	return indexes

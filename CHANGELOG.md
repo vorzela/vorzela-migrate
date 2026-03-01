@@ -2,6 +2,27 @@
 
 All notable changes to Vorzela Migration Tool are documented in this file.
 
+## [2.1.3] - 2026-03-01
+
+### Bug Fixes & Improvements
+
+- **Drift: missing indexes are now auto-applied (yes) and included in generated files** 🗂️
+  - `vm migrate` drift detection already tracked missing indexes via `MissingIndexes`,
+    but the `USING <type>` clause was not captured from the migration SQL, so
+    spatial indexes (`USING gist`, `USING gin`) were re-generated as plain btree.
+  - Fixed `createIndexRe` to capture the optional `USING <type>` token (which appears
+    **before** the column list in PostgreSQL: `CREATE INDEX name ON tbl USING gist (col)`).
+  - `extractIndexesFromSQL` now populates `IndexInfo.IndexType` from the captured group.
+  - New shared helper `generateCreateIndexSQL` emits `CREATE [UNIQUE] INDEX IF NOT EXISTS
+    name ON table [USING type] (cols);` with the correct clause position and omits it
+    entirely for the default `btree` type.
+  - Both the **`yes`** auto-apply path and the **`generate`** file path now emit
+    correct `CREATE INDEX … USING gist` (or gin/hash) statements.
+  - Down section in generated migration files includes `DROP INDEX IF EXISTS` for each
+    index that was added.
+
+---
+
 ## [2.1.2] - 2026-03-01
 
 ### New Features
