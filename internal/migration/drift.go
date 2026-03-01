@@ -43,7 +43,7 @@ type TableSchema struct {
 type SchemaDrift struct {
 	Table           string
 	AddedColumns    []ColumnInfo // columns in DB not defined in any migration
-	MissingColumns  []string     // columns defined in migrations but absent from DB
+	MissingColumns  []ColumnInfo // columns defined in migrations but absent from DB
 	ModifiedColumns []ColumnModification
 	MissingIndexes  []IndexInfo
 	MissingTriggers []TriggerInfo
@@ -333,7 +333,10 @@ func (si *SchemaInspector) getMySQLTableTriggers(tableName string) ([]TriggerInf
 // It checks BOTH drift directions:
 //   - AddedColumns:   columns that exist in the DB but are not in any migration file
 //   - MissingColumns: columns that migrations define but are absent from the DB
-func (si *SchemaInspector) DetectDrift(tableName string, expectedColumns []string) (*SchemaDrift, error) {
+//
+// expectedColumns must carry full ColumnInfo (including Type) so that
+// ALTER TABLE ADD COLUMN statements can be generated for MissingColumns.
+func (si *SchemaInspector) DetectDrift(tableName string, expectedColumns []ColumnInfo) (*SchemaDrift, error) {
 	currentSchema, err := si.GetTableSchema(tableName)
 	if err != nil {
 		return nil, err
@@ -344,16 +347,16 @@ func (si *SchemaInspector) DetectDrift(tableName string, expectedColumns []strin
 		AddedColumns: []ColumnInfo{},
 	}
 
-	// Build a set of columns currently in the DB
+	// Build a set of columns currently in the DB (keyed by lower-case name)
 	dbColMap := make(map[string]bool, len(currentSchema.Columns))
 	for _, col := range currentSchema.Columns {
-		dbColMap[col.Name] = true
+		dbColMap[strings.ToLower(col.Name)] = true
 	}
 
-	// Build a set of columns expected from migration files
-	expectedMap := make(map[string]bool, len(expectedColumns))
+	// Build a set of columns expected from migration files (keyed by lower-case name)
+	expectedMap := make(map[string]ColumnInfo, len(expectedColumns))
 	for _, col := range expectedColumns {
-		expectedMap[col] = true
+		expectedMap[strings.ToLower(col.Name)] = col
 	}
 
 	// Standard columns that are always auto-added and should be ignored in both directions
@@ -363,20 +366,22 @@ func (si *SchemaInspector) DetectDrift(tableName string, expectedColumns []strin
 
 	// Direction 1: columns in DB not defined in any migration → "added outside migration"
 	for _, col := range currentSchema.Columns {
-		if autoColumns[col.Name] {
+		name := strings.ToLower(col.Name)
+		if autoColumns[name] {
 			continue
 		}
-		if !expectedMap[col.Name] {
+		if _, ok := expectedMap[name]; !ok {
 			drift.AddedColumns = append(drift.AddedColumns, col)
 		}
 	}
 
 	// Direction 2: columns defined in migrations but not present in DB → "missing column"
 	for _, col := range expectedColumns {
-		if autoColumns[col] {
+		name := strings.ToLower(col.Name)
+		if autoColumns[name] {
 			continue
 		}
-		if !dbColMap[col] {
+		if !dbColMap[name] {
 			drift.MissingColumns = append(drift.MissingColumns, col)
 		}
 	}
@@ -384,17 +389,32 @@ func (si *SchemaInspector) DetectDrift(tableName string, expectedColumns []strin
 	return drift, nil
 }
 
-// GenerateAlterStatements generates ALTER TABLE statements for drift
+// GenerateAlterStatements generates ALTER TABLE statements for drift.
+// It handles both AddedColumns (columns extra in DB) and MissingColumns
+// (columns defined in migrations but absent from DB — these need ADD COLUMN).
 func (si *SchemaInspector) GenerateAlterStatements(drift *SchemaDrift) []string {
-	if len(drift.AddedColumns) == 0 {
-		return nil
-	}
-
 	var statements []string
 
+	// AddedColumns: columns that appeared in the DB outside of migrations.
+	// These were the original drift-fix targets (ALTER TABLE … ADD COLUMN based on DB introspection).
 	for _, col := range drift.AddedColumns {
 		stmt := si.generateAddColumnStatement(drift.Table, col)
 		statements = append(statements, stmt)
+	}
+
+	// MissingColumns: columns defined in migration files but absent from the DB.
+	// Generate ALTER TABLE … ADD COLUMN using the type from the migration definition.
+	for _, col := range drift.MissingColumns {
+		if col.Type == "" {
+			// Type unknown — emit a comment as a reminder instead of a broken statement.
+			statements = append(statements,
+				fmt.Sprintf("-- MISSING COLUMN: %s.%s — type unknown, please add manually.",
+					drift.Table, col.Name))
+			continue
+		}
+		statements = append(statements,
+			fmt.Sprintf("ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s;",
+				drift.Table, col.Name, col.Type))
 	}
 
 	return statements

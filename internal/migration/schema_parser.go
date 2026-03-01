@@ -50,6 +50,9 @@ var createTableRe = regexp.MustCompile(`(?is)CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXIS
 var alterTableAddRe = regexp.MustCompile(`(?i)ALTER\s+TABLE\s+(?:(?:IF\s+EXISTS\s+)?(?:[\w"` + "`" + `]+\.)?([` + "`" + `"\w]+))\s+ADD\s+(?:COLUMN\s+)?(?:IF\s+NOT\s+EXISTS\s+)?([` + "`" + `"\w]+)`)
 var alterTableDropRe = regexp.MustCompile(`(?i)ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:[\w"` + "`" + `]+\.)?([` + "`" + `"\w]+)\s+DROP\s+(?:COLUMN\s+)?(?:IF\s+EXISTS\s+)?([` + "`" + `"\w]+)`)
 
+// alterTableAddFullRe captures table, column name, and the rest of the definition (type + constraints).
+var alterTableAddFullRe = regexp.MustCompile(`(?i)ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:[\w"` + "`" + `]+\.)?([` + "`" + `"\w]+)\s+ADD\s+(?:COLUMN\s+)?(?:IF\s+NOT\s+EXISTS\s+)?([` + "`" + `"\w]+)\s+([^;]+)`)
+
 // stripSQLLineComments removes SQL line comments (-- …) from a SQL string
 // while preserving string literals and newlines.  Newlines inside comments are
 // kept so that the line structure (and therefore any regex offsets) stays intact.
@@ -294,6 +297,221 @@ func uniqueStrings(s []string) []string {
 		}
 	}
 	return out
+}
+
+// -----------------------------------------------------------------------
+// Type-aware schema extraction (returns ColumnInfo with name + type)
+// -----------------------------------------------------------------------
+
+// typeConstraintStarters are keywords that terminate a column type definition.
+var typeConstraintStarters = map[string]bool{
+	"not": true, "null": true, "default": true, "primary": true,
+	"references": true, "unique": true, "check": true,
+	"generated": true, "constraint": true, "collate": true,
+}
+
+// parseTypeDef extracts the SQL type from the portion of a column definition
+// that follows the column name.  It stops at constraint keywords at paren-depth 0.
+func parseTypeDef(s string) string {
+	s = strings.TrimSpace(s)
+	var result strings.Builder
+	depth := 0
+
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+		switch {
+		case ch == '(':
+			depth++
+			result.WriteByte(ch)
+		case ch == ')':
+			depth--
+			result.WriteByte(ch)
+		case ch == '\n' || ch == '\r' || ch == ';':
+			return strings.TrimSpace(result.String())
+		case (ch == ' ' || ch == '\t') && depth == 0:
+			// Peek at the next non-space token to see if it's a constraint keyword.
+			rest := strings.TrimLeft(s[i:], " \t")
+			if rest == "" {
+				return strings.TrimSpace(result.String())
+			}
+			endIdx := strings.IndexAny(rest, " \t()")
+			var nextWord string
+			if endIdx == -1 {
+				nextWord = rest
+			} else {
+				nextWord = rest[:endIdx]
+			}
+			if typeConstraintStarters[strings.ToLower(nextWord)] {
+				return strings.TrimSpace(result.String())
+			}
+			result.WriteByte(' ')
+		default:
+			result.WriteByte(ch)
+		}
+	}
+	return strings.TrimSpace(result.String())
+}
+
+// extractColumnTypeDef parses a single column definition line and returns
+// (columnName, typeDef).  Returns ("", "") for constraint/key lines.
+func extractColumnTypeDef(part string) (name, typeDef string) {
+	part = strings.TrimSpace(part)
+	if part == "" || columnSkipRe.MatchString(part) {
+		return "", ""
+	}
+	// Find the first whitespace to split the column name from the rest.
+	firstSpace := strings.IndexAny(part, " \t")
+	if firstSpace == -1 {
+		// Only a name, no type.
+		n := strings.ToLower(stripQuotes(part))
+		if isConstraintKeyword(n) {
+			return "", ""
+		}
+		return n, ""
+	}
+	n := strings.ToLower(stripQuotes(part[:firstSpace]))
+	if n == "" || isConstraintKeyword(n) {
+		return "", ""
+	}
+	t := parseTypeDef(part[firstSpace+1:])
+	return n, t
+}
+
+// parseCreateTableColumnDefs is like parseCreateTableColumns but returns
+// []ColumnInfo with both the column name and its SQL type.
+func parseCreateTableColumnDefs(body string) []ColumnInfo {
+	var cols []ColumnInfo
+	depth := 0
+	start := 0
+	inString := false
+	stringChar := byte(0)
+
+	for i := 0; i < len(body); i++ {
+		ch := body[i]
+		if inString {
+			switch ch {
+			case stringChar:
+				inString = false
+			case '\\':
+				i++
+			}
+			continue
+		}
+		switch ch {
+		case '\'', '"':
+			inString = true
+			stringChar = ch
+		case '(':
+			depth++
+		case ')':
+			depth--
+		case ',':
+			if depth == 0 {
+				part := strings.TrimSpace(body[start:i])
+				if n, t := extractColumnTypeDef(part); n != "" {
+					cols = append(cols, ColumnInfo{Name: n, Type: t, Nullable: true})
+				}
+				start = i + 1
+			}
+		}
+	}
+	// Last item
+	part := strings.TrimSpace(body[start:])
+	if n, t := extractColumnTypeDef(part); n != "" {
+		cols = append(cols, ColumnInfo{Name: n, Type: t, Nullable: true})
+	}
+	return cols
+}
+
+// uniqueColumnInfos deduplicates []ColumnInfo by Name (last definition wins
+// so that ALTER TABLE ADD COLUMN can override an earlier CREATE TABLE def).
+func uniqueColumnInfos(cols []ColumnInfo) []ColumnInfo {
+	seen := make(map[string]int) // name → index in out
+	var out []ColumnInfo
+	for _, c := range cols {
+		if idx, ok := seen[c.Name]; ok {
+			out[idx] = c // update with latest definition
+		} else {
+			seen[c.Name] = len(out)
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// buildExpectedColumnDefsFromFiles is like buildExpectedSchemaFromFiles but
+// returns full ColumnInfo (name + type) so that ALTER TABLE ADD COLUMN
+// statements can be generated for MissingColumns.
+func buildExpectedColumnDefsFromFiles(migrationPath string, executedFiles []string) map[string][]ColumnInfo {
+	expected := make(map[string][]ColumnInfo)
+
+	// Track dropped columns per table so we can remove them in the final pass.
+	dropped := make(map[string]map[string]bool)
+
+	for _, filename := range executedFiles {
+		content, err := os.ReadFile(filepath.Join(migrationPath, filename))
+		if err != nil {
+			continue
+		}
+		sqlContent := extractSection(string(content), "Up")
+		if sqlContent == "" {
+			sqlContent = string(content)
+		}
+		sqlContent = stripSQLLineComments(sqlContent)
+
+		// CREATE TABLE
+		for _, match := range createTableRe.FindAllStringSubmatchIndex(sqlContent, -1) {
+			tableName := strings.ToLower(stripQuotes(sqlContent[match[2]:match[3]]))
+			openPos := strings.LastIndex(sqlContent[:match[1]], "(")
+			if openPos == -1 {
+				continue
+			}
+			bodyEnd := findMatchingParen(sqlContent, openPos)
+			if bodyEnd == -1 {
+				continue
+			}
+			body := sqlContent[openPos+1 : bodyEnd]
+			expected[tableName] = append(expected[tableName], parseCreateTableColumnDefs(body)...)
+		}
+
+		// ALTER TABLE ... ADD COLUMN (with type)
+		for _, m := range alterTableAddFullRe.FindAllStringSubmatch(sqlContent, -1) {
+			tableName := strings.ToLower(stripQuotes(m[1]))
+			colName := strings.ToLower(stripQuotes(m[2]))
+			colType := parseTypeDef(m[3])
+			if tableName != "" && colName != "" && !isConstraintKeyword(colName) {
+				expected[tableName] = append(expected[tableName], ColumnInfo{
+					Name: colName, Type: colType, Nullable: true,
+				})
+			}
+		}
+
+		// ALTER TABLE ... DROP COLUMN — remember to remove later
+		for _, m := range alterTableDropRe.FindAllStringSubmatch(sqlContent, -1) {
+			tableName := strings.ToLower(stripQuotes(m[1]))
+			colName := strings.ToLower(stripQuotes(m[2]))
+			if tableName != "" && colName != "" {
+				if dropped[tableName] == nil {
+					dropped[tableName] = make(map[string]bool)
+				}
+				dropped[tableName][colName] = true
+			}
+		}
+	}
+
+	// Remove dropped columns and deduplicate.
+	for table, cols := range expected {
+		droppedCols := dropped[table]
+		var filtered []ColumnInfo
+		for _, c := range cols {
+			if droppedCols == nil || !droppedCols[c.Name] {
+				filtered = append(filtered, c)
+			}
+		}
+		expected[table] = uniqueColumnInfos(filtered)
+	}
+
+	return expected
 }
 
 // -----------------------------------------------------------------------

@@ -2,6 +2,32 @@
 
 All notable changes to Vorzela Migration Tool are documented in this file.
 
+## [2.1.1] - 2026-03-01
+
+### Bug Fixes
+
+- **Drift: missing columns are now actually fixed, not just warned about** 🔧
+  - When columns defined in migration files were absent from the DB,
+    v2.1.0 correctly detected them but could only print an advisory warning
+    (`"Run 'vm migrate' or create a new migration"`) because the type information
+    was not available to generate `ALTER TABLE ADD COLUMN` statements.
+  - Root cause: `buildExpectedSchemaFromFiles` returned `map[string][]string`
+    (column names only); there was no type data available to generate DDL.
+  - Fix: new `buildExpectedColumnDefsFromFiles` returns `map[string][]ColumnInfo`
+    by parsing both column names **and SQL types** from `CREATE TABLE` and
+    `ALTER TABLE ADD COLUMN` statements in migration files.
+  - `SchemaDrift.MissingColumns` is now `[]ColumnInfo` (was `[]string`).
+  - `DetectDrift` now accepts `[]ColumnInfo` instead of `[]string`.
+  - `GenerateAlterStatements` generates `ALTER TABLE <tbl> ADD COLUMN IF NOT EXISTS <col> <type>;`
+    for each missing column.  If the type cannot be parsed, a `-- MISSING COLUMN: ...` comment  
+    is emitted as a reminder instead of a broken statement.
+  - `autoApplyDrift`/`promptAndApplyDrift` now execute those statements automatically
+    when the user answers **yes** — no more "nothing happens" loop.
+  - New internal helpers: `parseTypeDef`, `extractColumnTypeDef`,
+    `parseCreateTableColumnDefs`, `uniqueColumnInfos`.
+
+---
+
 ## [2.1.0] - 2026-02-22
 
 ### Bug Fixes

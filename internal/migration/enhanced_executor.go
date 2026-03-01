@@ -554,8 +554,8 @@ func (e *EnhancedExecutor) updateChecksums(executed []Migration) error {
 // executedFiles is the list of migration filenames that have already been run.
 // Returns (true, nil) when drift was detected AND at least one fix was successfully applied.
 func (e *EnhancedExecutor) detectAndHandleDrift(opts MigrationOptions, executedFiles []string) (bool, error) {
-	// Build expected schema from executed migration files
-	expectedSchema := buildExpectedSchemaFromFiles(e.migrationPath, executedFiles)
+	// Build expected schema (with type info) from executed migration files
+	expectedSchema := buildExpectedColumnDefsFromFiles(e.migrationPath, executedFiles)
 	expectedIndexes := buildExpectedIndexesFromFiles(e.migrationPath, executedFiles)
 	expectedTriggers := buildExpectedTriggersFromFiles(e.migrationPath, executedFiles)
 
@@ -594,8 +594,12 @@ func (e *EnhancedExecutor) detectAndHandleDrift(opts MigrationOptions, executedF
 			e.logger.SchemaDrift(table, extractColumnNames(drift.AddedColumns))
 		}
 		if len(drift.MissingColumns) > 0 {
+			var names []string
+			for _, c := range drift.MissingColumns {
+				names = append(names, c.Name)
+			}
 			e.logger.Warning("Schema drift in table '%s': columns defined in migrations but missing from DB: %v",
-				table, drift.MissingColumns)
+				table, names)
 		}
 
 		// --- Index drift: indexes defined in migrations but missing from DB ---
@@ -675,14 +679,6 @@ func (e *EnhancedExecutor) detectAndHandleDrift(opts MigrationOptions, executedF
 func (e *EnhancedExecutor) autoApplyDrift(drifts []*SchemaDrift, opts MigrationOptions) (bool, error) {
 	applied := false
 	for _, drift := range drifts {
-		// Report columns that exist in migrations but are missing from the DB.
-		// These require a new migration to add — cannot be auto-applied.
-		if len(drift.MissingColumns) > 0 {
-			e.logger.Warning("Table '%s': columns defined in migrations but absent from DB: %v",
-				drift.Table, drift.MissingColumns)
-			e.logger.Warning("  → Run 'vm migrate' or add a new migration to restore these columns.")
-		}
-
 		statements := e.inspector.GenerateAllStatements(drift)
 
 		for _, stmt := range statements {
@@ -737,14 +733,6 @@ func (e *EnhancedExecutor) promptAndApplyDrift(drifts []*SchemaDrift, opts Migra
 			for _, stmt := range statements {
 				fmt.Println("  " + stmt)
 			}
-		}
-		// Report columns that exist in migrations but are missing from the DB.
-		// These require a new migration to add — cannot be auto-applied here.
-		if len(drift.MissingColumns) > 0 {
-			e.logger.Warning("Table '%s': columns defined in migrations but absent from DB: %v",
-				drift.Table, drift.MissingColumns)
-			fmt.Println("  → These columns should exist per your migrations but are missing from the database.")
-			fmt.Println("  → Run 'vm migrate' or create a new migration to restore them.")
 		}
 	}
 
