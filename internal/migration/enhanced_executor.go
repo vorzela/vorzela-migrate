@@ -591,7 +591,34 @@ func (e *EnhancedExecutor) detectAndHandleDrift(opts MigrationOptions, executedF
 		}
 
 		if len(drift.AddedColumns) > 0 {
-			e.logger.SchemaDrift(table, extractColumnNames(drift.AddedColumns))
+			var names []string
+			for _, c := range drift.AddedColumns {
+				names = append(names, c.Name)
+			}
+			e.logger.Warning("Schema drift in table '%s': columns in DB not defined in any migration (will be dropped): %v",
+				table, names)
+			e.logger.Warning("Action required: remove definitions for column(s) %v in table '%s' from your migration files, or create a new migration to drop them.",
+				names, table)
+
+			// Detect indexes in the DB that cover only orphaned columns — they must
+			// be dropped before the columns themselves can be removed.
+			orphanedSet := make(map[string]bool, len(drift.AddedColumns))
+			for _, c := range drift.AddedColumns {
+				orphanedSet[strings.ToLower(c.Name)] = true
+			}
+			actualIdxs, idxErr := e.inspector.GetTableIndexes(table)
+			if idxErr != nil {
+				e.logger.Debug("Failed to fetch indexes for orphaned-column check on %s: %v", table, idxErr)
+			} else {
+				for _, idx := range actualIdxs {
+					// Include the index if ALL its columns are orphaned.
+					if indexCoveredByOrphans(idx, orphanedSet) {
+						e.logger.Warning("Index '%s' on table '%s' covers only orphaned column(s) and will be dropped: %v",
+							idx.Name, table, idx.Columns)
+						drift.ExtraIndexes = append(drift.ExtraIndexes, idx)
+					}
+				}
+			}
 		}
 		if len(drift.MissingColumns) > 0 {
 			var names []string
@@ -641,7 +668,7 @@ func (e *EnhancedExecutor) detectAndHandleDrift(opts MigrationOptions, executedF
 		}
 
 		if len(drift.AddedColumns) > 0 || len(drift.MissingColumns) > 0 ||
-			len(drift.MissingIndexes) > 0 || len(drift.MissingTriggers) > 0 {
+			len(drift.MissingIndexes) > 0 || len(drift.ExtraIndexes) > 0 || len(drift.MissingTriggers) > 0 {
 			drifts = append(drifts, drift)
 		}
 	}
@@ -799,9 +826,27 @@ func (e *EnhancedExecutor) generateDriftMigration(drifts []*SchemaDrift) (string
 		}
 
 		// --- Up: columns that exist in DB but not migrations (AddedColumns) ---
-		// These appear in the DB outside of any migration — generate ALTER TABLE
-		// so the fix migration documents them properly.
+		// These are orphaned columns — drop them to bring the DB in line with
+		// the migration-defined schema.  The Down section restores them so the
+		// migration is safely reversible.
+
+		// Drop covering indexes first so the DROP COLUMN statements are not blocked.
+		for _, idx := range drift.ExtraIndexes {
+			up.WriteString(fmt.Sprintf(
+				"DROP INDEX IF EXISTS %s; -- index on orphaned column(s) %s\n",
+				idx.Name, strings.Join(idx.Columns, ", ")))
+			// Down: recreate the index (best-effort)
+			down.WriteString(generateCreateIndexSQL(idx, e.inspector.dialect) + "\n")
+		}
+
 		for _, col := range drift.AddedColumns {
+			up.WriteString(fmt.Sprintf(
+				"ALTER TABLE %s DROP COLUMN IF EXISTS %s;\n",
+				drift.Table, col.Name))
+			up.WriteString(fmt.Sprintf(
+				"-- NOTE: also remove the definition of column '%s' in table '%s' from your migration files.\n",
+				col.Name, drift.Table))
+			// Down: restore the dropped column (best-effort; type comes from DB introspection)
 			nullable := ""
 			if !col.Nullable {
 				nullable = " NOT NULL"
@@ -810,12 +855,9 @@ func (e *EnhancedExecutor) generateDriftMigration(drifts []*SchemaDrift) (string
 			if col.Default.Valid {
 				def = fmt.Sprintf(" DEFAULT %s", col.Default.String)
 			}
-			up.WriteString(fmt.Sprintf(
+			down.WriteString(fmt.Sprintf(
 				"ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s%s%s;\n",
 				drift.Table, col.Name, col.Type, nullable, def))
-			down.WriteString(fmt.Sprintf(
-				"ALTER TABLE %s DROP COLUMN IF EXISTS %s;\n",
-				drift.Table, col.Name))
 		}
 
 		// --- Up: CREATE missing indexes ---
@@ -848,15 +890,6 @@ func (e *EnhancedExecutor) recordMigrationWithMetadata(filename string, batch in
 
 	query := "INSERT INTO migrations (migration, batch, checksum, execution_time_ms) VALUES ($1, $2, $3, $4)"
 	return e.conn.Exec(ctx, query, filename, batch, checksum, executionTimeMs)
-}
-
-// extractColumnNames extracts column names from ColumnInfo slice
-func extractColumnNames(columns []ColumnInfo) []string {
-	names := make([]string, len(columns))
-	for i, col := range columns {
-		names[i] = col.Name
-	}
-	return names
 }
 
 // RollbackWithWarnings performs rollback with safety warnings

@@ -2,6 +2,39 @@
 
 All notable changes to Vorzela Migration Tool are documented in this file.
 
+## [2.1.4] - 2026-03-05
+
+### New Features
+
+- **Drift: orphaned columns are now dropped, not added** 🗑️
+  - Previously, when drift detected a column in the DB that was not defined in any migration
+    (`AddedColumns`), the tool incorrectly generated `ALTER TABLE … ADD COLUMN IF NOT EXISTS`
+    (a no-op) instead of removing it.
+  - `GenerateAlterStatements` now emits `ALTER TABLE … DROP COLUMN IF EXISTS` for every
+    orphaned column, bringing the DB schema in line with the migration-defined schema.
+  - The generated drift migration file reverses this in the `-- Down` section with
+    `ALTER TABLE … ADD COLUMN IF NOT EXISTS` (type/nullability/default reconstructed from
+    DB introspection), making the fix safely rollback-able.
+
+- **Drift: indexes on orphaned columns are dropped automatically** 📋
+  - New `SchemaDrift.ExtraIndexes []IndexInfo` field collects indexes in the DB that
+    exclusively cover orphaned (about-to-be-dropped) columns.
+  - `GenerateAlterStatements` emits `DROP INDEX IF EXISTS` statements **before** the
+    `DROP COLUMN` statements so the column drop is never blocked by a dependent index.
+  - The generated migration file includes `DROP INDEX` in `-- Up` and restores the index
+    via `CREATE INDEX IF NOT EXISTS` in `-- Down`.
+  - New helper `indexCoveredByOrphans` (case-insensitive) determines whether every column
+    of an index is in the orphaned set.
+
+- **Drift: user is warned to clean up migration files** 📢
+  - After detecting orphaned columns, an explicit warning is printed:
+    > `Action required: remove definitions for column(s) [...] in table '...' from your migration files, or create a new migration to drop them.`
+  - The generated fix migration also includes inline `-- NOTE:` comments above each
+    `DROP COLUMN` reminding the developer to remove the corresponding column definition
+    from the source migration files.
+
+---
+
 ## [2.1.3] - 2026-03-01
 
 ### Bug Fixes & Improvements

@@ -3,6 +3,7 @@ package migration
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	_ "github.com/lib/pq"
@@ -194,11 +195,18 @@ func TestGenerateAlterStatementsForDrift(t *testing.T) {
 	statements := inspector.GenerateAlterStatements(drift)
 
 	if len(statements) == 0 {
-		t.Error("Expected ALTER TABLE statements to be generated")
+		t.Error("Expected DROP COLUMN statements to be generated for AddedColumns")
 	}
 
 	if len(statements) != len(drift.AddedColumns) {
 		t.Errorf("Expected %d statements, got %d", len(drift.AddedColumns), len(statements))
+	}
+
+	// AddedColumns should generate DROP COLUMN to remove orphaned DB columns.
+	for _, stmt := range statements {
+		if !strings.Contains(strings.ToUpper(stmt), "DROP COLUMN") {
+			t.Errorf("Expected DROP COLUMN statement, got: %s", stmt)
+		}
 	}
 }
 

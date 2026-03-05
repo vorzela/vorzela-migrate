@@ -1,6 +1,7 @@
 package migration
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -86,20 +87,90 @@ func TestGenerateAlterStatements(t *testing.T) {
 		t.Error("GenerateAlterStatements() returned empty slice")
 	}
 
-	// Should generate at least one ALTER TABLE statement
-	foundAlter := false
+	// AddedColumns (in DB but not in migrations) must produce DROP COLUMN statements.
+	foundDrop := false
 	for _, stmt := range statements {
-		if len(stmt) > 0 {
-			foundAlter = true
-			// Verify it contains expected keywords
-			if stmt == "" {
-				t.Error("Generated empty statement")
-			}
+		if strings.Contains(strings.ToUpper(stmt), "DROP COLUMN") {
+			foundDrop = true
 		}
 	}
 
-	if !foundAlter {
-		t.Error("No ALTER TABLE statements generated")
+	if !foundDrop {
+		t.Errorf("Expected DROP COLUMN statement for AddedColumns, got: %v", statements)
+	}
+}
+
+func TestGenerateAlterStatements_ExtraIndexesDroppedFirst(t *testing.T) {
+	inspector := &SchemaInspector{dialect: PostgreSQL}
+
+	drift := &SchemaDrift{
+		Table: "users",
+		ExtraIndexes: []IndexInfo{
+			{Name: "idx_users_email_verified_at", TableName: "users", Columns: []string{"email_verified_at"}, IsUnique: false, IndexType: "btree"},
+		},
+		AddedColumns: []ColumnInfo{
+			{Name: "email_verified_at", Type: "timestamp", Nullable: true},
+		},
+	}
+
+	statements := inspector.GenerateAlterStatements(drift)
+
+	if len(statements) < 2 {
+		t.Fatalf("Expected at least 2 statements (DROP INDEX + DROP COLUMN), got %d: %v", len(statements), statements)
+	}
+
+	// First statement must be DROP INDEX.
+	if !strings.Contains(strings.ToUpper(statements[0]), "DROP INDEX") {
+		t.Errorf("Expected first statement to be DROP INDEX, got: %s", statements[0])
+	}
+	// Second must be DROP COLUMN.
+	if !strings.Contains(strings.ToUpper(statements[1]), "DROP COLUMN") {
+		t.Errorf("Expected second statement to be DROP COLUMN, got: %s", statements[1])
+	}
+}
+
+func TestIndexCoveredByOrphans(t *testing.T) {
+	orphanedSet := map[string]bool{"old_col": true, "extra_col": true}
+
+	tests := []struct {
+		name string
+		idx  IndexInfo
+		want bool
+	}{
+		{
+			name: "all columns orphaned",
+			idx:  IndexInfo{Columns: []string{"old_col", "extra_col"}},
+			want: true,
+		},
+		{
+			name: "partial match — not fully orphaned",
+			idx:  IndexInfo{Columns: []string{"old_col", "keep_col"}},
+			want: false,
+		},
+		{
+			name: "no columns in index",
+			idx:  IndexInfo{Columns: []string{}},
+			want: false,
+		},
+		{
+			name: "single orphaned column",
+			idx:  IndexInfo{Columns: []string{"old_col"}},
+			want: true,
+		},
+		{
+			name: "case insensitive match",
+			idx:  IndexInfo{Columns: []string{"OLD_COL"}},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := indexCoveredByOrphans(tt.idx, orphanedSet)
+			if got != tt.want {
+				t.Errorf("indexCoveredByOrphans() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 

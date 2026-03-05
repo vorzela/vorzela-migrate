@@ -45,7 +45,8 @@ type SchemaDrift struct {
 	AddedColumns    []ColumnInfo // columns in DB not defined in any migration
 	MissingColumns  []ColumnInfo // columns defined in migrations but absent from DB
 	ModifiedColumns []ColumnModification
-	MissingIndexes  []IndexInfo
+	MissingIndexes  []IndexInfo // indexes defined in migrations but absent from DB
+	ExtraIndexes    []IndexInfo // indexes in DB that back orphaned/dropped columns
 	MissingTriggers []TriggerInfo
 }
 
@@ -390,16 +391,27 @@ func (si *SchemaInspector) DetectDrift(tableName string, expectedColumns []Colum
 }
 
 // GenerateAlterStatements generates ALTER TABLE statements for drift.
-// It handles both AddedColumns (columns extra in DB) and MissingColumns
-// (columns defined in migrations but absent from DB — these need ADD COLUMN).
+// It handles both AddedColumns (columns extra in DB that should be dropped) and
+// MissingColumns (columns defined in migrations but absent from DB — these need ADD COLUMN).
+// ExtraIndexes (indexes on orphaned columns) are dropped first so the subsequent
+// DROP COLUMN statements are not blocked by dependent indexes.
 func (si *SchemaInspector) GenerateAlterStatements(drift *SchemaDrift) []string {
 	var statements []string
 
-	// AddedColumns: columns that appeared in the DB outside of migrations.
-	// These were the original drift-fix targets (ALTER TABLE … ADD COLUMN based on DB introspection).
+	// ExtraIndexes: drop indexes that cover orphaned columns before dropping the columns.
+	for _, idx := range drift.ExtraIndexes {
+		statements = append(statements,
+			fmt.Sprintf("DROP INDEX IF EXISTS %s; -- index on orphaned column(s) %s",
+				idx.Name, strings.Join(idx.Columns, ", ")))
+	}
+
+	// AddedColumns: columns that exist in the DB but are not defined in any migration.
+	// These are unexpected / orphaned columns — drop them to bring the DB in line with
+	// the migration-defined schema.
 	for _, col := range drift.AddedColumns {
-		stmt := si.generateAddColumnStatement(drift.Table, col)
-		statements = append(statements, stmt)
+		statements = append(statements,
+			fmt.Sprintf("ALTER TABLE %s DROP COLUMN IF EXISTS %s;",
+				drift.Table, col.Name))
 	}
 
 	// MissingColumns: columns defined in migration files but absent from the DB.
@@ -418,23 +430,6 @@ func (si *SchemaInspector) GenerateAlterStatements(drift *SchemaDrift) []string 
 	}
 
 	return statements
-}
-
-// generateAddColumnStatement creates ALTER TABLE ADD COLUMN statement
-func (si *SchemaInspector) generateAddColumnStatement(table string, col ColumnInfo) string {
-	var parts []string
-	parts = append(parts, fmt.Sprintf("ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s",
-		table, col.Name, col.Type))
-
-	if !col.Nullable {
-		parts = append(parts, "NOT NULL")
-	}
-
-	if col.Default.Valid {
-		parts = append(parts, fmt.Sprintf("DEFAULT %s", col.Default.String))
-	}
-
-	return strings.Join(parts, " ") + ";"
 }
 
 // GenerateCreateIndexStatements generates CREATE INDEX statements for missing indexes.
@@ -604,4 +599,19 @@ func CompareSchemas(expected, current *TableSchema) *SchemaDrift {
 	})
 
 	return drift
+}
+
+// indexCoveredByOrphans reports whether every column in idx is present in the
+// orphanedSet (i.e. a set of column names that are about to be dropped).
+// Such indexes must be dropped before the DROP COLUMN statements are executed.
+func indexCoveredByOrphans(idx IndexInfo, orphanedSet map[string]bool) bool {
+	if len(idx.Columns) == 0 {
+		return false
+	}
+	for _, c := range idx.Columns {
+		if !orphanedSet[strings.ToLower(c)] {
+			return false
+		}
+	}
+	return true
 }
