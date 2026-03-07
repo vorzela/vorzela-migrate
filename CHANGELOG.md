@@ -2,6 +2,30 @@
 
 All notable changes to Vorzela Migration Tool are documented in this file.
 
+## [2.1.5] - 2026-03-08
+
+### Bug Fixes & Improvements
+
+- **Auto-cleanup of unavailable migration files from the migration table** 🧹
+  - Previously, when a migration file referenced in the `migrations` table no longer
+    existed on disk, `vm migrate --force` repeatedly printed:
+    > `[WARNING] Could not verify checksum for <file>: open <path>: no such file or directory`
+    > `[WARNING] Could not calculate checksum for <file>: open <path>: no such file or directory`
+    on every run without offering any resolution.
+  - `verifyChecksums` and `updateChecksums` now detect `os.IsNotExist` errors and
+    interactively prompt the user:
+    > `? Migration file '<file>' no longer exists on disk`
+    > `? Remove '<file>' from the migration table? (yes/no)`
+  - Answering **yes** calls `DELETE FROM migrations WHERE id = ?` and confirms with:
+    > `[SUCCESS] Removed '<file>' from migration table`
+  - Answering **no** silently skips the record and continues execution.
+  - A new `handledMissingMigrations map[string]bool` field on `EnhancedExecutor` ensures
+    the user is prompted only **once per file per run** — when both `verifyChecksums` and
+    `updateChecksums` fire in the same `--force` invocation (as they do today), the second
+    pass silently skips already-handled files instead of re-prompting.
+
+---
+
 ## [2.1.4] - 2026-03-05
 
 ### New Features

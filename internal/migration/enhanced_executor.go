@@ -49,6 +49,9 @@ type EnhancedExecutor struct {
 	lock          *MigrationLock
 	online        *OnlineMigration
 	inspector     *SchemaInspector
+	// handledMissingMigrations tracks files already prompted for removal in this run
+	// so we don't double-prompt when both verifyChecksums and updateChecksums are called.
+	handledMissingMigrations map[string]bool
 }
 
 // NewEnhancedExecutor creates a new enhanced migration executor
@@ -57,15 +60,16 @@ func NewEnhancedExecutor(conn db.DB, sqlDB *sql.DB, dsn string, migrationPath st
 	logger := output.NewMigrationLogger(opts.Verbose)
 
 	executor := &EnhancedExecutor{
-		conn:          conn,
-		sqlDB:         sqlDB,
-		dsn:           dsn,
-		migrationPath: migrationPath,
-		dialect:       dialect,
-		logger:        logger,
-		lock:          NewMigrationLock(sqlDB, dialect),
-		online:        NewOnlineMigration(sqlDB, dialect),
-		inspector:     NewSchemaInspector(sqlDB, dialect),
+		conn:                     conn,
+		sqlDB:                    sqlDB,
+		dsn:                      dsn,
+		migrationPath:            migrationPath,
+		dialect:                  dialect,
+		logger:                   logger,
+		lock:                     NewMigrationLock(sqlDB, dialect),
+		online:                   NewOnlineMigration(sqlDB, dialect),
+		inspector:                NewSchemaInspector(sqlDB, dialect),
+		handledMissingMigrations: make(map[string]bool),
 	}
 
 	return executor, nil
@@ -492,7 +496,19 @@ func (e *EnhancedExecutor) verifyChecksums(executed []Migration) error {
 		match, err := ChecksumMatch(filePath, mig.Checksum)
 
 		if err != nil {
-			e.logger.Warning("Could not verify checksum for %s: %v", mig.Migration, err)
+			if os.IsNotExist(err) && !e.handledMissingMigrations[mig.Migration] {
+				e.handledMissingMigrations[mig.Migration] = true
+				e.logger.Warning("Migration file '%s' no longer exists on disk", mig.Migration)
+				if e.promptYesNo(fmt.Sprintf("Remove '%s' from the migration table?", mig.Migration)) {
+					if removeErr := removeMigrationRecord(e.conn, mig); removeErr != nil {
+						e.logger.Warning("Failed to remove migration record: %v", removeErr)
+					} else {
+						e.logger.Success("Removed '%s' from migration table", mig.Migration)
+					}
+				}
+			} else if !os.IsNotExist(err) {
+				e.logger.Warning("Could not verify checksum for %s: %v", mig.Migration, err)
+			}
 			continue
 		}
 
@@ -524,7 +540,22 @@ func (e *EnhancedExecutor) updateChecksums(executed []Migration) error {
 		// Calculate current checksum
 		currentChecksum, err := CalculateChecksum(filePath)
 		if err != nil {
-			e.logger.Warning("Could not calculate checksum for %s: %v", mig.Migration, err)
+			if os.IsNotExist(err) {
+				if !e.handledMissingMigrations[mig.Migration] {
+					e.handledMissingMigrations[mig.Migration] = true
+					e.logger.Warning("Migration file '%s' no longer exists on disk", mig.Migration)
+					if e.promptYesNo(fmt.Sprintf("Remove '%s' from the migration table?", mig.Migration)) {
+						if removeErr := removeMigrationRecord(e.conn, mig); removeErr != nil {
+							e.logger.Warning("Failed to remove migration record: %v", removeErr)
+						} else {
+							e.logger.Success("Removed '%s' from migration table", mig.Migration)
+						}
+					}
+				}
+				// silently skip — user was already prompted (or just acted)
+			} else {
+				e.logger.Warning("Could not calculate checksum for %s: %v", mig.Migration, err)
+			}
 			continue
 		}
 
