@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/joho/godotenv"
+	"github.com/vorzela/vorzela-migrate/internal/output"
 )
 
 // Config holds application configuration
@@ -122,7 +123,8 @@ func loadVorzelaFile(filepath string, cfg *Config) error {
 	}
 
 	lines := strings.Split(string(content), "\n")
-	for _, line := range lines {
+	for lineNum, line := range lines {
+		lineNum++ // 1-based
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
@@ -143,6 +145,12 @@ func loadVorzelaFile(filepath string, cfg *Config) error {
 
 		parseBool := func(v string) bool {
 			return strings.ToLower(v) == "true" || v == "1"
+		}
+
+		// Warn about unknown keys so users catch typos without running vm lint.
+		if _, known := knownKeys[key]; !known {
+			output.Warning(".vm line %d: unknown key '%s' — run 'vm lint' for details", lineNum, key)
+			continue
 		}
 
 		switch key {

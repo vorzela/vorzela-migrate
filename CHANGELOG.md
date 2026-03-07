@@ -2,6 +2,30 @@
 
 All notable changes to Vorzela Migration Tool are documented in this file.
 
+## [2.1.6] - 2026-03-08
+
+### New Features
+
+- **`vm lint` — `.vm` file linter** 🔍
+  - New `vm lint` command validates your `.vm` configuration file and reports
+    errors and warnings before they silently break a migration run.
+  - **Errors** (exit code 1):
+    - Unknown keys (e.g. `DATABSE_URL`) with a "did you mean …?" suggestion
+    - Invalid enum values for `ENVIRONMENT` (`staging` → must be `development`/`production`/…)
+    - Invalid enum values for `DRIFT_HANDLING` (`skip` → must be `auto`/`prompt`/`reject`)
+    - Invalid boolean values (`ENHANCED=yes` → must be `true`/`false`/`1`/`0`)
+  - **Warnings** (exit code 0):
+    - `DATABASE_URL` not set in the file
+    - Duplicate keys (second definition silently wins during normal load)
+    - Malformed lines (no `=` separator, not a comment, not blank)
+  - Accepts an optional `--file`/`-f` flag to lint a specific path; otherwise
+    walks up from `$PWD` to find the nearest `.vm`, matching the same search
+    order used during normal config loading.
+  - Unknown keys encountered during normal config loading (e.g. `vm migrate`) now
+    also emit an inline `[WARNING]` pointing users to `vm lint`.
+
+---
+
 ## [2.1.5] - 2026-03-08
 
 ### Bug Fixes & Improvements

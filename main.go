@@ -19,6 +19,7 @@ func main() {
 			cmd.FunctionsCommand,
 			cmd.ExtensionsCommand,
 			cmd.EnumsCommand,
+			cmd.LintCommand,
 			cmd.MigrateCommand,
 			cmd.RollbackCommand,
 			cmd.FreshCommand,

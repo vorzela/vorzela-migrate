@@ -1,4 +1,4 @@
-# Vorzela Migration Tool (v2.1.4)
+# Vorzela Migration Tool
 
 ## 📖 Table of Contents
 

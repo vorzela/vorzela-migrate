@@ -18,21 +18,6 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
 
-      - name: Update README version
-        env:
-          TAG_NAME: ${{ github.ref_name }}
-        run: |
-          sed -i "s/# Vorzela Migration Tool (v[0-9]\+\.[0-9]\+\.[0-9]\+)/# Vorzela Migration Tool ($TAG_NAME)/" README.md
-          git config user.name "GitHub Actions"
-          git config user.email "actions@github.com"
-          git add README.md
-          if git diff --staged --quiet; then
-            echo "No changes to README.md"
-          else
-            git commit -m "docs: Update README version to $TAG_NAME [skip ci]"
-            git push origin HEAD:main
-          fi
-
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
