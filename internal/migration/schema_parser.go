@@ -1,6 +1,7 @@
 package migration
 
 import (
+	"database/sql"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -44,6 +45,95 @@ func buildExpectedSchemaFromFiles(migrationPath string, executedFiles []string) 
 	}
 
 	return expected
+}
+
+var notNullRe = regexp.MustCompile(`(?i)\bNOT\s+NULL\b`)
+var uniqueInlineRe = regexp.MustCompile(`(?i)\bUNIQUE\b`)
+var defaultKwRe = regexp.MustCompile(`(?i)\bDEFAULT\b`)
+
+// constraintTerminators are keywords that terminate a DEFAULT value at paren-depth 0.
+var constraintTerminators = map[string]bool{
+	"NOT": true, "NULL": true, "UNIQUE": true, "PRIMARY": true,
+	"CHECK": true, "REFERENCES": true, "GENERATED": true,
+	"CONSTRAINT": true, "COLLATE": true, "ON": true,
+}
+
+// parseColumnConstraints inspects a full column-definition string and returns
+// whether the column is nullable, its DEFAULT value (if any), and whether it
+// carries a column-level UNIQUE constraint.
+func parseColumnConstraints(def string) (nullable bool, defVal sql.NullString, isUnique bool) {
+	nullable = !notNullRe.MatchString(def)
+	isUnique = uniqueInlineRe.MatchString(def)
+
+	if loc := defaultKwRe.FindStringIndex(def); loc != nil {
+		val := extractDefaultValueStr(strings.TrimSpace(def[loc[1]:]))
+		if val != "" {
+			defVal = sql.NullString{String: val, Valid: true}
+		}
+	}
+	return
+}
+
+// extractDefaultValueStr reads a DEFAULT value from the string that immediately
+// follows the DEFAULT keyword. It stops at the next constraint keyword at
+// paren-depth 0, correctly handling string literals and nested parentheses.
+func extractDefaultValueStr(s string) string {
+	var b strings.Builder
+	depth := 0
+	inString := false
+	stringChar := byte(0)
+
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+		if inString {
+			b.WriteByte(ch)
+			if ch == '\\' && i+1 < len(s) {
+				i++
+				b.WriteByte(s[i])
+			} else if ch == stringChar {
+				inString = false
+			}
+			continue
+		}
+		switch ch {
+		case '\'', '"':
+			inString = true
+			stringChar = ch
+			b.WriteByte(ch)
+		case '(':
+			depth++
+			b.WriteByte(ch)
+		case ')':
+			if depth == 0 {
+				// Unmatched close-paren signals end of expression.
+				return strings.TrimSpace(b.String())
+			}
+			depth--
+			b.WriteByte(ch)
+		case ' ', '\t', '\n', '\r':
+			if depth > 0 {
+				b.WriteByte(ch)
+				continue
+			}
+			// Peek at the next non-space token to see if it is a constraint keyword.
+			rest := strings.TrimLeft(s[i:], " \t\n\r")
+			if rest == "" {
+				return strings.TrimSpace(b.String())
+			}
+			end := strings.IndexAny(rest, " \t\n\r()")
+			tok := rest
+			if end != -1 {
+				tok = rest[:end]
+			}
+			if constraintTerminators[strings.ToUpper(tok)] {
+				return strings.TrimSpace(b.String())
+			}
+			b.WriteByte(ch)
+		default:
+			b.WriteByte(ch)
+		}
+	}
+	return strings.TrimSpace(b.String())
 }
 
 var createTableRe = regexp.MustCompile(`(?is)CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:[\w"` + "`" + `]+\.)?([` + "`" + `"\w]+)\s*\(`)
@@ -409,7 +499,8 @@ func parseCreateTableColumnDefs(body string) []ColumnInfo {
 			if depth == 0 {
 				part := strings.TrimSpace(body[start:i])
 				if n, t := extractColumnTypeDef(part); n != "" {
-					cols = append(cols, ColumnInfo{Name: n, Type: t, Nullable: true})
+					nullable, defVal, isUnique := parseColumnConstraints(part)
+					cols = append(cols, ColumnInfo{Name: n, Type: t, Nullable: nullable, Default: defVal, IsUnique: isUnique})
 				}
 				start = i + 1
 			}
@@ -418,7 +509,8 @@ func parseCreateTableColumnDefs(body string) []ColumnInfo {
 	// Last item
 	part := strings.TrimSpace(body[start:])
 	if n, t := extractColumnTypeDef(part); n != "" {
-		cols = append(cols, ColumnInfo{Name: n, Type: t, Nullable: true})
+		nullable, defVal, isUnique := parseColumnConstraints(part)
+		cols = append(cols, ColumnInfo{Name: n, Type: t, Nullable: nullable, Default: defVal, IsUnique: isUnique})
 	}
 	return cols
 }
@@ -480,8 +572,9 @@ func buildExpectedColumnDefsFromFiles(migrationPath string, executedFiles []stri
 			colName := strings.ToLower(stripQuotes(m[2]))
 			colType := parseTypeDef(m[3])
 			if tableName != "" && colName != "" && !isConstraintKeyword(colName) {
+				nullable, defVal, isUnique := parseColumnConstraints(m[3])
 				expected[tableName] = append(expected[tableName], ColumnInfo{
-					Name: colName, Type: colType, Nullable: true,
+					Name: colName, Type: colType, Nullable: nullable, Default: defVal, IsUnique: isUnique,
 				})
 			}
 		}

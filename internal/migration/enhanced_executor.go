@@ -740,6 +740,13 @@ func (e *EnhancedExecutor) autoApplyDrift(drifts []*SchemaDrift, opts MigrationO
 		statements := e.inspector.GenerateAllStatements(drift)
 
 		for _, stmt := range statements {
+			// Advisory comments (UNIQUE / NOT NULL warnings) are informational only
+			// and must not be executed as SQL.
+			if strings.HasPrefix(strings.TrimSpace(stmt), "--") {
+				e.logger.Info("Advisory: %s", stmt)
+				continue
+			}
+
 			e.logger.Info("Auto-applying: %s", stmt)
 
 			if opts.DryRun {
@@ -845,12 +852,33 @@ func (e *EnhancedExecutor) generateDriftMigration(drifts []*SchemaDrift) (string
 				up.WriteString(fmt.Sprintf(
 					"-- MISSING COLUMN: %s.%s — type unknown, add manually.\n",
 					drift.Table, col.Name))
-			} else {
-				up.WriteString(fmt.Sprintf(
-					"ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s;\n",
-					drift.Table, col.Name, col.Type))
+				continue
 			}
-			// Down: DROP the column
+			// UNIQUE columns must be handled manually — backfilling is required.
+			if col.IsUnique {
+				up.WriteString(fmt.Sprintf(
+					"-- UNIQUE COLUMN: %s.%s — cannot safely auto-add to a populated table.\n"+
+						"-- Create an add_%s_to_%s migration file to backfill values and add the UNIQUE constraint manually.\n",
+					drift.Table, col.Name, col.Name, drift.Table))
+				continue
+			}
+			// Build NOT NULL DEFAULT clause when the schema declares it non-nullable.
+			colDef := col.Type
+			if !col.Nullable {
+				if col.Default.Valid {
+					colDef += " NOT NULL DEFAULT " + col.Default.String
+				} else {
+					up.WriteString(fmt.Sprintf(
+						"-- NOT NULL COLUMN: %s.%s (%s) has no DEFAULT value.\n"+
+							"-- Create an add_%s_to_%s migration file to supply a DEFAULT before enforcing NOT NULL.\n",
+						drift.Table, col.Name, col.Type, col.Name, drift.Table))
+					continue
+				}
+			}
+			up.WriteString(fmt.Sprintf(
+				"ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s;\n",
+				drift.Table, col.Name, colDef))
+			// Down: DROP the column we just added.
 			down.WriteString(fmt.Sprintf(
 				"ALTER TABLE %s DROP COLUMN IF EXISTS %s;\n",
 				drift.Table, col.Name))

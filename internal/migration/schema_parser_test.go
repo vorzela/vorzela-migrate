@@ -170,3 +170,147 @@ ALTER TABLE users DROP COLUMN temp_col;
 		}
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Tests for NOT NULL / DEFAULT / UNIQUE constraint extraction
+// ---------------------------------------------------------------------------
+
+func TestParseColumnConstraints_Nullable(t *testing.T) {
+	nullable, defVal, isUnique := parseColumnConstraints("bio TEXT")
+	if !nullable {
+		t.Error("expected nullable=true for column without NOT NULL")
+	}
+	if defVal.Valid {
+		t.Errorf("expected no default, got %q", defVal.String)
+	}
+	if isUnique {
+		t.Error("expected isUnique=false")
+	}
+}
+
+func TestParseColumnConstraints_NotNullWithDefault(t *testing.T) {
+	nullable, defVal, isUnique := parseColumnConstraints("is_system BOOLEAN NOT NULL DEFAULT false")
+	if nullable {
+		t.Error("expected nullable=false for NOT NULL column")
+	}
+	if !defVal.Valid || defVal.String != "false" {
+		t.Errorf("expected default 'false', got valid=%v value=%q", defVal.Valid, defVal.String)
+	}
+	if isUnique {
+		t.Error("expected isUnique=false")
+	}
+}
+
+func TestParseColumnConstraints_NotNullNoDefault(t *testing.T) {
+	nullable, defVal, _ := parseColumnConstraints("name VARCHAR(100) NOT NULL")
+	if nullable {
+		t.Error("expected nullable=false")
+	}
+	if defVal.Valid {
+		t.Errorf("expected no default, got %q", defVal.String)
+	}
+}
+
+func TestParseColumnConstraints_UniqueColumn(t *testing.T) {
+	nullable, _, isUnique := parseColumnConstraints("slug VARCHAR(100) NOT NULL UNIQUE")
+	if nullable {
+		t.Error("expected nullable=false")
+	}
+	if !isUnique {
+		t.Error("expected isUnique=true")
+	}
+}
+
+func TestParseColumnConstraints_DefaultWithParens(t *testing.T) {
+	_, defVal, _ := parseColumnConstraints("created_at TIMESTAMP DEFAULT NOW()")
+	if !defVal.Valid || defVal.String != "NOW()" {
+		t.Errorf("expected default 'NOW()', got valid=%v value=%q", defVal.Valid, defVal.String)
+	}
+}
+
+func TestParseColumnConstraints_DefaultJsonb(t *testing.T) {
+	_, defVal, _ := parseColumnConstraints("metadata JSONB DEFAULT '{}'")
+	if !defVal.Valid || defVal.String != "'{}'" {
+		t.Errorf("expected default \"'{}'\", got valid=%v value=%q", defVal.Valid, defVal.String)
+	}
+}
+
+func TestParseCreateTableColumnDefs_ConstraintsPreserved(t *testing.T) {
+	body := `
+    id BIGSERIAL PRIMARY KEY,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    is_active BOOLEAN NOT NULL DEFAULT false,
+    bio TEXT,
+    score INTEGER DEFAULT 0
+`
+	cols := parseCreateTableColumnDefs(body)
+	byName := make(map[string]ColumnInfo)
+	for _, c := range cols {
+		byName[c.Name] = c
+	}
+
+	// email: NOT NULL UNIQUE
+	if c, ok := byName["email"]; ok {
+		if c.Nullable {
+			t.Error("email: expected nullable=false")
+		}
+		if !c.IsUnique {
+			t.Error("email: expected isUnique=true")
+		}
+	} else {
+		t.Error("email column not parsed")
+	}
+
+	// is_active: NOT NULL DEFAULT false
+	if c, ok := byName["is_active"]; ok {
+		if c.Nullable {
+			t.Error("is_active: expected nullable=false")
+		}
+		if !c.Default.Valid || c.Default.String != "false" {
+			t.Errorf("is_active: expected default 'false', got %v/%q", c.Default.Valid, c.Default.String)
+		}
+	} else {
+		t.Error("is_active column not parsed")
+	}
+
+	// bio: nullable, no default
+	if c, ok := byName["bio"]; ok {
+		if !c.Nullable {
+			t.Error("bio: expected nullable=true")
+		}
+		if c.Default.Valid {
+			t.Errorf("bio: expected no default, got %q", c.Default.String)
+		}
+	} else {
+		t.Error("bio column not parsed")
+	}
+
+	// score: nullable with DEFAULT 0
+	if c, ok := byName["score"]; ok {
+		if !c.Default.Valid || c.Default.String != "0" {
+			t.Errorf("score: expected default '0', got %v/%q", c.Default.Valid, c.Default.String)
+		}
+	} else {
+		t.Error("score column not parsed")
+	}
+}
+
+func TestExtractDefaultValueStr_SimpleValues(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"false", "false"},
+		{"true", "true"},
+		{"0", "0"},
+		{"'{}' NOT NULL", "'{}'"},
+		{"NOW() NOT NULL", "NOW()"},
+		{"nextval('seq'::regclass)", "nextval('seq'::regclass)"},
+	}
+	for _, tt := range tests {
+		got := extractDefaultValueStr(tt.input)
+		if got != tt.want {
+			t.Errorf("extractDefaultValueStr(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}

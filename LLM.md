@@ -286,17 +286,38 @@ Or set `DETECT_DRIFT=true` / `ENVIRONMENT=development` in `.vm` — drift detect
 ### What happens
 
 1. `vm` compares each tracked table's live columns against what the migration SQL says.
-2. If extra or missing columns are found, it reports them:
-   ```
-   ⚠ WARNING  Schema drift detected in table 'users'
-     + email_verified_at
-     + last_login_at
-   ? Generate migration to document these columns? (y/n/generate)
-   ```
+2. If extra or missing columns are found, it reports them and proposes fix statements.
 3. Choices:
-   - `yes` — apply `ALTER TABLE … ADD COLUMN` statements immediately, then continue
+   - `yes` — apply statements immediately, then continue
    - `no` — skip drift repair, continue with pending migrations
-   - `generate` — print the ALTER SQL without executing
+   - `generate` — write a `<ts>_fix_schema_drift.sql` migration file instead of applying live
+
+### How drift generates ADD COLUMN statements (missing columns)
+
+| Column declaration in migration | Generated statement |
+|---------------------------------|---------------------|
+| `col TYPE` (nullable, no default) | `ALTER TABLE t ADD COLUMN IF NOT EXISTS col TYPE;` |
+| `col TYPE NOT NULL DEFAULT val` | `ALTER TABLE t ADD COLUMN IF NOT EXISTS col TYPE NOT NULL DEFAULT val;` |
+| `col TYPE NOT NULL` (no default) | Advisory comment — **not executed** |
+| `col TYPE … UNIQUE` | Advisory comment — **not executed** |
+
+**NOT NULL + DEFAULT** — the full constraint clause is placed in the `ADD COLUMN` statement so the column is created non-nullable immediately and existing rows get the default value. This prevents pgx (and other drivers) from panicking when they scan a column defined as non-nullable in Go but backed by NULL rows in the DB.
+
+**NOT NULL without DEFAULT** — adding such a column to a non-empty table fails at the DB level. Drift emits an advisory comment:
+```
+-- NOT NULL COLUMN: t.col (type) has no DEFAULT value.
+-- Create an add_col_to_t migration file to supply a DEFAULT before enforcing NOT NULL.
+```
+Create the migration file manually, supply a backfill `DEFAULT`, run `vm migrate`, then remove the default if needed in a subsequent migration.
+
+**UNIQUE columns** — uniqueness cannot be enforced on existing rows that may contain duplicates. Drift emits:
+```
+-- UNIQUE COLUMN: t.col — cannot safely auto-add to a populated table.
+-- Create an add_col_to_t migration file to backfill values and add the UNIQUE constraint manually.
+```
+Use `vm make migration add_col_to_t` to scaffold the file, then write the backfill + `ADD COLUMN … UNIQUE` by hand.
+
+Advisory comments are **never sent to the database driver** — only printed as guidance.
 
 ### Drift handling modes (set in `.vm`)
 
@@ -308,9 +329,10 @@ Or set `DETECT_DRIFT=true` / `ENVIRONMENT=development` in `.vm` — drift detect
 
 ### LLM workflow for drift
 1. Run `vm migrate --detect-drift` (or let environment defaults do it).
-2. **Preferred — let drift handle it:** answer `yes` to apply the ALTER statements immediately, then continue.
-3. **Alternative — edit existing migration:** answer `generate` to print the ALTER SQL, paste it into the relevant existing migration file's Up section (and a matching `DROP COLUMN` in the Down section), then run `vm migrate --force` to re-apply with the checksum override.
-4. **Do not** create a new standalone migration file just to hold ALTER statements from drift — use one of the two approaches above.
+2. **Preferred — let drift handle it:** answer `yes` to apply fix statements immediately and continue.
+3. **For NOT NULL / UNIQUE columns:** follow the advisory comment — use `vm make migration add_<col>_to_<table>` to scaffold, add the backfill logic, then `vm migrate`.
+4. **Alternative — edit existing migration:** answer `generate` to write a fix migration file, paste the ALTER SQL into the relevant existing migration's Up section (add matching `DROP COLUMN` in Down), then run `vm migrate --force`.
+5. **Do not** create a standalone migration file just to hold ALTER statements from drift unless the advisory directs you to.
 
 ---
 
@@ -580,6 +602,8 @@ With `--soft-delete --triggers` uses `auto_update_with_soft_delete_protection()`
 | `vm extensions is not supported on mysql` | Using extensions command on MySQL | Extensions are PG-only; remove from MySQL workflow |
 | `no DOWN section found` | Migration file missing `-- ⬇ Down` | Add a Down section |
 | `function auto_update_timestamp() does not exist` | Trigger function not installed | Run `vm functions migrate` |
+| Drift advisory: `NOT NULL COLUMN … has no DEFAULT value` | Missing column is NOT NULL without a DEFAULT | Create `vm make migration add_<col>_to_<table>`, supply DEFAULT, run `vm migrate` |
+| Drift advisory: `UNIQUE COLUMN … cannot safely auto-add` | Missing column has a UNIQUE constraint | Create `vm make migration add_<col>_to_<table>`, backfill unique values, add UNIQUE manually |
 | Lint: `unknown key — did you mean X?` | Typo in `.vm` key | Fix key name; run `vm lint` again |
 | Lint: `malformed line — expected KEY=VALUE` | Line without `=` | Fix or comment out the line |
 

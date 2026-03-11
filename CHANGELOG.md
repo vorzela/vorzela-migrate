@@ -2,6 +2,62 @@
 
 All notable changes to Vorzela Migration Tool are documented in this file.
 
+## [2.1.7] - 2026-03-12
+
+### Bug Fixes & Improvements
+
+- **Drift: `NOT NULL DEFAULT` columns are now added correctly, preventing pgx NULL-scan panic** 🔧
+  - Previously, when drift detected a column defined in migrations as `NOT NULL DEFAULT <val>`
+    but absent from the live DB, it generated:
+    ```sql
+    ALTER TABLE t ADD COLUMN IF NOT EXISTS col TYPE;
+    ```
+    The column was created **nullable** in the DB. On INSERT the default applied but existing
+    rows remained NULL, causing pgx to panic when scanning the value into a non-pointer Go field.
+  - Fix: `GenerateAlterStatements` now builds the full constraint clause:
+    ```sql
+    ALTER TABLE t ADD COLUMN IF NOT EXISTS col TYPE NOT NULL DEFAULT val;
+    ```
+    The column is created non-nullable with the default already set — no NULL rows, no pgx panic.
+  - Both the immediate `auto`/`prompt` apply path **and** the `generate` migration file path
+    emit the corrected statement.
+
+- **Drift: `NOT NULL` columns without a `DEFAULT` emit an advisory comment, not broken SQL** ⚠️
+  - Adding a `NOT NULL` column without a default to a populated table fails at the DB level.
+  - When a missing column is `NOT NULL` but has no `DEFAULT`, drift now emits:
+    ```
+    -- NOT NULL COLUMN: t.col (type) has no DEFAULT value.
+    -- Create an add_col_to_t migration file to supply a DEFAULT before enforcing NOT NULL.
+    ```
+  - The advisory comment is printed to the user and logged — it is **never executed as SQL**.
+
+- **Drift: `UNIQUE` columns emit an advisory comment directing user to a migration file** 🔑
+  - Auto-adding a `UNIQUE` column to a populated table can violate the uniqueness constraint
+    on existing rows. Drift no longer attempts to apply it automatically.
+  - Instead it emits:
+    ```
+    -- UNIQUE COLUMN: t.col — cannot safely auto-add to a populated table.
+    -- Create an add_col_to_t migration file to backfill values and add the UNIQUE constraint manually.
+    ```
+
+- **Schema parser: `NOT NULL`, `DEFAULT`, and `UNIQUE` are now extracted from migration SQL** 🧩
+  - `parseCreateTableColumnDefs` — parses `CREATE TABLE` column definitions and populates
+    `ColumnInfo.Nullable`, `ColumnInfo.Default`, and `ColumnInfo.IsUnique` from the full
+    column definition string.
+  - `buildExpectedColumnDefsFromFiles` — same extraction applied to `ALTER TABLE ADD COLUMN`
+    definitions, so constraint metadata is available regardless of whether the column was
+    first declared in a `CREATE TABLE` or added later via `ALTER`.
+  - New internal helpers: `parseColumnConstraints`, `extractDefaultValueStr`.
+  - `ColumnInfo` gains an `IsUnique bool` field.
+  - Handles complex DEFAULT expressions correctly: `NOW()`, `nextval('seq'::regclass)`,
+    `'{}'::jsonb`, string literals, and nested parentheses.
+
+- **`autoApplyDrift`: advisory comment lines are never sent to the database** 🛡️
+  - Statements beginning with `--` (advisory comments for UNIQUE / NOT NULL-no-default)
+    are now logged via `Advisory:` and skipped — they are not forwarded to pgx/mysql driver.
+
+---
+
 ## [2.1.6] - 2026-03-08
 
 ### New Features

@@ -1,6 +1,7 @@
 package migration
 
 import (
+	"database/sql"
 	"strings"
 	"testing"
 )
@@ -215,5 +216,94 @@ func TestColumnInfoValidation(t *testing.T) {
 				t.Errorf("Column validation = %v, want %v", isValid, tt.valid)
 			}
 		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Tests for NOT NULL / DEFAULT / UNIQUE aware MissingColumns generation
+// ---------------------------------------------------------------------------
+
+func TestGenerateAlterStatements_MissingColumn_NullableNoDefault(t *testing.T) {
+	inspector := &SchemaInspector{dialect: PostgreSQL}
+	drift := &SchemaDrift{
+		Table: "users",
+		MissingColumns: []ColumnInfo{
+			{Name: "bio", Type: "text", Nullable: true},
+		},
+	}
+	stmts := inspector.GenerateAlterStatements(drift)
+	if len(stmts) != 1 {
+		t.Fatalf("want 1 statement, got %d: %v", len(stmts), stmts)
+	}
+	stmt := stmts[0]
+	if !strings.Contains(strings.ToUpper(stmt), "ADD COLUMN") {
+		t.Errorf("expected ADD COLUMN, got: %s", stmt)
+	}
+	if strings.Contains(strings.ToUpper(stmt), "NOT NULL") {
+		t.Errorf("should not contain NOT NULL for nullable column, got: %s", stmt)
+	}
+}
+
+func TestGenerateAlterStatements_MissingColumn_NotNullWithDefault(t *testing.T) {
+	inspector := &SchemaInspector{dialect: PostgreSQL}
+	drift := &SchemaDrift{
+		Table: "roles",
+		MissingColumns: []ColumnInfo{
+			{Name: "is_system", Type: "boolean", Nullable: false,
+				Default: sql.NullString{String: "false", Valid: true}},
+		},
+	}
+	stmts := inspector.GenerateAlterStatements(drift)
+	if len(stmts) != 1 {
+		t.Fatalf("want 1 statement, got %d: %v", len(stmts), stmts)
+	}
+	stmt := stmts[0]
+	if !strings.Contains(strings.ToUpper(stmt), "NOT NULL") {
+		t.Errorf("expected NOT NULL in statement, got: %s", stmt)
+	}
+	if !strings.Contains(stmt, "DEFAULT false") {
+		t.Errorf("expected DEFAULT false in statement, got: %s", stmt)
+	}
+}
+
+func TestGenerateAlterStatements_MissingColumn_NotNullNoDefault(t *testing.T) {
+	inspector := &SchemaInspector{dialect: PostgreSQL}
+	drift := &SchemaDrift{
+		Table: "orders",
+		MissingColumns: []ColumnInfo{
+			{Name: "status", Type: "varchar(50)", Nullable: false},
+		},
+	}
+	stmts := inspector.GenerateAlterStatements(drift)
+	if len(stmts) != 1 {
+		t.Fatalf("want 1 advisory comment, got %d: %v", len(stmts), stmts)
+	}
+	stmt := stmts[0]
+	if !strings.HasPrefix(strings.TrimSpace(stmt), "--") {
+		t.Errorf("expected advisory comment for NOT NULL without DEFAULT, got: %s", stmt)
+	}
+	if !strings.Contains(stmt, "add_") {
+		t.Errorf("expected add_ migration hint in advisory, got: %s", stmt)
+	}
+}
+
+func TestGenerateAlterStatements_MissingColumn_Unique(t *testing.T) {
+	inspector := &SchemaInspector{dialect: PostgreSQL}
+	drift := &SchemaDrift{
+		Table: "users",
+		MissingColumns: []ColumnInfo{
+			{Name: "email", Type: "varchar(255)", Nullable: true, IsUnique: true},
+		},
+	}
+	stmts := inspector.GenerateAlterStatements(drift)
+	if len(stmts) != 1 {
+		t.Fatalf("want 1 advisory comment, got %d: %v", len(stmts), stmts)
+	}
+	stmt := stmts[0]
+	if !strings.HasPrefix(strings.TrimSpace(stmt), "--") {
+		t.Errorf("expected advisory comment for UNIQUE column, got: %s", stmt)
+	}
+	if !strings.Contains(stmt, "add_") {
+		t.Errorf("expected add_ migration hint in advisory, got: %s", stmt)
 	}
 }

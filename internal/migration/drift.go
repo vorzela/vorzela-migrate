@@ -13,6 +13,7 @@ type ColumnInfo struct {
 	Type     string
 	Nullable bool
 	Default  sql.NullString
+	IsUnique bool // column-level UNIQUE constraint declared in the migration
 }
 
 // IndexInfo represents a database index
@@ -424,9 +425,41 @@ func (si *SchemaInspector) GenerateAlterStatements(drift *SchemaDrift) []string 
 					drift.Table, col.Name))
 			continue
 		}
+
+		// UNIQUE columns cannot be safely auto-added to a populated table because
+		// existing rows may violate the constraint. The user must create a targeted
+		// migration file (e.g. add_<col>_to_<table>) that backfills unique values
+		// before enforcing the constraint.
+		if col.IsUnique {
+			statements = append(statements,
+				fmt.Sprintf(
+					"-- UNIQUE COLUMN: %s.%s — cannot safely auto-add to a populated table.\n"+
+						"-- Create an add_%s_to_%s migration file to backfill values and add the UNIQUE constraint manually.",
+					drift.Table, col.Name, col.Name, drift.Table))
+			continue
+		}
+
+		// Build the column definition, preserving NOT NULL and DEFAULT so that pgx
+		// cannot scan a NULL into a non-pointer Go field after the column is added.
+		colDef := col.Type
+		if !col.Nullable {
+			if col.Default.Valid {
+				colDef += " NOT NULL DEFAULT " + col.Default.String
+			} else {
+				// Adding a NOT NULL column to a populated table without a DEFAULT
+				// would fail. Tell the user to handle it in a dedicated migration.
+				statements = append(statements,
+					fmt.Sprintf(
+						"-- NOT NULL COLUMN: %s.%s (%s) has no DEFAULT value.\n"+
+							"-- Create an add_%s_to_%s migration file to supply a DEFAULT before enforcing NOT NULL.",
+						drift.Table, col.Name, col.Type, col.Name, drift.Table))
+				continue
+			}
+		}
+
 		statements = append(statements,
 			fmt.Sprintf("ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s;",
-				drift.Table, col.Name, col.Type))
+				drift.Table, col.Name, colDef))
 	}
 
 	return statements
