@@ -1,6 +1,8 @@
 package migration
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -312,5 +314,243 @@ func TestExtractDefaultValueStr_SimpleValues(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("extractDefaultValueStr(%q) = %q, want %q", tt.input, got, tt.want)
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Tests for FK constraint parsing (extractFKsFromSQL, buildExpectedConstraintsFromFiles)
+// ---------------------------------------------------------------------------
+
+func TestExtractFKsFromSQL_CreateTable_TableLevel(t *testing.T) {
+	sql := `
+CREATE TABLE orders (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    CONSTRAINT fk_orders_user FOREIGN KEY (user_id) REFERENCES users(id)
+);
+`
+	fks := extractFKsFromSQL(sql)
+	if len(fks) != 1 {
+		t.Fatalf("want 1 FK, got %d: %+v", len(fks), fks)
+	}
+	fk := fks[0]
+	if fk.Name != "fk_orders_user" {
+		t.Errorf("Name = %q, want fk_orders_user", fk.Name)
+	}
+	if fk.TableName != "orders" {
+		t.Errorf("TableName = %q, want orders", fk.TableName)
+	}
+	if len(fk.Columns) != 1 || fk.Columns[0] != "user_id" {
+		t.Errorf("Columns = %v, want [user_id]", fk.Columns)
+	}
+	if fk.RefTable != "users" {
+		t.Errorf("RefTable = %q, want users", fk.RefTable)
+	}
+	if len(fk.RefColumns) != 1 || fk.RefColumns[0] != "id" {
+		t.Errorf("RefColumns = %v, want [id]", fk.RefColumns)
+	}
+}
+
+func TestExtractFKsFromSQL_CreateTable_InlineReferences(t *testing.T) {
+	sql := `
+CREATE TABLE order_items (
+    id BIGSERIAL PRIMARY KEY,
+    order_id BIGINT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    product_id BIGINT NOT NULL REFERENCES products(id)
+);
+`
+	fks := extractFKsFromSQL(sql)
+	if len(fks) != 2 {
+		t.Fatalf("want 2 FKs, got %d: %+v", len(fks), fks)
+	}
+	byCol := make(map[string]ConstraintInfo)
+	for _, fk := range fks {
+		if len(fk.Columns) > 0 {
+			byCol[fk.Columns[0]] = fk
+		}
+	}
+
+	// order_id → orders with ON DELETE CASCADE
+	if fk, ok := byCol["order_id"]; ok {
+		if fk.RefTable != "orders" {
+			t.Errorf("order_id RefTable = %q, want orders", fk.RefTable)
+		}
+		if fk.OnDelete != "CASCADE" {
+			t.Errorf("order_id OnDelete = %q, want CASCADE", fk.OnDelete)
+		}
+	} else {
+		t.Error("FK for order_id not found")
+	}
+
+	// product_id → products, no ON DELETE
+	if fk, ok := byCol["product_id"]; ok {
+		if fk.RefTable != "products" {
+			t.Errorf("product_id RefTable = %q, want products", fk.RefTable)
+		}
+		if fk.OnDelete != "" {
+			t.Errorf("product_id OnDelete = %q, want empty", fk.OnDelete)
+		}
+	} else {
+		t.Error("FK for product_id not found")
+	}
+}
+
+func TestExtractFKsFromSQL_AlterTableAddFK(t *testing.T) {
+	sql := `
+ALTER TABLE orders ADD CONSTRAINT fk_orders_user_id FOREIGN KEY (user_id) REFERENCES users(id);
+`
+	fks := extractFKsFromSQL(sql)
+	if len(fks) != 1 {
+		t.Fatalf("want 1 FK, got %d: %+v", len(fks), fks)
+	}
+	fk := fks[0]
+	if fk.Name != "fk_orders_user_id" {
+		t.Errorf("Name = %q, want fk_orders_user_id", fk.Name)
+	}
+	if fk.TableName != "orders" {
+		t.Errorf("TableName = %q, want orders", fk.TableName)
+	}
+}
+
+func TestExtractFKsFromSQL_AlterTableAddFK_Unnamed(t *testing.T) {
+	sql := `ALTER TABLE orders ADD FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL;`
+	fks := extractFKsFromSQL(sql)
+	if len(fks) != 1 {
+		t.Fatalf("want 1 FK, got %d: %+v", len(fks), fks)
+	}
+	fk := fks[0]
+	// Auto-generated name
+	if fk.Name != "fk_orders_customer_id" {
+		t.Errorf("auto-generated Name = %q, want fk_orders_customer_id", fk.Name)
+	}
+	if fk.OnDelete != "SET NULL" {
+		t.Errorf("OnDelete = %q, want SET NULL", fk.OnDelete)
+	}
+}
+
+func TestExtractFKsFromSQL_CompositeFK(t *testing.T) {
+	sql := `
+CREATE TABLE order_items (
+    order_id BIGINT NOT NULL,
+    line_no  INTEGER NOT NULL,
+    FOREIGN KEY (order_id, line_no) REFERENCES orders(id, line_no)
+);
+`
+	fks := extractFKsFromSQL(sql)
+	if len(fks) != 1 {
+		t.Fatalf("want 1 FK, got %d: %+v", len(fks), fks)
+	}
+	fk := fks[0]
+	if len(fk.Columns) != 2 {
+		t.Errorf("Columns = %v, want 2 elements", fk.Columns)
+	}
+	if len(fk.RefColumns) != 2 {
+		t.Errorf("RefColumns = %v, want 2 elements", fk.RefColumns)
+	}
+}
+
+func TestGenerateConstraintName(t *testing.T) {
+	tests := []struct {
+		table string
+		cols  []string
+		want  string
+	}{
+		{"orders", []string{"user_id"}, "fk_orders_user_id"},
+		{"order_items", []string{"order_id", "product_id"}, "fk_order_items_order_id_product_id"},
+		{"Users", []string{"Role_Id"}, "fk_users_role_id"},
+	}
+	for _, tt := range tests {
+		got := generateConstraintName(tt.table, tt.cols)
+		if got != tt.want {
+			t.Errorf("generateConstraintName(%q, %v) = %q, want %q", tt.table, tt.cols, got, tt.want)
+		}
+	}
+}
+
+func TestBuildExpectedConstraintsFromFiles_Basic(t *testing.T) {
+	dir := t.TempDir()
+
+	writeFile(t, dir, "001_create_orders.sql", `
+-- Up
+CREATE TABLE orders (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    CONSTRAINT fk_orders_user FOREIGN KEY (user_id) REFERENCES users(id)
+);
+-- Down
+DROP TABLE orders;
+`)
+
+	result := buildExpectedConstraintsFromFiles(dir, []string{"001_create_orders.sql"})
+	fks, ok := result["orders"]
+	if !ok {
+		t.Fatal("expected FKs for 'orders' table")
+	}
+	if len(fks) != 1 {
+		t.Fatalf("want 1 FK, got %d: %+v", len(fks), fks)
+	}
+	if fks[0].Name != "fk_orders_user" {
+		t.Errorf("Name = %q, want fk_orders_user", fks[0].Name)
+	}
+}
+
+func TestBuildExpectedConstraintsFromFiles_DropConstraintRemovesFK(t *testing.T) {
+	dir := t.TempDir()
+
+	writeFile(t, dir, "001_create_orders.sql", `
+-- Up
+CREATE TABLE orders (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    CONSTRAINT fk_orders_user FOREIGN KEY (user_id) REFERENCES users(id)
+);
+-- Down
+DROP TABLE orders;
+`)
+	writeFile(t, dir, "002_remove_fk.sql", `
+-- Up
+ALTER TABLE orders DROP CONSTRAINT fk_orders_user;
+-- Down
+ALTER TABLE orders ADD CONSTRAINT fk_orders_user FOREIGN KEY (user_id) REFERENCES users(id);
+`)
+
+	result := buildExpectedConstraintsFromFiles(dir, []string{"001_create_orders.sql", "002_remove_fk.sql"})
+	fks := result["orders"]
+	for _, fk := range fks {
+		if fk.Name == "fk_orders_user" {
+			t.Errorf("FK fk_orders_user should have been removed by DROP CONSTRAINT, but it is still present")
+		}
+	}
+}
+
+func TestBuildExpectedConstraintsFromFiles_OnlyUpSection(t *testing.T) {
+	dir := t.TempDir()
+
+	// The Down section drops the FK — it must NOT cancel the Up section's ADD.
+	writeFile(t, dir, "001_add_fk.sql", `
+-- Up
+ALTER TABLE orders ADD CONSTRAINT fk_orders_user FOREIGN KEY (user_id) REFERENCES users(id);
+-- Down
+ALTER TABLE orders DROP CONSTRAINT fk_orders_user;
+`)
+
+	result := buildExpectedConstraintsFromFiles(dir, []string{"001_add_fk.sql"})
+	fks := result["orders"]
+	found := false
+	for _, fk := range fks {
+		if fk.Name == "fk_orders_user" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("FK should be present — Down section DROP must not cancel the Up section ADD")
+	}
+}
+
+// writeFile is a test helper that writes content to a file inside dir.
+func writeFile(t *testing.T, dir, name, content string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0644); err != nil {
+		t.Fatalf("writeFile: %v", err)
 	}
 }

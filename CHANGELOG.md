@@ -2,6 +2,59 @@
 
 All notable changes to Vorzela Migration Tool are documented in this file.
 
+## [2.2.0] - 2026-03-24
+
+### New Features
+
+- **Drift: FK constraints are now detected, applied, and reverted** 🔗
+  - Drift detection now compares every foreign-key constraint declared in executed migration
+    files against the live database and reports any that are missing.
+  - Previously, when an `ALTER TABLE … ADD COLUMN` was applied by drift but the accompanying
+    `REFERENCES`/`FOREIGN KEY` clause was skipped, the column existed without referential
+    integrity enforcement.  This is now fully corrected.
+  - **Detection** — `buildExpectedConstraintsFromFiles` parses FK declarations from all three
+    supported SQL forms:
+    - Table-level:  `[CONSTRAINT name] FOREIGN KEY (cols) REFERENCES tbl(cols)`  inside `CREATE TABLE`
+    - Inline column: `col_name TYPE REFERENCES tbl(id) [ON DELETE …]`  inside `CREATE TABLE`
+    - Explicit alter: `ALTER TABLE t ADD [CONSTRAINT name] FOREIGN KEY …`
+  - `ALTER TABLE … DROP CONSTRAINT` / `DROP FOREIGN KEY` statements in the Up section are
+    tracked so dropped constraints are not reported as missing in later runs.
+  - Constraint matching uses content-based keys (`table|cols|ref_table`) rather than names,
+    so Postgres auto-naming (e.g. `orders_user_id_fkey`) is correctly matched against the
+    `fk_orders_user_id` convention used in migration files.
+  - **Apply** — `detectAndHandleDrift` generates `ALTER TABLE … ADD CONSTRAINT … FOREIGN KEY`
+    for every missing FK and applies it via the existing `yes`/`auto` paths.
+  - **Generate** — the `generate` drift migration path includes the FK statement in `-- Up`
+    and the matching `DROP CONSTRAINT` / `DROP FOREIGN KEY` (dialect-aware) in `-- Down`.
+  - `ON DELETE CASCADE`, `ON UPDATE SET NULL`, etc. are preserved; `NO ACTION` (the default)
+    is omitted to keep statements concise.
+  - New `SchemaDrift.MissingConstraints []ConstraintInfo` and `ExtraConstraints []ConstraintInfo`
+    fields carry the full FK metadata through the pipeline.
+  - New public methods on `SchemaInspector`:
+    - `GetTableConstraints(table)` — queries live FK constraints (Postgres + MySQL/MariaDB)
+    - `GenerateAddConstraintStatements(drift)` — emits `ADD CONSTRAINT` SQL
+    - `GenerateDropConstraintStatements(drift)` — emits `DROP CONSTRAINT` / `DROP FOREIGN KEY`
+  - `GenerateAllStatements` updated to include constraint statements between index and
+    trigger output.
+
+- **Logger: AI-friendly structured output for CLI AI tools** 🤖
+  - All migration log lines are now machine-parseable **key=value** structured log entries
+    when stdout is not a TTY (i.e. piped to another process or an AI agent):
+    ```
+    level=ok   time=14:05:02 event=migration_complete file=001_create_users.sql elapsed=12ms
+    level=warn time=14:05:03 event=schema_drift table=orders columns="user_id,product_id"
+    level=error time=14:05:04 event=migration_failed file=003_add_index.sql error="..."
+    ```
+  - When stdout **is** a TTY the existing coloured, human-readable output is unchanged.
+  - Force machine mode at any time with `VM_NO_COLOR=1`.
+  - Structured events use consistent `event=` keys: `migration_start`, `migration_complete`,
+    `migration_failed`, `step`, `step_complete`, `step_failed`, `schema_drift`, `summary`,
+    `table_header`, `table_row`, `progress`.
+  - Multi-word values are double-quoted; internal quotes are escaped — safe for shells,
+    `awk`, `jq` (with text-mode), and LLM context windows.
+
+---
+
 ## [2.1.7] - 2026-03-12
 
 ### Bug Fixes & Improvements

@@ -589,6 +589,7 @@ func (e *EnhancedExecutor) detectAndHandleDrift(opts MigrationOptions, executedF
 	expectedSchema := buildExpectedColumnDefsFromFiles(e.migrationPath, executedFiles)
 	expectedIndexes := buildExpectedIndexesFromFiles(e.migrationPath, executedFiles)
 	expectedTriggers := buildExpectedTriggersFromFiles(e.migrationPath, executedFiles)
+	expectedConstraints := buildExpectedConstraintsFromFiles(e.migrationPath, executedFiles)
 
 	tables, err := e.inspector.GetAllTables()
 	if err != nil {
@@ -604,10 +605,11 @@ func (e *EnhancedExecutor) detectAndHandleDrift(opts MigrationOptions, executedF
 		expectedCols := expectedSchema[tblKey]
 		_, hasExpectedIndexes := expectedIndexes[tblKey]
 		_, hasExpectedTriggers := expectedTriggers[tblKey]
+		_, hasExpectedConstraints := expectedConstraints[tblKey]
 
 		// Skip tables not referenced in any migration file — these are either
 		// manually created tables or extension tables not caught by pg_depend.
-		if len(expectedCols) == 0 && !hasExpectedIndexes && !hasExpectedTriggers {
+		if len(expectedCols) == 0 && !hasExpectedIndexes && !hasExpectedTriggers && !hasExpectedConstraints {
 			e.logger.Debug("Skipping drift check for '%s' — not defined in any migration file", table)
 			continue
 		}
@@ -698,8 +700,31 @@ func (e *EnhancedExecutor) detectAndHandleDrift(opts MigrationOptions, executedF
 			}
 		}
 
+		// --- FK constraint drift: FK constraints defined in migrations but missing from DB ---
+		if wantCIs, ok := expectedConstraints[tblKey]; ok && len(wantCIs) > 0 {
+			actualCIs, ciErr := e.inspector.GetTableConstraints(table)
+			if ciErr != nil {
+				e.logger.Debug("Failed to check FK constraint drift for %s: %v", table, ciErr)
+			} else {
+				// Match by content (columns + ref_table), not by name, to handle
+				// Postgres auto-naming vs our fk_ convention.
+				actualSet := make(map[string]bool)
+				for _, ai := range actualCIs {
+					actualSet[constraintKey(ai)] = true
+				}
+				for _, wi := range wantCIs {
+					if !actualSet[constraintKey(wi)] {
+						e.logger.Warning("Missing FK constraint '%s' on table '%s' (%v → %s.%v)",
+							wi.Name, table, wi.Columns, wi.RefTable, wi.RefColumns)
+						drift.MissingConstraints = append(drift.MissingConstraints, wi)
+					}
+				}
+			}
+		}
+
 		if len(drift.AddedColumns) > 0 || len(drift.MissingColumns) > 0 ||
-			len(drift.MissingIndexes) > 0 || len(drift.ExtraIndexes) > 0 || len(drift.MissingTriggers) > 0 {
+			len(drift.MissingIndexes) > 0 || len(drift.ExtraIndexes) > 0 ||
+			len(drift.MissingTriggers) > 0 || len(drift.MissingConstraints) > 0 {
 			drifts = append(drifts, drift)
 		}
 	}
@@ -923,6 +948,34 @@ func (e *EnhancedExecutor) generateDriftMigration(drifts []*SchemaDrift) (string
 		for _, idx := range drift.MissingIndexes {
 			up.WriteString(generateCreateIndexSQL(idx, e.inspector.dialect) + "\n")
 			down.WriteString(fmt.Sprintf("DROP INDEX IF EXISTS %s;\n", idx.Name))
+		}
+
+		// --- Up: ADD missing FK constraints ---
+		for _, ci := range drift.MissingConstraints {
+			name := ci.Name
+			if name == "" {
+				name = generateConstraintName(ci.TableName, ci.Columns)
+			}
+			cols := strings.Join(ci.Columns, ", ")
+			refCols := strings.Join(ci.RefColumns, ", ")
+			stmt := fmt.Sprintf(
+				"ALTER TABLE %s ADD CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s)",
+				ci.TableName, name, cols, ci.RefTable, refCols)
+			if ci.OnDelete != "" && ci.OnDelete != "NO ACTION" {
+				stmt += " ON DELETE " + ci.OnDelete
+			}
+			if ci.OnUpdate != "" && ci.OnUpdate != "NO ACTION" {
+				stmt += " ON UPDATE " + ci.OnUpdate
+			}
+			up.WriteString(stmt + ";\n")
+			// Down: drop the constraint we just added.
+			if e.inspector.dialect == MySQL || e.inspector.dialect == MariaDB {
+				down.WriteString(fmt.Sprintf(
+					"ALTER TABLE %s DROP FOREIGN KEY %s;\n", ci.TableName, name))
+			} else {
+				down.WriteString(fmt.Sprintf(
+					"ALTER TABLE %s DROP CONSTRAINT IF EXISTS %s;\n", ci.TableName, name))
+			}
 		}
 
 		// --- Up: advisory comments for missing triggers ---

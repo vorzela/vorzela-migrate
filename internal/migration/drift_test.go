@@ -307,3 +307,258 @@ func TestGenerateAlterStatements_MissingColumn_Unique(t *testing.T) {
 		t.Errorf("expected add_ migration hint in advisory, got: %s", stmt)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Tests for FK constraint generation (GenerateAddConstraintStatements)
+// ---------------------------------------------------------------------------
+
+func TestGenerateAddConstraintStatements_Basic(t *testing.T) {
+	inspector := &SchemaInspector{dialect: PostgreSQL}
+	drift := &SchemaDrift{
+		Table: "orders",
+		MissingConstraints: []ConstraintInfo{
+			{
+				Name:       "fk_orders_user_id",
+				TableName:  "orders",
+				Columns:    []string{"user_id"},
+				RefTable:   "users",
+				RefColumns: []string{"id"},
+			},
+		},
+	}
+	stmts := inspector.GenerateAddConstraintStatements(drift)
+	if len(stmts) != 1 {
+		t.Fatalf("want 1 statement, got %d: %v", len(stmts), stmts)
+	}
+	stmt := stmts[0]
+	if !strings.Contains(strings.ToUpper(stmt), "ADD CONSTRAINT") {
+		t.Errorf("expected ADD CONSTRAINT, got: %s", stmt)
+	}
+	if !strings.Contains(strings.ToUpper(stmt), "FOREIGN KEY") {
+		t.Errorf("expected FOREIGN KEY, got: %s", stmt)
+	}
+	if !strings.Contains(stmt, "fk_orders_user_id") {
+		t.Errorf("expected constraint name fk_orders_user_id, got: %s", stmt)
+	}
+	if !strings.Contains(stmt, "users") {
+		t.Errorf("expected references to users table, got: %s", stmt)
+	}
+}
+
+func TestGenerateAddConstraintStatements_WithOnDelete(t *testing.T) {
+	inspector := &SchemaInspector{dialect: PostgreSQL}
+	drift := &SchemaDrift{
+		Table: "order_items",
+		MissingConstraints: []ConstraintInfo{
+			{
+				Name:       "fk_order_items_order_id",
+				TableName:  "order_items",
+				Columns:    []string{"order_id"},
+				RefTable:   "orders",
+				RefColumns: []string{"id"},
+				OnDelete:   "CASCADE",
+			},
+		},
+	}
+	stmts := inspector.GenerateAddConstraintStatements(drift)
+	if len(stmts) != 1 {
+		t.Fatalf("want 1 statement, got %d: %v", len(stmts), stmts)
+	}
+	stmt := stmts[0]
+	if !strings.Contains(stmt, "ON DELETE CASCADE") {
+		t.Errorf("expected ON DELETE CASCADE, got: %s", stmt)
+	}
+}
+
+func TestGenerateAddConstraintStatements_OnDeleteNoAction_Omitted(t *testing.T) {
+	inspector := &SchemaInspector{dialect: PostgreSQL}
+	drift := &SchemaDrift{
+		Table: "orders",
+		MissingConstraints: []ConstraintInfo{
+			{
+				Name:       "fk_orders_user_id",
+				TableName:  "orders",
+				Columns:    []string{"user_id"},
+				RefTable:   "users",
+				RefColumns: []string{"id"},
+				OnDelete:   "NO ACTION",
+				OnUpdate:   "NO ACTION",
+			},
+		},
+	}
+	stmts := inspector.GenerateAddConstraintStatements(drift)
+	if len(stmts) != 1 {
+		t.Fatalf("want 1 statement, got %d: %v", len(stmts), stmts)
+	}
+	stmt := stmts[0]
+	// NO ACTION is the default — should be omitted from the output
+	if strings.Contains(stmt, "NO ACTION") {
+		t.Errorf("NO ACTION should be omitted (it is the default), got: %s", stmt)
+	}
+}
+
+func TestGenerateAddConstraintStatements_MultiColumnFK(t *testing.T) {
+	inspector := &SchemaInspector{dialect: PostgreSQL}
+	drift := &SchemaDrift{
+		Table: "order_items",
+		MissingConstraints: []ConstraintInfo{
+			{
+				Name:       "fk_order_items_composite",
+				TableName:  "order_items",
+				Columns:    []string{"order_id", "product_id"},
+				RefTable:   "products",
+				RefColumns: []string{"id", "variant_id"},
+			},
+		},
+	}
+	stmts := inspector.GenerateAddConstraintStatements(drift)
+	if len(stmts) != 1 {
+		t.Fatalf("want 1 statement, got %d: %v", len(stmts), stmts)
+	}
+	stmt := stmts[0]
+	if !strings.Contains(stmt, "order_id, product_id") {
+		t.Errorf("expected composite local columns, got: %s", stmt)
+	}
+	if !strings.Contains(stmt, "id, variant_id") {
+		t.Errorf("expected composite referenced columns, got: %s", stmt)
+	}
+}
+
+func TestGenerateAddConstraintStatements_AutoName(t *testing.T) {
+	inspector := &SchemaInspector{dialect: PostgreSQL}
+	drift := &SchemaDrift{
+		Table: "orders",
+		MissingConstraints: []ConstraintInfo{
+			{
+				// Name intentionally empty — should be auto-generated
+				TableName:  "orders",
+				Columns:    []string{"customer_id"},
+				RefTable:   "customers",
+				RefColumns: []string{"id"},
+			},
+		},
+	}
+	stmts := inspector.GenerateAddConstraintStatements(drift)
+	if len(stmts) != 1 {
+		t.Fatalf("want 1 statement, got %d: %v", len(stmts), stmts)
+	}
+	stmt := stmts[0]
+	// Auto-generated name follows fk_<table>_<col> convention
+	if !strings.Contains(stmt, "fk_orders_customer_id") {
+		t.Errorf("expected auto-generated name fk_orders_customer_id, got: %s", stmt)
+	}
+}
+
+func TestGenerateAddConstraintStatements_Empty(t *testing.T) {
+	inspector := &SchemaInspector{dialect: PostgreSQL}
+	drift := &SchemaDrift{Table: "users"}
+	stmts := inspector.GenerateAddConstraintStatements(drift)
+	if stmts != nil {
+		t.Errorf("expected nil for empty MissingConstraints, got: %v", stmts)
+	}
+}
+
+func TestGenerateDropConstraintStatements_Postgres(t *testing.T) {
+	inspector := &SchemaInspector{dialect: PostgreSQL}
+	drift := &SchemaDrift{
+		Table: "orders",
+		ExtraConstraints: []ConstraintInfo{
+			{Name: "fk_orders_user_id", TableName: "orders"},
+		},
+	}
+	stmts := inspector.GenerateDropConstraintStatements(drift)
+	if len(stmts) != 1 {
+		t.Fatalf("want 1 statement, got %d: %v", len(stmts), stmts)
+	}
+	stmt := stmts[0]
+	if !strings.Contains(strings.ToUpper(stmt), "DROP CONSTRAINT") {
+		t.Errorf("expected DROP CONSTRAINT (Postgres), got: %s", stmt)
+	}
+	if strings.Contains(strings.ToUpper(stmt), "FOREIGN KEY") {
+		t.Errorf("Postgres should use DROP CONSTRAINT, not DROP FOREIGN KEY, got: %s", stmt)
+	}
+}
+
+func TestGenerateDropConstraintStatements_MySQL(t *testing.T) {
+	inspector := &SchemaInspector{dialect: MySQL}
+	drift := &SchemaDrift{
+		Table: "orders",
+		ExtraConstraints: []ConstraintInfo{
+			{Name: "fk_orders_user_id", TableName: "orders"},
+		},
+	}
+	stmts := inspector.GenerateDropConstraintStatements(drift)
+	if len(stmts) != 1 {
+		t.Fatalf("want 1 statement, got %d: %v", len(stmts), stmts)
+	}
+	stmt := stmts[0]
+	if !strings.Contains(strings.ToUpper(stmt), "DROP FOREIGN KEY") {
+		t.Errorf("expected DROP FOREIGN KEY (MySQL), got: %s", stmt)
+	}
+}
+
+func TestConstraintKey_Normalisation(t *testing.T) {
+	ci1 := ConstraintInfo{TableName: "Orders", Columns: []string{"user_id", "product_id"}, RefTable: "Users"}
+	ci2 := ConstraintInfo{TableName: "orders", Columns: []string{"product_id", "user_id"}, RefTable: "users"}
+
+	// Keys should be equal regardless of column order or case
+	if constraintKey(ci1) != constraintKey(ci2) {
+		t.Errorf("constraintKey mismatch: %q vs %q", constraintKey(ci1), constraintKey(ci2))
+	}
+}
+
+func TestGenerateAllStatements_IncludesConstraints(t *testing.T) {
+	inspector := &SchemaInspector{dialect: PostgreSQL}
+	drift := &SchemaDrift{
+		Table: "orders",
+		MissingColumns: []ColumnInfo{
+			{Name: "note", Type: "text", Nullable: true},
+		},
+		MissingConstraints: []ConstraintInfo{
+			{
+				Name: "fk_orders_user_id", TableName: "orders",
+				Columns: []string{"user_id"}, RefTable: "users", RefColumns: []string{"id"},
+			},
+		},
+	}
+	stmts := inspector.GenerateAllStatements(drift)
+
+	hasAddColumn := false
+	hasAddConstraint := false
+	for _, s := range stmts {
+		up := strings.ToUpper(s)
+		if strings.Contains(up, "ADD COLUMN") {
+			hasAddColumn = true
+		}
+		if strings.Contains(up, "ADD CONSTRAINT") {
+			hasAddConstraint = true
+		}
+	}
+	if !hasAddColumn {
+		t.Errorf("expected ADD COLUMN statement in GenerateAllStatements output: %v", stmts)
+	}
+	if !hasAddConstraint {
+		t.Errorf("expected ADD CONSTRAINT statement in GenerateAllStatements output: %v", stmts)
+	}
+}
+
+func TestSchemaDrift_ConstraintFields(t *testing.T) {
+	drift := &SchemaDrift{
+		Table: "orders",
+		MissingConstraints: []ConstraintInfo{
+			{Name: "fk_a", TableName: "orders", Columns: []string{"user_id"}, RefTable: "users", RefColumns: []string{"id"}},
+		},
+		ExtraConstraints: []ConstraintInfo{
+			{Name: "fk_b", TableName: "orders", Columns: []string{"old_ref_id"}, RefTable: "old_table", RefColumns: []string{"id"}},
+		},
+	}
+	if len(drift.MissingConstraints) != 1 {
+		t.Errorf("MissingConstraints count = %d, want 1", len(drift.MissingConstraints))
+	}
+	if len(drift.ExtraConstraints) != 1 {
+		t.Errorf("ExtraConstraints count = %d, want 1", len(drift.ExtraConstraints))
+	}
+	if drift.MissingConstraints[0].Name != "fk_a" {
+		t.Errorf("MissingConstraints[0].Name = %q, want fk_a", drift.MissingConstraints[0].Name)
+	}
+}

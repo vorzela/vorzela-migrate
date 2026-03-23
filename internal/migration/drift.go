@@ -16,6 +16,17 @@ type ColumnInfo struct {
 	IsUnique bool // column-level UNIQUE constraint declared in the migration
 }
 
+// ConstraintInfo represents a foreign-key constraint on a table.
+type ConstraintInfo struct {
+	Name       string // constraint name (e.g. "fk_orders_user_id")
+	TableName  string
+	Columns    []string // local columns involved in the FK
+	RefTable   string   // referenced table
+	RefColumns []string // referenced columns
+	OnDelete   string   // NO ACTION, RESTRICT, CASCADE, SET NULL, SET DEFAULT (empty = unspecified)
+	OnUpdate   string
+}
+
 // IndexInfo represents a database index
 type IndexInfo struct {
 	Name      string
@@ -42,13 +53,15 @@ type TableSchema struct {
 
 // SchemaDrift represents detected schema differences
 type SchemaDrift struct {
-	Table           string
-	AddedColumns    []ColumnInfo // columns in DB not defined in any migration
-	MissingColumns  []ColumnInfo // columns defined in migrations but absent from DB
-	ModifiedColumns []ColumnModification
-	MissingIndexes  []IndexInfo // indexes defined in migrations but absent from DB
-	ExtraIndexes    []IndexInfo // indexes in DB that back orphaned/dropped columns
-	MissingTriggers []TriggerInfo
+	Table              string
+	AddedColumns       []ColumnInfo // columns in DB not defined in any migration
+	MissingColumns     []ColumnInfo // columns defined in migrations but absent from DB
+	ModifiedColumns    []ColumnModification
+	MissingIndexes     []IndexInfo // indexes defined in migrations but absent from DB
+	ExtraIndexes       []IndexInfo // indexes in DB that back orphaned/dropped columns
+	MissingTriggers    []TriggerInfo
+	MissingConstraints []ConstraintInfo // FK constraints in migrations but absent from DB
+	ExtraConstraints   []ConstraintInfo // FK constraints in DB not defined in any migration
 }
 
 // ColumnModification represents a changed column
@@ -331,7 +344,136 @@ func (si *SchemaInspector) getMySQLTableTriggers(tableName string) ([]TriggerInf
 	return triggers, rows.Err()
 }
 
-// DetectDrift compares expected schema with current schema.
+// GetTableConstraints retrieves all foreign-key constraints for a table from the DB.
+func (si *SchemaInspector) GetTableConstraints(tableName string) ([]ConstraintInfo, error) {
+	switch si.dialect {
+	case PostgreSQL:
+		return si.getPostgresTableConstraints(tableName)
+	case MySQL, MariaDB:
+		return si.getMySQLTableConstraints(tableName)
+	default:
+		return nil, fmt.Errorf("unsupported dialect for constraint inspection: %s", si.dialect)
+	}
+}
+
+func (si *SchemaInspector) getPostgresTableConstraints(tableName string) ([]ConstraintInfo, error) {
+	query := `
+		SELECT
+			c.conname AS constraint_name,
+			(SELECT string_agg(a.attname, ',' ORDER BY u.pos)
+			 FROM unnest(c.conkey) WITH ORDINALITY AS u(attnum, pos)
+			 JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = u.attnum) AS columns,
+			f.relname AS ref_table,
+			(SELECT string_agg(af.attname, ',' ORDER BY uf.pos)
+			 FROM unnest(c.confkey) WITH ORDINALITY AS uf(attnum, pos)
+			 JOIN pg_attribute af ON af.attrelid = c.confrelid AND af.attnum = uf.attnum) AS ref_columns,
+			CASE c.confdeltype
+				WHEN 'a' THEN 'NO ACTION'
+				WHEN 'r' THEN 'RESTRICT'
+				WHEN 'c' THEN 'CASCADE'
+				WHEN 'n' THEN 'SET NULL'
+				WHEN 'd' THEN 'SET DEFAULT'
+			END AS on_delete,
+			CASE c.confupdtype
+				WHEN 'a' THEN 'NO ACTION'
+				WHEN 'r' THEN 'RESTRICT'
+				WHEN 'c' THEN 'CASCADE'
+				WHEN 'n' THEN 'SET NULL'
+				WHEN 'd' THEN 'SET DEFAULT'
+			END AS on_update
+		FROM pg_constraint c
+		JOIN pg_class t ON t.oid = c.conrelid
+		JOIN pg_namespace n ON n.oid = t.relnamespace
+		JOIN pg_class f ON f.oid = c.confrelid
+		WHERE t.relname = $1
+		  AND n.nspname = 'public'
+		  AND c.contype = 'f'
+		ORDER BY c.conname
+	`
+	rows, err := si.db.Query(query, tableName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query FK constraints: %w", err)
+	}
+	defer rows.Close()
+
+	var constraints []ConstraintInfo
+	for rows.Next() {
+		var ci ConstraintInfo
+		var colList, refColList string
+		ci.TableName = tableName
+		if err := rows.Scan(&ci.Name, &colList, &ci.RefTable, &refColList, &ci.OnDelete, &ci.OnUpdate); err != nil {
+			return nil, err
+		}
+		ci.Columns = splitCommaList(colList)
+		ci.RefColumns = splitCommaList(refColList)
+		constraints = append(constraints, ci)
+	}
+	return constraints, rows.Err()
+}
+
+func (si *SchemaInspector) getMySQLTableConstraints(tableName string) ([]ConstraintInfo, error) {
+	query := `
+		SELECT
+			kcu.CONSTRAINT_NAME,
+			GROUP_CONCAT(kcu.COLUMN_NAME ORDER BY kcu.ORDINAL_POSITION SEPARATOR ','),
+			kcu.REFERENCED_TABLE_NAME,
+			GROUP_CONCAT(kcu.REFERENCED_COLUMN_NAME ORDER BY kcu.ORDINAL_POSITION SEPARATOR ','),
+			rc.DELETE_RULE,
+			rc.UPDATE_RULE
+		FROM information_schema.KEY_COLUMN_USAGE kcu
+		JOIN information_schema.REFERENTIAL_CONSTRAINTS rc
+			ON rc.CONSTRAINT_SCHEMA = kcu.TABLE_SCHEMA
+			AND rc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
+		WHERE kcu.TABLE_SCHEMA = DATABASE()
+		  AND kcu.TABLE_NAME = ?
+		  AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
+		GROUP BY kcu.CONSTRAINT_NAME, kcu.REFERENCED_TABLE_NAME, rc.DELETE_RULE, rc.UPDATE_RULE
+		ORDER BY kcu.CONSTRAINT_NAME
+	`
+	rows, err := si.db.Query(query, tableName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query FK constraints: %w", err)
+	}
+	defer rows.Close()
+
+	var constraints []ConstraintInfo
+	for rows.Next() {
+		var ci ConstraintInfo
+		var colList, refColList string
+		ci.TableName = tableName
+		if err := rows.Scan(&ci.Name, &colList, &ci.RefTable, &refColList, &ci.OnDelete, &ci.OnUpdate); err != nil {
+			return nil, err
+		}
+		ci.Columns = splitCommaList(colList)
+		ci.RefColumns = splitCommaList(refColList)
+		constraints = append(constraints, ci)
+	}
+	return constraints, rows.Err()
+}
+
+// splitCommaList splits a comma-separated string into a trimmed slice.
+func splitCommaList(s string) []string {
+	var out []string
+	for _, part := range strings.Split(s, ",") {
+		if v := strings.TrimSpace(part); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// constraintKey returns a normalised string key for a ConstraintInfo that can
+// be used to match expected vs actual constraints regardless of name differences
+// (Postgres auto-names inline REFERENCES differently from our fk_ convention).
+func constraintKey(ci ConstraintInfo) string {
+	cols := make([]string, len(ci.Columns))
+	copy(cols, ci.Columns)
+	sort.Strings(cols)
+	return strings.ToLower(ci.TableName) + "|" +
+		strings.Join(cols, ",") + "|" +
+		strings.ToLower(ci.RefTable)
+}
+
 // It checks BOTH drift directions:
 //   - AddedColumns:   columns that exist in the DB but are not in any migration file
 //   - MissingColumns: columns that migrations define but are absent from the DB
@@ -531,13 +673,63 @@ func (si *SchemaInspector) GenerateCreateTriggerStatements(drift *SchemaDrift) [
 
 // GenerateAllStatements returns all SQL statements needed to fix drift:
 // ALTER TABLE for missing columns, CREATE INDEX for missing indexes,
-// and advisory comments for missing triggers.
+// ADD CONSTRAINT for missing FK constraints, and advisory comments for
+// missing triggers.
 func (si *SchemaInspector) GenerateAllStatements(drift *SchemaDrift) []string {
 	var all []string
 	all = append(all, si.GenerateAlterStatements(drift)...)
 	all = append(all, si.GenerateCreateIndexStatements(drift)...)
+	all = append(all, si.GenerateAddConstraintStatements(drift)...)
 	all = append(all, si.GenerateCreateTriggerStatements(drift)...)
 	return all
+}
+
+// GenerateAddConstraintStatements generates ALTER TABLE … ADD CONSTRAINT …
+// FOREIGN KEY statements for each missing FK in the drift report.
+func (si *SchemaInspector) GenerateAddConstraintStatements(drift *SchemaDrift) []string {
+	if len(drift.MissingConstraints) == 0 {
+		return nil
+	}
+	var stmts []string
+	for _, ci := range drift.MissingConstraints {
+		name := ci.Name
+		if name == "" {
+			name = generateConstraintName(ci.TableName, ci.Columns)
+		}
+		cols := strings.Join(ci.Columns, ", ")
+		refCols := strings.Join(ci.RefColumns, ", ")
+		stmt := fmt.Sprintf(
+			"ALTER TABLE %s ADD CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s)",
+			ci.TableName, name, cols, ci.RefTable, refCols)
+		if ci.OnDelete != "" && ci.OnDelete != "NO ACTION" {
+			stmt += " ON DELETE " + ci.OnDelete
+		}
+		if ci.OnUpdate != "" && ci.OnUpdate != "NO ACTION" {
+			stmt += " ON UPDATE " + ci.OnUpdate
+		}
+		stmt += ";"
+		stmts = append(stmts, stmt)
+	}
+	return stmts
+}
+
+// GenerateDropConstraintStatements generates ALTER TABLE … DROP CONSTRAINT
+// statements for each extra FK in the drift report (FK in DB but not in migrations).
+func (si *SchemaInspector) GenerateDropConstraintStatements(drift *SchemaDrift) []string {
+	if len(drift.ExtraConstraints) == 0 {
+		return nil
+	}
+	var stmts []string
+	for _, ci := range drift.ExtraConstraints {
+		var stmt string
+		if si.dialect == MySQL || si.dialect == MariaDB {
+			stmt = fmt.Sprintf("ALTER TABLE %s DROP FOREIGN KEY %s;", ci.TableName, ci.Name)
+		} else {
+			stmt = fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT IF EXISTS %s;", ci.TableName, ci.Name)
+		}
+		stmts = append(stmts, stmt)
+	}
+	return stmts
 }
 
 // GetAllTables returns all user-managed tables in the database.

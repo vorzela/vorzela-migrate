@@ -737,3 +737,274 @@ func extractTriggersFromSQL(sql string) []TriggerInfo {
 	}
 	return triggers
 }
+
+// -----------------------------------------------------------------------
+// Foreign-key constraint extraction from migration SQL
+// -----------------------------------------------------------------------
+
+// tableFKRe matches table-level FOREIGN KEY constraints (inside CREATE TABLE body
+// or ALTER TABLE ADD [CONSTRAINT name] FOREIGN KEY).
+// Groups: 1=constraint_name (optional), 2=columns, 3=ref_table, 4=ref_cols,
+//
+//	5=ON DELETE action (optional), 6=ON UPDATE action (optional)
+var tableFKRe = regexp.MustCompile(
+	`(?i)(?:CONSTRAINT\s+([` + "`" + `"\w]+)\s+)?FOREIGN\s+KEY\s*\(([^)]+)\)\s+REFERENCES\s+([` + "`" + `"\w]+)\s*\(([^)]+)\)` +
+		`(?:\s+ON\s+DELETE\s+(NO\s+ACTION|SET\s+NULL|SET\s+DEFAULT|RESTRICT|CASCADE))?` +
+		`(?:\s+ON\s+UPDATE\s+(NO\s+ACTION|SET\s+NULL|SET\s+DEFAULT|RESTRICT|CASCADE))?`)
+
+// alterTableAddFKRe matches ALTER TABLE … ADD [CONSTRAINT name] FOREIGN KEY.
+// Groups: 1=table, 2=constraint_name (optional), 3=columns, 4=ref_table, 5=ref_cols,
+//
+//	6=ON DELETE action (optional), 7=ON UPDATE action (optional)
+var alterTableAddFKRe = regexp.MustCompile(
+	`(?i)ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:[` + "`" + `"\w]+\.)?([` + "`" + `"\w]+)\s+ADD\s+` +
+		`(?:CONSTRAINT\s+([` + "`" + `"\w]+)\s+)?FOREIGN\s+KEY\s*\(([^)]+)\)\s+REFERENCES\s+([` + "`" + `"\w]+)\s*\(([^)]+)\)` +
+		`(?:\s+ON\s+DELETE\s+(NO\s+ACTION|SET\s+NULL|SET\s+DEFAULT|RESTRICT|CASCADE))?` +
+		`(?:\s+ON\s+UPDATE\s+(NO\s+ACTION|SET\s+NULL|SET\s+DEFAULT|RESTRICT|CASCADE))?`)
+
+// inlineRefRe matches an inline REFERENCES clause within a column definition.
+// It is applied per-column-definition after the column name+type have been identified.
+// Groups: 1=ref_table, 2=ref_cols,
+//
+//	3=ON DELETE action (optional), 4=ON UPDATE action (optional)
+var inlineRefRe = regexp.MustCompile(
+	`(?i)\bREFERENCES\s+([` + "`" + `"\w]+)\s*\(([^)]+)\)` +
+		`(?:\s+ON\s+DELETE\s+(NO\s+ACTION|SET\s+NULL|SET\s+DEFAULT|RESTRICT|CASCADE))?` +
+		`(?:\s+ON\s+UPDATE\s+(NO\s+ACTION|SET\s+NULL|SET\s+DEFAULT|RESTRICT|CASCADE))?`)
+
+// alterTableDropConstraintRe matches ALTER TABLE … DROP CONSTRAINT/FOREIGN KEY name.
+// Groups: 1=table, 2=constraint_name
+var alterTableDropConstraintRe = regexp.MustCompile(
+	`(?i)ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:[` + "`" + `"\w]+\.)?([` + "`" + `"\w]+)\s+DROP\s+(?:FOREIGN\s+KEY|CONSTRAINT)\s+(?:IF\s+EXISTS\s+)?([` + "`" + `"\w]+)`)
+
+// generateConstraintName builds a deterministic FK constraint name:
+//
+//	fk_<table>_<col1>_<col2>...
+func generateConstraintName(tableName string, cols []string) string {
+	return "fk_" + strings.ToLower(tableName) + "_" + strings.ToLower(strings.Join(cols, "_"))
+}
+
+// extractFKsFromCreateTableBody parses FK constraints from the body of a
+// CREATE TABLE statement.  It handles both:
+//   - Table-level:  [CONSTRAINT name] FOREIGN KEY (col) REFERENCES t(c)
+//   - Inline:       col_name type … REFERENCES t(c) [ON DELETE …]
+func extractFKsFromCreateTableBody(tableName, body string) []ConstraintInfo {
+	var out []ConstraintInfo
+
+	// --- Table-level FOREIGN KEY lines ---
+	for _, m := range tableFKRe.FindAllStringSubmatch(body, -1) {
+		name := strings.ToLower(stripQuotes(strings.TrimSpace(m[1])))
+		cols := splitAndTrim(m[2])
+		refTable := strings.ToLower(stripQuotes(m[3]))
+		refCols := splitAndTrim(m[4])
+		if name == "" {
+			name = generateConstraintName(tableName, cols)
+		}
+		out = append(out, ConstraintInfo{
+			Name:       name,
+			TableName:  tableName,
+			Columns:    cols,
+			RefTable:   refTable,
+			RefColumns: refCols,
+			OnDelete:   normaliseAction(m[5]),
+			OnUpdate:   normaliseAction(m[6]),
+		})
+	}
+
+	// --- Inline REFERENCES on column definitions ---
+	// Re-split the body by commas at depth-0 to get individual column defs.
+	colDefs := splitCreateTableBody(body)
+	for _, def := range colDefs {
+		def = strings.TrimSpace(def)
+		if def == "" || columnSkipRe.MatchString(def) {
+			// Skip table-level constraint lines (already handled above).
+			continue
+		}
+		m := inlineRefRe.FindStringSubmatch(def)
+		if m == nil {
+			continue
+		}
+		// Extract column name from the first token.
+		fields := strings.Fields(def)
+		if len(fields) == 0 {
+			continue
+		}
+		colName := strings.ToLower(stripQuotes(fields[0]))
+		if colName == "" || isConstraintKeyword(colName) {
+			continue
+		}
+		refTable := strings.ToLower(stripQuotes(m[1]))
+		refCols := splitAndTrim(m[2])
+		out = append(out, ConstraintInfo{
+			Name:       generateConstraintName(tableName, []string{colName}),
+			TableName:  tableName,
+			Columns:    []string{colName},
+			RefTable:   refTable,
+			RefColumns: refCols,
+			OnDelete:   normaliseAction(m[3]),
+			OnUpdate:   normaliseAction(m[4]),
+		})
+	}
+
+	return out
+}
+
+// splitCreateTableBody splits a CREATE TABLE body by top-level commas (same
+// as parseCreateTableColumns) and returns the raw definition strings.
+func splitCreateTableBody(body string) []string {
+	var parts []string
+	depth := 0
+	start := 0
+	inStr := false
+	strChar := byte(0)
+
+	for i := 0; i < len(body); i++ {
+		ch := body[i]
+		if inStr {
+			switch ch {
+			case '\\':
+				i++
+			case strChar:
+				inStr = false
+			}
+			continue
+		}
+		switch ch {
+		case '\'', '"', '`':
+			inStr = true
+			strChar = ch
+		case '(':
+			depth++
+		case ')':
+			depth--
+		case ',':
+			if depth == 0 {
+				parts = append(parts, body[start:i])
+				start = i + 1
+			}
+		}
+	}
+	if rest := strings.TrimSpace(body[start:]); rest != "" {
+		parts = append(parts, rest)
+	}
+	return parts
+}
+
+// extractFKsFromSQL extracts all FK constraints declared in a SQL string,
+// covering CREATE TABLE bodies (inline + table-level) and ALTER TABLE ADD FK.
+func extractFKsFromSQL(sql string) []ConstraintInfo {
+	sql = stripSQLLineComments(sql)
+	var out []ConstraintInfo
+
+	// 1. CREATE TABLE bodies
+	for _, match := range createTableRe.FindAllStringSubmatchIndex(sql, -1) {
+		tableName := strings.ToLower(stripQuotes(sql[match[2]:match[3]]))
+		openPos := strings.LastIndex(sql[:match[1]], "(")
+		if openPos == -1 {
+			continue
+		}
+		bodyEnd := findMatchingParen(sql, openPos)
+		if bodyEnd == -1 {
+			continue
+		}
+		body := sql[openPos+1 : bodyEnd]
+		out = append(out, extractFKsFromCreateTableBody(tableName, body)...)
+	}
+
+	// 2. ALTER TABLE … ADD [CONSTRAINT] FOREIGN KEY
+	for _, m := range alterTableAddFKRe.FindAllStringSubmatch(sql, -1) {
+		tableName := strings.ToLower(stripQuotes(m[1]))
+		name := strings.ToLower(stripQuotes(strings.TrimSpace(m[2])))
+		cols := splitAndTrim(m[3])
+		refTable := strings.ToLower(stripQuotes(m[4]))
+		refCols := splitAndTrim(m[5])
+		if name == "" {
+			name = generateConstraintName(tableName, cols)
+		}
+		out = append(out, ConstraintInfo{
+			Name:       name,
+			TableName:  tableName,
+			Columns:    cols,
+			RefTable:   refTable,
+			RefColumns: refCols,
+			OnDelete:   normaliseAction(m[6]),
+			OnUpdate:   normaliseAction(m[7]),
+		})
+	}
+
+	return out
+}
+
+// splitAndTrim splits a comma-separated column list and trims each element.
+func splitAndTrim(s string) []string {
+	var out []string
+	for _, p := range strings.Split(s, ",") {
+		if v := strings.ToLower(strings.TrimSpace(stripQuotes(p))); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// normaliseAction uppercases and trims an ON DELETE / ON UPDATE action string.
+func normaliseAction(s string) string {
+	return strings.ToUpper(strings.TrimSpace(s))
+}
+
+// buildExpectedConstraintsFromFiles parses executed migration SQL files and
+// returns a map of tableName -> []ConstraintInfo for FK constraints that
+// should exist.  Only the Up section of each file is consulted.
+func buildExpectedConstraintsFromFiles(migrationPath string, executedFiles []string) map[string][]ConstraintInfo {
+	expected := make(map[string][]ConstraintInfo)
+	// Track dropped constraint names per table (from DROP CONSTRAINT / DROP FOREIGN KEY).
+	dropped := make(map[string]map[string]bool)
+	// Deduplicate by (table, constraintKey).
+	seen := make(map[string]bool)
+
+	for _, filename := range executedFiles {
+		content, err := os.ReadFile(filepath.Join(migrationPath, filename))
+		if err != nil {
+			continue
+		}
+		sqlContent := extractSection(string(content), "Up")
+		if sqlContent == "" {
+			sqlContent = string(content)
+		}
+
+		for _, ci := range extractFKsFromSQL(sqlContent) {
+			key := ci.TableName + "|" + ci.Name
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			expected[ci.TableName] = append(expected[ci.TableName], ci)
+		}
+
+		// Track dropped constraints so we can remove them from the expected set.
+		for _, m := range alterTableDropConstraintRe.FindAllStringSubmatch(sqlContent, -1) {
+			tbl := strings.ToLower(stripQuotes(m[1]))
+			name := strings.ToLower(stripQuotes(m[2]))
+			if dropped[tbl] == nil {
+				dropped[tbl] = make(map[string]bool)
+			}
+			dropped[tbl][name] = true
+		}
+	}
+
+	// Remove constraints that were explicitly dropped.
+	for tbl, cis := range expected {
+		droppedNames := dropped[tbl]
+		if droppedNames == nil {
+			continue
+		}
+		var filtered []ConstraintInfo
+		for _, ci := range cis {
+			if !droppedNames[ci.Name] {
+				filtered = append(filtered, ci)
+			}
+		}
+		expected[tbl] = filtered
+	}
+
+	return expected
+}
