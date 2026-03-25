@@ -630,7 +630,7 @@ func (e *EnhancedExecutor) detectAndHandleDrift(opts MigrationOptions, executedF
 			}
 			e.logger.Warning("Schema drift in table '%s': columns in DB not defined in any migration (will be dropped): %v",
 				table, names)
-			e.logger.Warning("Action required: remove definitions for column(s) %v in table '%s' from your migration files, or create a new migration to drop them.",
+			e.logger.Warning("Action required: column(s) %v in table '%s' exist in the database but have no migration definition. Create a new migration to drop them, or add their definitions to an existing migration if they should be kept.",
 				names, table)
 
 			// Detect indexes in the DB that cover only orphaned columns — they must
@@ -879,8 +879,9 @@ func (e *EnhancedExecutor) generateDriftMigration(drifts []*SchemaDrift) (string
 					drift.Table, col.Name))
 				continue
 			}
-			// UNIQUE columns must be handled manually — backfilling is required.
-			if col.IsUnique {
+			// Non-nullable UNIQUE columns must be handled manually — backfilling
+			// is required. Nullable UNIQUE columns are safe to auto-add.
+			if col.IsUnique && !col.Nullable {
 				up.WriteString(fmt.Sprintf(
 					"-- UNIQUE COLUMN: %s.%s — cannot safely auto-add to a populated table.\n"+
 						"-- Create an add_%s_to_%s migration file to backfill values and add the UNIQUE constraint manually.\n",

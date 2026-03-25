@@ -288,6 +288,7 @@ func TestGenerateAlterStatements_MissingColumn_NotNullNoDefault(t *testing.T) {
 }
 
 func TestGenerateAlterStatements_MissingColumn_Unique(t *testing.T) {
+	// Nullable UNIQUE columns are safe to auto-add: NULLs never violate UNIQUE.
 	inspector := &SchemaInspector{dialect: PostgreSQL}
 	drift := &SchemaDrift{
 		Table: "users",
@@ -297,11 +298,34 @@ func TestGenerateAlterStatements_MissingColumn_Unique(t *testing.T) {
 	}
 	stmts := inspector.GenerateAlterStatements(drift)
 	if len(stmts) != 1 {
+		t.Fatalf("want 1 ALTER TABLE statement, got %d: %v", len(stmts), stmts)
+	}
+	stmt := stmts[0]
+	if strings.HasPrefix(strings.TrimSpace(stmt), "--") {
+		t.Errorf("expected ALTER TABLE ADD COLUMN for nullable UNIQUE column, got advisory: %s", stmt)
+	}
+	if !strings.Contains(stmt, "ADD COLUMN") {
+		t.Errorf("expected ADD COLUMN statement for nullable UNIQUE column, got: %s", stmt)
+	}
+}
+
+func TestGenerateAlterStatements_MissingColumn_UniqueNotNull(t *testing.T) {
+	// Non-nullable UNIQUE columns cannot be safely auto-added to a populated
+	// table — an advisory comment must be emitted instead.
+	inspector := &SchemaInspector{dialect: PostgreSQL}
+	drift := &SchemaDrift{
+		Table: "users",
+		MissingColumns: []ColumnInfo{
+			{Name: "username", Type: "varchar(100)", Nullable: false, IsUnique: true},
+		},
+	}
+	stmts := inspector.GenerateAlterStatements(drift)
+	if len(stmts) != 1 {
 		t.Fatalf("want 1 advisory comment, got %d: %v", len(stmts), stmts)
 	}
 	stmt := stmts[0]
 	if !strings.HasPrefix(strings.TrimSpace(stmt), "--") {
-		t.Errorf("expected advisory comment for UNIQUE column, got: %s", stmt)
+		t.Errorf("expected advisory comment for non-nullable UNIQUE column, got: %s", stmt)
 	}
 	if !strings.Contains(stmt, "add_") {
 		t.Errorf("expected add_ migration hint in advisory, got: %s", stmt)

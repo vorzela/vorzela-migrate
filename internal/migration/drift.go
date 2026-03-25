@@ -568,11 +568,12 @@ func (si *SchemaInspector) GenerateAlterStatements(drift *SchemaDrift) []string 
 			continue
 		}
 
-		// UNIQUE columns cannot be safely auto-added to a populated table because
-		// existing rows may violate the constraint. The user must create a targeted
-		// migration file (e.g. add_<col>_to_<table>) that backfills unique values
-		// before enforcing the constraint.
-		if col.IsUnique {
+		// Non-nullable UNIQUE columns cannot be safely auto-added to a populated
+		// table because existing rows may violate the constraint. The user must
+		// create a targeted migration file (e.g. add_<col>_to_<table>) that
+		// backfills unique values before enforcing the constraint.
+		// Nullable UNIQUE columns are safe: NULLs are never compared by UNIQUE.
+		if col.IsUnique && !col.Nullable {
 			statements = append(statements,
 				fmt.Sprintf(
 					"-- UNIQUE COLUMN: %s.%s — cannot safely auto-add to a populated table.\n"+
