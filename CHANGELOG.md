@@ -2,6 +2,42 @@
 
 All notable changes to Vorzela Migration Tool are documented in this file.
 
+## [2.2.2] - 2026-03-27
+
+### Bug Fixes
+
+- **Schema parser: column named `key` no longer silently dropped** 🔧
+  - Columns with the reserved-looking name `key` (e.g. `key VARCHAR(100) PRIMARY KEY`) were
+    incorrectly classified as a MySQL `KEY` index constraint and discarded by the parser.
+  - Fix: removed `"key"` from the `constraintKeywords` map; bare `KEY` constraint lines are
+    already filtered earlier by `columnSkipRe` (`^\s*KEY\b`), so there is no regression for
+    MySQL/MariaDB schemas.
+  - Drift detection now correctly tracks and reports `key` columns that are missing from the
+    live database.
+
+---
+
+## [2.2.1] - 2026-03-25
+
+### Bug Fixes
+
+- **Drift: nullable `UNIQUE` columns can now be auto-added without a manual migration** 🔑
+  - Previously, *all* `UNIQUE` columns were blocked from automatic drift application and an
+    advisory comment was emitted instead.  This was overly conservative: `NULL` values are
+    never compared by the `UNIQUE` constraint, so a nullable `UNIQUE` column is always safe
+    to add to a populated table.
+  - Fix: only **non-nullable** `UNIQUE` columns without a `DEFAULT` still require a manual
+    migration (backfill + constraint).  Nullable `UNIQUE` columns are now auto-applied by
+    `GenerateAlterStatements` like any other nullable column.
+
+- **Drift: misleading "Action required" warning corrected** ⚠️
+  - The advisory message previously told users to *remove definitions from migration files*
+    for columns that exist only in the live DB — the opposite of the correct action.
+  - Fix: the warning now correctly instructs users to create a targeted migration to reconcile
+    the extra columns, rather than modifying existing migration files.
+
+---
+
 ## [2.2.0] - 2026-03-24
 
 ### New Features

@@ -368,7 +368,7 @@ func stripQuotes(s string) string {
 
 var constraintKeywords = map[string]bool{
 	"constraint": true, "primary": true, "foreign": true,
-	"unique": true, "index": true, "check": true, "key": true,
+	"unique": true, "index": true, "check": true,
 	"like": true,
 }
 
