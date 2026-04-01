@@ -363,7 +363,7 @@ func runEnumsIfNeeded(conn db.DB, cfg *config.Config) error {
 		case "add-values":
 			output.Println("  ~ update type %s: add values %v", op.name, op.vals)
 		case "drop":
-			output.Warning("  - drop type %s CASCADE", op.name)
+			output.Warning("  - drop type %s if unused", op.name)
 		}
 	}
 
@@ -413,7 +413,7 @@ func runEnumsIfNeeded(conn db.DB, cfg *config.Config) error {
 		if !exists {
 			continue
 		}
-		conn.Exec(ctx, fmt.Sprintf("DROP TYPE IF EXISTS %s CASCADE;", name)) //nolint:errcheck
+		conn.Exec(ctx, migration.GenerateDropEnumIfUnusedSQL(name)) //nolint:errcheck
 	}
 
 	output.Success("✓ Enum types synced (created: %d, updated: %d, dropped: %d)", createCount, updateCount, dropCount)

@@ -11,6 +11,7 @@ import (
 type ColumnInfo struct {
 	Name     string
 	Type     string
+	EnumType string // PostgreSQL enum type name when this column uses an enum
 	Nullable bool
 	Default  sql.NullString
 	IsUnique bool // column-level UNIQUE constraint declared in the migration
@@ -59,6 +60,7 @@ type SchemaDrift struct {
 	ModifiedColumns    []ColumnModification
 	MissingIndexes     []IndexInfo // indexes defined in migrations but absent from DB
 	ExtraIndexes       []IndexInfo // indexes in DB that back orphaned/dropped columns
+	ExtraTriggers      []TriggerInfo
 	MissingTriggers    []TriggerInfo
 	MissingConstraints []ConstraintInfo // FK constraints in migrations but absent from DB
 	ExtraConstraints   []ConstraintInfo // FK constraints in DB not defined in any migration
@@ -101,15 +103,31 @@ func (si *SchemaInspector) GetTableSchema(tableName string) (*TableSchema, error
 // getPostgresTableSchema retrieves schema from PostgreSQL
 func (si *SchemaInspector) getPostgresTableSchema(tableName string) (*TableSchema, error) {
 	query := `
-		SELECT 
-			column_name,
-			data_type,
-			is_nullable,
-			column_default
-		FROM information_schema.columns
-		WHERE table_name = $1
-		AND table_schema = 'public'
-		ORDER BY ordinal_position
+		SELECT
+			c.column_name,
+			CASE
+				WHEN c.data_type = 'USER-DEFINED' THEN c.udt_name
+				ELSE c.data_type
+			END AS data_type,
+			c.is_nullable,
+			c.column_default,
+			CASE
+				WHEN c.data_type = 'USER-DEFINED'
+					AND EXISTS (
+						SELECT 1
+						FROM pg_type t
+						JOIN pg_namespace n ON n.oid = t.typnamespace
+						WHERE t.typname = c.udt_name
+						  AND n.nspname = c.udt_schema
+						  AND t.typtype = 'e'
+					)
+				THEN c.udt_name
+				ELSE ''
+			END AS enum_type
+		FROM information_schema.columns c
+		WHERE c.table_name = $1
+		AND c.table_schema = 'public'
+		ORDER BY c.ordinal_position
 	`
 
 	rows, err := si.db.Query(query, tableName)
@@ -123,13 +141,15 @@ func (si *SchemaInspector) getPostgresTableSchema(tableName string) (*TableSchem
 	for rows.Next() {
 		var col ColumnInfo
 		var nullable string
+		var enumType string
 
-		err := rows.Scan(&col.Name, &col.Type, &nullable, &col.Default)
+		err := rows.Scan(&col.Name, &col.Type, &nullable, &col.Default, &enumType)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan column: %w", err)
 		}
 
 		col.Nullable = (nullable == "YES")
+		col.EnumType = strings.TrimSpace(enumType)
 		schema.Columns = append(schema.Columns, col)
 	}
 
@@ -344,6 +364,67 @@ func (si *SchemaInspector) getMySQLTableTriggers(tableName string) ([]TriggerInf
 	return triggers, rows.Err()
 }
 
+// GetColumnDependentTriggers returns triggers on tableName that are explicitly
+// bound to the provided columns (for example PostgreSQL UPDATE OF col triggers).
+func (si *SchemaInspector) GetColumnDependentTriggers(tableName string, columnNames []string) ([]TriggerInfo, error) {
+	if len(columnNames) == 0 {
+		return nil, nil
+	}
+
+	switch si.dialect {
+	case PostgreSQL:
+		return si.getPostgresColumnDependentTriggers(tableName, columnNames)
+	case MySQL, MariaDB:
+		// MySQL does not support UPDATE OF <column>-style trigger binding.
+		return nil, nil
+	default:
+		return nil, fmt.Errorf("unsupported dialect for trigger dependency inspection: %s", si.dialect)
+	}
+}
+
+func (si *SchemaInspector) getPostgresColumnDependentTriggers(tableName string, columnNames []string) ([]TriggerInfo, error) {
+	placeholders := make([]string, len(columnNames))
+	args := make([]interface{}, 0, len(columnNames)+1)
+	args = append(args, tableName)
+	for i, c := range columnNames {
+		placeholders[i] = fmt.Sprintf("$%d", i+2)
+		args = append(args, c)
+	}
+
+	query := fmt.Sprintf(`
+		SELECT DISTINCT
+			tg.tgname,
+			cls.relname
+		FROM pg_trigger tg
+		JOIN pg_class cls ON cls.oid = tg.tgrelid
+		JOIN pg_namespace n ON n.oid = cls.relnamespace
+		JOIN LATERAL unnest(tg.tgattr::smallint[]) AS att(attnum) ON TRUE
+		JOIN pg_attribute a ON a.attrelid = cls.oid AND a.attnum = att.attnum
+		WHERE n.nspname = 'public'
+		  AND cls.relname = $1
+		  AND NOT tg.tgisinternal
+		  AND a.attname IN (%s)
+		ORDER BY tg.tgname
+	`, strings.Join(placeholders, ", "))
+
+	rows, err := si.db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query column-dependent triggers: %w", err)
+	}
+	defer rows.Close()
+
+	var triggers []TriggerInfo
+	for rows.Next() {
+		var trig TriggerInfo
+		if err := rows.Scan(&trig.Name, &trig.TableName); err != nil {
+			return nil, err
+		}
+		triggers = append(triggers, trig)
+	}
+
+	return triggers, rows.Err()
+}
+
 // GetTableConstraints retrieves all foreign-key constraints for a table from the DB.
 func (si *SchemaInspector) GetTableConstraints(tableName string) ([]ConstraintInfo, error) {
 	switch si.dialect {
@@ -540,6 +621,13 @@ func (si *SchemaInspector) DetectDrift(tableName string, expectedColumns []Colum
 // DROP COLUMN statements are not blocked by dependent indexes.
 func (si *SchemaInspector) GenerateAlterStatements(drift *SchemaDrift) []string {
 	var statements []string
+	seenEnums := make(map[string]bool)
+
+	// ExtraConstraints: drop orphaned FK constraints before dropping columns.
+	statements = append(statements, si.GenerateDropConstraintStatements(drift)...)
+
+	// ExtraTriggers: drop triggers explicitly bound to orphaned columns.
+	statements = append(statements, si.GenerateDropTriggerStatements(drift)...)
 
 	// ExtraIndexes: drop indexes that cover orphaned columns before dropping the columns.
 	for _, idx := range drift.ExtraIndexes {
@@ -555,6 +643,17 @@ func (si *SchemaInspector) GenerateAlterStatements(drift *SchemaDrift) []string 
 		statements = append(statements,
 			fmt.Sprintf("ALTER TABLE %s DROP COLUMN IF EXISTS %s;",
 				drift.Table, col.Name))
+
+		if si.dialect == PostgreSQL {
+			enumType := strings.TrimSpace(col.EnumType)
+			if enumType != "" {
+				k := strings.ToLower(enumType)
+				if !seenEnums[k] {
+					seenEnums[k] = true
+					statements = append(statements, GenerateDropEnumIfUnusedSQL(enumType))
+				}
+			}
+		}
 	}
 
 	// MissingColumns: columns defined in migration files but absent from the DB.
@@ -606,6 +705,25 @@ func (si *SchemaInspector) GenerateAlterStatements(drift *SchemaDrift) []string 
 	}
 
 	return statements
+}
+
+// GenerateDropTriggerStatements generates DROP TRIGGER statements for triggers
+// that are now orphaned because they are bound to columns being dropped.
+func (si *SchemaInspector) GenerateDropTriggerStatements(drift *SchemaDrift) []string {
+	if len(drift.ExtraTriggers) == 0 {
+		return nil
+	}
+
+	var stmts []string
+	for _, trig := range drift.ExtraTriggers {
+		if si.dialect == MySQL || si.dialect == MariaDB {
+			stmts = append(stmts, fmt.Sprintf("DROP TRIGGER IF EXISTS %s;", trig.Name))
+			continue
+		}
+		stmts = append(stmts, fmt.Sprintf("DROP TRIGGER IF EXISTS %s ON %s;", trig.Name, trig.TableName))
+	}
+
+	return stmts
 }
 
 // GenerateCreateIndexStatements generates CREATE INDEX statements for missing indexes.

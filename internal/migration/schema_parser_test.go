@@ -173,6 +173,71 @@ ALTER TABLE users DROP COLUMN temp_col;
 	}
 }
 
+// TestExtractColumnsFromSQL_ColumnNamedKey ensures a column literally named
+// "key" is not silently dropped by the MySQL KEY-index skip pattern.
+func TestExtractColumnsFromSQL_ColumnNamedKey(t *testing.T) {
+	sql := `
+CREATE TABLE site_settings (
+    key VARCHAR(100) PRIMARY KEY,
+    value TEXT NOT NULL,
+    description TEXT
+);
+`
+	result := extractColumnsFromSQL(sql)
+	cols, ok := result["site_settings"]
+	if !ok {
+		t.Fatal("expected 'site_settings' table in result")
+	}
+	colSet := make(map[string]bool)
+	for _, c := range cols {
+		colSet[c] = true
+	}
+	if !colSet["key"] {
+		t.Errorf("column 'key' was incorrectly omitted; got columns: %v", cols)
+	}
+	for _, want := range []string{"value", "description"} {
+		if !colSet[want] {
+			t.Errorf("missing expected column %q; got: %v", want, cols)
+		}
+	}
+}
+
+// TestExtractColumnsFromSQL_MySQLKeyIndex ensures a MySQL KEY index declaration
+// is still correctly skipped and not returned as a column name.
+func TestExtractColumnsFromSQL_MySQLKeyIndex(t *testing.T) {
+	// MySQL-style CREATE TABLE with KEY index declarations.
+	sql := `
+CREATE TABLE orders (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    user_id BIGINT NOT NULL,
+    status VARCHAR(50) NOT NULL,
+    PRIMARY KEY (id),
+    KEY idx_user_id (user_id),
+    KEY (status)
+);
+`
+	result := extractColumnsFromSQL(sql)
+	cols, ok := result["orders"]
+	if !ok {
+		t.Fatal("expected 'orders' table in result")
+	}
+	colSet := make(map[string]bool)
+	for _, c := range cols {
+		colSet[c] = true
+	}
+	for _, want := range []string{"id", "user_id", "status"} {
+		if !colSet[want] {
+			t.Errorf("missing expected column %q; got: %v", want, cols)
+		}
+	}
+	// KEY index entries must not appear as column names.
+	for _, bad := range []string{"key", "idx_user_id"} {
+		if colSet[bad] {
+			t.Errorf("index keyword %q should not appear as a column; got: %v", bad, cols)
+		}
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Tests for NOT NULL / DEFAULT / UNIQUE constraint extraction
 // ---------------------------------------------------------------------------

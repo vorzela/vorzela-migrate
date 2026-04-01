@@ -223,3 +223,46 @@ BEGIN
   END IF;
 END $$;`, safeName, name, createList, alterBlock)
 }
+
+// GenerateDropEnumIfUnusedSQL returns a guarded PostgreSQL DO block that
+// attempts to drop an enum type only when no table columns in public schema
+// reference it anymore. It never uses CASCADE.
+//
+// If the enum still has non-column dependents (for example function signatures),
+// PostgreSQL may raise dependent_objects_still_exist; that exception is trapped
+// so sync flows can continue without failing the whole run.
+func GenerateDropEnumIfUnusedSQL(name string) string {
+	safeName := strings.ReplaceAll(name, "'", "''")
+
+	return fmt.Sprintf(`DO $$
+BEGIN
+	IF EXISTS (
+		SELECT 1
+		FROM pg_type t
+		JOIN pg_namespace n ON n.oid = t.typnamespace
+		WHERE t.typname = '%s'
+			AND n.nspname = 'public'
+			AND t.typtype = 'e'
+	)
+	AND NOT EXISTS (
+		SELECT 1
+		FROM pg_attribute a
+		JOIN pg_class c ON c.oid = a.attrelid
+		JOIN pg_namespace n ON n.oid = c.relnamespace
+		JOIN pg_type t ON t.oid = a.atttypid
+		WHERE n.nspname = 'public'
+			AND c.relkind = 'r'
+			AND a.attnum > 0
+			AND NOT a.attisdropped
+			AND t.typtype = 'e'
+			AND t.typname = '%s'
+	) THEN
+		BEGIN
+			EXECUTE format('DROP TYPE IF EXISTS %%I', '%s');
+		EXCEPTION
+			WHEN dependent_objects_still_exist THEN
+				NULL;
+		END;
+	END IF;
+END $$;`, safeName, safeName, safeName)
+}

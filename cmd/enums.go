@@ -126,12 +126,12 @@ var EnumsCommand = &cli.Command{
 					if !exists {
 						continue
 					}
-					dropSQL := fmt.Sprintf("DROP TYPE IF EXISTS %s CASCADE;", name)
+					dropSQL := migration.GenerateDropEnumIfUnusedSQL(name)
 					if err := db.Exec(ctx, dropSQL); err != nil {
 						output.Warning("Failed to drop enum '%s': %v", name, err)
 						continue
 					}
-					output.Info("↓ Removed disabled enum: %s", name)
+					output.Info("↓ Removed disabled enum if unused: %s", name)
 				}
 
 				if len(enabled) == 0 && len(disabled) == 0 {
@@ -214,18 +214,18 @@ var EnumsCommand = &cli.Command{
 							output.Info("Skipped: %s", name)
 							continue
 						}
-						dropSQL := fmt.Sprintf("DROP TYPE IF EXISTS %s CASCADE;", name)
+						dropSQL := migration.GenerateDropEnumIfUnusedSQL(name)
 						if err := db.Exec(ctx, dropSQL); err != nil {
 							output.Error("Failed to drop '%s': %v", name, err)
 							continue
 						}
-						output.Success("Dropped: %s", name)
+						output.Success("Dropped if unused: %s", name)
 					}
 					return nil
 				}
 
 				if !c.Bool("force") {
-					output.Warning("⚠️  This will drop %d enum type(s) with CASCADE.", len(enabled))
+					output.Warning("⚠️  This will attempt to drop %d enum type(s) only when unused.", len(enabled))
 					fmt.Print("Are you sure? [y/N]: ")
 					var resp string
 					fmt.Scanln(&resp)
@@ -237,12 +237,12 @@ var EnumsCommand = &cli.Command{
 
 				output.Info("Dropping enum types...")
 				for _, name := range enabled {
-					dropSQL := fmt.Sprintf("DROP TYPE IF EXISTS %s CASCADE;", name)
+					dropSQL := migration.GenerateDropEnumIfUnusedSQL(name)
 					if err := db.Exec(ctx, dropSQL); err != nil {
 						output.Error("Failed to drop '%s': %v", name, err)
 						continue
 					}
-					output.Success("Dropped: %s", name)
+					output.Success("Dropped if unused: %s", name)
 				}
 				return nil
 			},

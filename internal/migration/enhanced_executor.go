@@ -625,20 +625,25 @@ func (e *EnhancedExecutor) detectAndHandleDrift(opts MigrationOptions, executedF
 
 		if len(drift.AddedColumns) > 0 {
 			var names []string
+			orphanedSet := make(map[string]bool, len(drift.AddedColumns))
+			orphanedNames := make([]string, 0, len(drift.AddedColumns))
 			for _, c := range drift.AddedColumns {
 				names = append(names, c.Name)
+				lc := strings.ToLower(c.Name)
+				orphanedSet[lc] = true
+				orphanedNames = append(orphanedNames, c.Name)
 			}
 			e.logger.Warning("Schema drift in table '%s': columns in DB not defined in any migration (will be dropped): %v",
 				table, names)
 			e.logger.Warning("Action required: column(s) %v in table '%s' exist in the database but have no migration definition. Create a new migration to drop them, or add their definitions to an existing migration if they should be kept.",
 				names, table)
+			if e.inspector.dialect == PostgreSQL {
+				e.logger.Warning("Advisory: review trigger/function bodies for references to column(s) %v on table '%s'. Metadata checks cannot reliably detect all body-level dependencies.",
+					names, table)
+			}
 
 			// Detect indexes in the DB that cover only orphaned columns — they must
 			// be dropped before the columns themselves can be removed.
-			orphanedSet := make(map[string]bool, len(drift.AddedColumns))
-			for _, c := range drift.AddedColumns {
-				orphanedSet[strings.ToLower(c.Name)] = true
-			}
 			actualIdxs, idxErr := e.inspector.GetTableIndexes(table)
 			if idxErr != nil {
 				e.logger.Debug("Failed to fetch indexes for orphaned-column check on %s: %v", table, idxErr)
@@ -650,6 +655,42 @@ func (e *EnhancedExecutor) detectAndHandleDrift(opts MigrationOptions, executedF
 							idx.Name, table, idx.Columns)
 						drift.ExtraIndexes = append(drift.ExtraIndexes, idx)
 					}
+				}
+			}
+
+			// Detect FK constraints in DB that reference only orphaned columns.
+			actualCIs, ciErr := e.inspector.GetTableConstraints(table)
+			if ciErr != nil {
+				e.logger.Debug("Failed to fetch constraints for orphaned-column check on %s: %v", table, ciErr)
+			} else {
+				for _, ci := range actualCIs {
+					if len(ci.Columns) == 0 {
+						continue
+					}
+					allOrphaned := true
+					for _, c := range ci.Columns {
+						if !orphanedSet[strings.ToLower(c)] {
+							allOrphaned = false
+							break
+						}
+					}
+					if allOrphaned {
+						e.logger.Warning("FK constraint '%s' on table '%s' references only orphaned column(s) and will be dropped",
+							ci.Name, table)
+						drift.ExtraConstraints = append(drift.ExtraConstraints, ci)
+					}
+				}
+			}
+
+			// Detect triggers explicitly bound to orphaned columns (PostgreSQL UPDATE OF ...).
+			depTrigs, trigErr := e.inspector.GetColumnDependentTriggers(table, orphanedNames)
+			if trigErr != nil {
+				e.logger.Debug("Failed to fetch column-dependent triggers on %s: %v", table, trigErr)
+			} else {
+				for _, trig := range depTrigs {
+					e.logger.Warning("Trigger '%s' on table '%s' is bound to orphaned column(s) and will be dropped",
+						trig.Name, table)
+					drift.ExtraTriggers = append(drift.ExtraTriggers, trig)
 				}
 			}
 		}
@@ -724,7 +765,8 @@ func (e *EnhancedExecutor) detectAndHandleDrift(opts MigrationOptions, executedF
 
 		if len(drift.AddedColumns) > 0 || len(drift.MissingColumns) > 0 ||
 			len(drift.MissingIndexes) > 0 || len(drift.ExtraIndexes) > 0 ||
-			len(drift.MissingTriggers) > 0 || len(drift.MissingConstraints) > 0 {
+			len(drift.MissingTriggers) > 0 || len(drift.ExtraTriggers) > 0 ||
+			len(drift.MissingConstraints) > 0 || len(drift.ExtraConstraints) > 0 {
 			drifts = append(drifts, drift)
 		}
 	}

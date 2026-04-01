@@ -2,6 +2,65 @@
 
 All notable changes to Vorzela Migration Tool are documented in this file.
 
+## [2.2.3] - 2026-04-01
+
+### Bug Fixes
+
+- **Schema parser: deep `columnSkipRe` fix for column named `key`** 🔧
+  - v2.2.2 removed `"key"` from `constraintKeywords`, but the column was still being dropped
+    earlier by `columnSkipRe` whose bare `KEY\b` alternative matched any line starting with the
+    word `key` before `isConstraintKeyword` was ever reached.
+  - Fix: the `KEY` branch in `columnSkipRe` is now a precise MySQL index-declaration pattern —
+    `KEY [name] (<identifier>…)` — that requires `(` to be immediately followed by an
+    identifier character. A column definition like `key VARCHAR(100) PRIMARY KEY` never matches
+    because its `(` is followed by the digit `1` (type precision), not a column identifier.
+  - Two regression tests added: one that asserts a `key` column is retained, one that asserts
+    MySQL `KEY idx (col)` index lines are still correctly skipped.
+
+- **Drift: dependency-safe dropped-column ordering** 🔗
+  - `ALTER TABLE … DROP COLUMN` for orphaned (DB-only) columns now always emits prerequisite
+    drop statements first, preventing runtime errors when the column has dependents:
+    1. `ALTER TABLE … DROP CONSTRAINT` — FK constraints whose columns are all orphaned.
+    2. `DROP TRIGGER … ON …` — triggers explicitly column-bound via `UPDATE OF col` (PostgreSQL
+       `pg_trigger.tgattr`).
+    3. `DROP INDEX` — indexes whose columns are all orphaned (existing behaviour, unchanged).
+    4. `ALTER TABLE … DROP COLUMN` — the column itself.
+  - New `SchemaDrift.ExtraTriggers []TriggerInfo` field tracks column-bound triggers that must
+    be removed before the `DROP COLUMN` is issued.
+  - New `SchemaInspector.GetColumnDependentTriggers` queries `pg_trigger.tgattr` to find
+    triggers explicitly bound to the affected columns. MySQL/MariaDB returns nil (no `UPDATE OF`
+    support).
+  - New `SchemaInspector.GenerateDropTriggerStatements` emits `DROP TRIGGER IF EXISTS … ON …`
+    (PostgreSQL) or `DROP TRIGGER IF EXISTS …` (MySQL/MariaDB).
+  - `detectAndHandleDrift` in the enhanced executor now also inspects FK constraints on orphaned
+    columns and populates `SchemaDrift.ExtraConstraints` in the same pass.
+  - An advisory warning is emitted on PostgreSQL whenever columns are about to be dropped,
+    reminding users that trigger/function *bodies* may reference the removed column — a
+    dependency that pg_catalog metadata cannot fully reflect.
+
+- **Drift: enum-typed orphan columns emit guarded `DROP TYPE` cleanup** 🗂️
+  - When drift drops a column whose PostgreSQL type is an enum, a guarded SQL block is appended
+    that attempts `DROP TYPE <enum>` only when no other table column still uses the type.
+  - The guard queries `pg_attribute` at runtime so the enum is never dropped while still in use.
+  - The `dependent_objects_still_exist` exception is trapped so the cleanup never aborts the
+    wider drift-fix transaction.
+  - Deduplicated: if multiple orphaned columns share the same enum type, only one cleanup block
+    is emitted.
+  - `ColumnInfo` gains an `EnumType string` field; the PostgreSQL schema query now resolves
+    `USER-DEFINED` column types to their underlying `pg_type.typname` and marks enum types.
+
+- **Enums: replaced `DROP TYPE … CASCADE` with safe guarded drop** 🔒
+  - All enum-drop paths (`vm enums migrate`, `vm enums drop`, and the auto-run sync in
+    `vm migrate`) previously used `DROP TYPE … CASCADE`, which could silently remove unrelated
+    columns in other tables that still used the type.
+  - New `GenerateDropEnumIfUnusedSQL` helper generates a PostgreSQL `DO` block that:
+    - Verifies the enum type exists.
+    - Verifies no `public` schema table column still uses it.
+    - Issues `DROP TYPE IF EXISTS` (no CASCADE) only when both conditions pass.
+    - Catches `dependent_objects_still_exist` and continues without error.
+
+---
+
 ## [2.2.2] - 2026-03-27
 
 ### Bug Fixes

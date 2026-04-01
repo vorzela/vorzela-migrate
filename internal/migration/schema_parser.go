@@ -286,7 +286,21 @@ func findMatchingParen(s string, openPos int) int {
 	return -1
 }
 
-var columnSkipRe = regexp.MustCompile(`(?i)^\s*(CONSTRAINT|PRIMARY\s+KEY|FOREIGN\s+KEY|UNIQUE\s+KEY|UNIQUE\s+INDEX|INDEX|CHECK|KEY)\b`)
+// columnSkipRe matches lines inside a CREATE TABLE body that are table-level
+// constraint / index declarations rather than column definitions.
+//
+// The standalone KEY alternative is written as a precise MySQL index pattern:
+//
+//	KEY [index_name] (<col_list>)
+//
+// where the char immediately after '(' is an identifier character (letter,
+// underscore, or quote).  This prevents a column *named* "key" (e.g.
+//
+//	key VARCHAR(100) PRIMARY KEY
+//
+// ) from matching, because in that form the '(' belongs to the type precision
+// (e.g. VARCHAR(100)) and is always followed by a digit, not an identifier.
+var columnSkipRe = regexp.MustCompile(`(?i)^\s*(CONSTRAINT\b|PRIMARY\s+KEY\b|FOREIGN\s+KEY\b|UNIQUE\s+KEY\b|UNIQUE\s+INDEX\b|INDEX\b|CHECK\b|KEY\b\s*(?:[^\s(),]+\s+)?\(\s*[A-Za-z_` + "`" + `"])`)
 
 // parseCreateTableColumns splits a CREATE TABLE body by comma (at depth 0)
 // and extracts column names, ignoring constraint/key lines.

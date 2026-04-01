@@ -130,6 +130,69 @@ func TestGenerateAlterStatements_ExtraIndexesDroppedFirst(t *testing.T) {
 	}
 }
 
+func TestGenerateAlterStatements_ExtraDependenciesDroppedBeforeColumn(t *testing.T) {
+	inspector := &SchemaInspector{dialect: PostgreSQL}
+
+	drift := &SchemaDrift{
+		Table: "users",
+		ExtraConstraints: []ConstraintInfo{
+			{Name: "fk_users_profile_id", TableName: "users"},
+		},
+		ExtraTriggers: []TriggerInfo{
+			{Name: "trg_users_profile_id_audit", TableName: "users"},
+		},
+		ExtraIndexes: []IndexInfo{
+			{Name: "idx_users_profile_id", TableName: "users", Columns: []string{"profile_id"}, IsUnique: false, IndexType: "btree"},
+		},
+		AddedColumns: []ColumnInfo{
+			{Name: "profile_id", Type: "bigint", Nullable: true},
+		},
+	}
+
+	statements := inspector.GenerateAlterStatements(drift)
+
+	if len(statements) < 4 {
+		t.Fatalf("Expected at least 4 statements (DROP CONSTRAINT + DROP TRIGGER + DROP INDEX + DROP COLUMN), got %d: %v", len(statements), statements)
+	}
+
+	if !strings.Contains(strings.ToUpper(statements[0]), "DROP CONSTRAINT") {
+		t.Errorf("Expected first statement to be DROP CONSTRAINT, got: %s", statements[0])
+	}
+	if !strings.Contains(strings.ToUpper(statements[1]), "DROP TRIGGER") {
+		t.Errorf("Expected second statement to be DROP TRIGGER, got: %s", statements[1])
+	}
+	if !strings.Contains(strings.ToUpper(statements[2]), "DROP INDEX") {
+		t.Errorf("Expected third statement to be DROP INDEX, got: %s", statements[2])
+	}
+	if !strings.Contains(strings.ToUpper(statements[3]), "DROP COLUMN") {
+		t.Errorf("Expected fourth statement to be DROP COLUMN, got: %s", statements[3])
+	}
+}
+
+func TestGenerateAlterStatements_AddedEnumColumnEmitsDropIfUnused(t *testing.T) {
+	inspector := &SchemaInspector{dialect: PostgreSQL}
+
+	drift := &SchemaDrift{
+		Table: "users",
+		AddedColumns: []ColumnInfo{
+			{Name: "status", Type: "user_status", EnumType: "user_status", Nullable: true},
+		},
+	}
+
+	statements := inspector.GenerateAlterStatements(drift)
+
+	if len(statements) < 2 {
+		t.Fatalf("Expected at least 2 statements (DROP COLUMN + enum cleanup), got %d: %v", len(statements), statements)
+	}
+
+	if !strings.Contains(strings.ToUpper(statements[0]), "DROP COLUMN") {
+		t.Errorf("Expected first statement to be DROP COLUMN, got: %s", statements[0])
+	}
+	if !strings.Contains(statements[1], "DROP TYPE IF EXISTS") || !strings.Contains(statements[1], "user_status") {
+		t.Errorf("Expected guarded enum cleanup statement for user_status, got: %s", statements[1])
+	}
+}
+
 func TestIndexCoveredByOrphans(t *testing.T) {
 	orphanedSet := map[string]bool{"old_col": true, "extra_col": true}
 
@@ -518,6 +581,48 @@ func TestGenerateDropConstraintStatements_MySQL(t *testing.T) {
 	stmt := stmts[0]
 	if !strings.Contains(strings.ToUpper(stmt), "DROP FOREIGN KEY") {
 		t.Errorf("expected DROP FOREIGN KEY (MySQL), got: %s", stmt)
+	}
+}
+
+func TestGenerateDropTriggerStatements_Postgres(t *testing.T) {
+	inspector := &SchemaInspector{dialect: PostgreSQL}
+	drift := &SchemaDrift{
+		Table: "users",
+		ExtraTriggers: []TriggerInfo{
+			{Name: "trg_users_audit", TableName: "users"},
+		},
+	}
+	stmts := inspector.GenerateDropTriggerStatements(drift)
+	if len(stmts) != 1 {
+		t.Fatalf("want 1 statement, got %d: %v", len(stmts), stmts)
+	}
+	stmt := stmts[0]
+	if !strings.Contains(strings.ToUpper(stmt), "DROP TRIGGER") {
+		t.Errorf("expected DROP TRIGGER, got: %s", stmt)
+	}
+	if !strings.Contains(strings.ToUpper(stmt), " ON USERS") {
+		t.Errorf("expected Postgres trigger drop to include ON <table>, got: %s", stmt)
+	}
+}
+
+func TestGenerateDropTriggerStatements_MySQL(t *testing.T) {
+	inspector := &SchemaInspector{dialect: MySQL}
+	drift := &SchemaDrift{
+		Table: "users",
+		ExtraTriggers: []TriggerInfo{
+			{Name: "trg_users_audit", TableName: "users"},
+		},
+	}
+	stmts := inspector.GenerateDropTriggerStatements(drift)
+	if len(stmts) != 1 {
+		t.Fatalf("want 1 statement, got %d: %v", len(stmts), stmts)
+	}
+	stmt := stmts[0]
+	if !strings.Contains(strings.ToUpper(stmt), "DROP TRIGGER") {
+		t.Errorf("expected DROP TRIGGER, got: %s", stmt)
+	}
+	if strings.Contains(strings.ToUpper(stmt), " ON USERS") {
+		t.Errorf("MySQL trigger drop should not include ON <table>, got: %s", stmt)
 	}
 }
 

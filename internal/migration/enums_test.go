@@ -157,3 +157,23 @@ CREATE TYPE order_status AS ENUM (
 		t.Errorf("expected %d values, got %d: %v", wantCount, len(vals), vals)
 	}
 }
+
+func TestGenerateDropEnumIfUnusedSQL(t *testing.T) {
+	sql := GenerateDropEnumIfUnusedSQL("user_status")
+
+	if sql == "" {
+		t.Fatal("expected non-empty SQL")
+	}
+	if !strings.Contains(sql, "NOT EXISTS") {
+		t.Errorf("expected usage guard (NOT EXISTS), got:\n%s", sql)
+	}
+	if !strings.Contains(sql, "DROP TYPE IF EXISTS") {
+		t.Errorf("expected DROP TYPE statement, got:\n%s", sql)
+	}
+	if !strings.Contains(sql, "dependent_objects_still_exist") {
+		t.Errorf("expected guarded exception handler, got:\n%s", sql)
+	}
+	if !strings.Contains(sql, "user_status") {
+		t.Errorf("expected enum name in generated SQL, got:\n%s", sql)
+	}
+}
