@@ -2,6 +2,15 @@
 
 All notable changes to Vorzela Migration Tool are documented in this file.
 
+## [2.2.4] - 2026-04-06
+
+### Bug Fixes
+
+- **`vm functions migrate`: auto-create template when `functions.sql` is missing** 🔧
+  - Previously the command errored with `open db/schema/functions.sql: no such file or directory`.
+  - Now mirrors the behaviour of `vm enums migrate`: if `functions.sql` does not exist, a
+    template is created and the user is prompted to customise it before running the command again.
+
 ## [2.2.3] - 2026-04-01
 
 ### Bug Fixes

@@ -57,10 +57,18 @@ var FunctionsCommand = &cli.Command{
 
 				// Read functions.sql file
 				functionsPath := filepath.Join(cfg.MigrationPath, "functions.sql")
+				if _, statErr := os.Stat(functionsPath); os.IsNotExist(statErr) {
+					output.Info("functions.sql not found, creating template...")
+					if err := migration.EnsureFunctionsFile(cfg.MigrationPath); err != nil {
+						output.Error(err.Error())
+						return err
+					}
+					output.Info("Edit functions.sql and add the functions you need, then run this command again.")
+					return nil
+				}
 				sqlContent, err := os.ReadFile(functionsPath)
 				if err != nil {
 					output.Error(fmt.Sprintf("Failed to read %s: %v", functionsPath, err))
-					output.Info("Tip: The functions.sql file should be in your configured migration path")
 					return err
 				}
 
