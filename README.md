@@ -47,7 +47,7 @@
 
 - 🎨 **Colorized Output** - Beautiful, easy-to-read colored terminal output
 - ⚙️ **Multiple Configuration Methods** - `.vm` config files, `.env` files, or environment variables
-- 🖍️ **`.vm` Editor Support** - Syntax highlighting, key hover docs, and live lint (VS Code/Cursor) — see [`editors/`](editors/README.md)
+- 🖍️ **`.vm` Editor Support** - Syntax highlighting, key hover docs, live lint, Ctrl+Space (VS Code/Cursor) — run `./editors/install.sh` once; see [`editors/`](editors/README.md)
 - 🚀 **No DSN Flag Required** - Use config files instead of repeating `--dsn` flag
 - 🐘 **Multi-Database Support** - PostgreSQL and MySQL/MariaDB with automatic detection
 - 📦 **Batch Tracking** - Organized rollback with batch numbers
@@ -907,7 +907,11 @@ This gives you:
 
 ## Configuration
 
-> **Editor highlighting:** Syntax coloring, **hover docs**, **Ctrl+Space** key list, and **live lint** for `.vm` files live in [`editors/`](editors/README.md). **Not automatic** — install once with `./editors/vscode/install.sh` (Cursor/VS Code) or follow that README for other editors.
+> **Editor highlighting:** Syntax coloring, **hover docs**, **Ctrl+Space** key list, and **live lint** for `.vm` files live in [`editors/`](editors/README.md). **Not automatic on clone** — run once:
+> ```bash
+> ./editors/install.sh          # auto-detects Cursor, VS Code, Sublime, Vim, Nano, …
+> ./editors/install.sh --list   # dry-run
+> ```
 >
 > - **Required key:** `DATABASE_URL` (hover explains formats; missing/empty is flagged)
 > - **Unknown keys:** red error underline + “did you mean …?” (same as `vm lint`)

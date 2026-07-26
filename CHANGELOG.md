@@ -2,6 +2,43 @@
 
 All notable changes to Vorzela Migration Tool are documented in this file.
 
+## [2.2.5] - 2026-07-26
+
+### Features
+
+- **Dialect-aware `vm make migration` scaffolds** 🗄️
+  - `DATABASE_URL` dialect drives generated SQL: PostgreSQL (`BIGSERIAL`, `TIMESTAMPTZ`,
+    `EXECUTE FUNCTION` triggers) vs MySQL/MariaDB (`BIGINT AUTO_INCREMENT`, `TIMESTAMP`,
+    single-statement `SET NEW.updated_at` triggers, no `DROP … CASCADE`).
+  - Helpers live in `internal/migration/dialect.go`; `cmd/make.go` passes `DetectDialect`.
+
+- **Online / zero-downtime DDL for MariaDB** ⚡
+  - `--online` now treats dialect `mariadb` like `mysql` (`ALGORITHM=INSTANT` /
+    `INPLACE` paths for add/drop column and version checks).
+
+- **LLM / agent guidance for thin migration history** 🤖
+  - `LLM.md` §1.1 decision tree: prefer edit `create_*_table` +
+    `vm migrate --force --detect-drift` (or `vm fresh`) over stacks of `add_` files.
+  - New §5.1 documents `vm migrate --force` (checksum override) vs other `--force` flags.
+  - Project skills under `.cursor/skills/` (`vorzela-migrate`, `vorzela-dialects`,
+    `vorzela-codebase`).
+
+- **`.vm` editor support** 🖍️
+  - VS Code / Cursor extension: syntax colors, **hover docs** (required vs optional keys),
+    **live lint** (unknown keys / invalid values — same rules as `vm lint`),
+    **Ctrl+Space** key completions.
+  - Grammars / configs for Sublime, Vim/Neovim, Nano, Helix, JetBrains TextMate, Zed notes.
+  - **`./editors/install.sh`** auto-detects installed editors and links configs
+    (`--list` dry-run, `--vscode` for Cursor/VS Code only). `editors/vscode/install.sh`
+    remains as a thin wrapper.
+
+### Documentation
+
+- README and `editors/README.md` clarify that editor support is **not** automatic on clone;
+  run `./editors/install.sh` once per machine.
+
+---
+
 ## [2.2.4] - 2026-04-06
 
 ### Bug Fixes

@@ -4,14 +4,27 @@ Editor support for Vorzela Migrate config files (`.vm` / `*.vm`).
 
 ## Does it install automatically?
 
-**No.** Checking out this repo does **not** auto-enable the extension for Cursor/VS Code (or other editors). You install once per machine:
+**No on clone** — but one script detects editors on your machine and installs:
 
-| Editor | Auto? | What to do |
-|--------|-------|------------|
-| **Cursor / VS Code** | No | Run [`vscode/install.sh`](vscode/install.sh) (or symlink — below) |
-| Sublime / Vim / Nano / Helix / JetBrains / Zed | No | Follow that editor’s section below |
+```bash
+./editors/install.sh          # all detected editors
+./editors/install.sh --list   # dry-run
+./editors/install.sh --vscode # Cursor / VS Code / VSCodium only
+```
 
-Workspace [`.vscode/settings.json`](../.vscode/settings.json) only maps `.vm` → language id `vorzela-vm`. That coloring/lint/hover works **after** the extension is installed.
+| Editor | Auto via `install.sh`? | Notes |
+|--------|------------------------|-------|
+| **Cursor / VS Code / Insiders / VSCodium** | Yes | Symlinks `editors/vscode` extension |
+| **Sublime Text** | Yes | Symlinks `.sublime-syntax` |
+| **Vim / Neovim** | Yes | Symlinks `ftdetect` + `syntax` |
+| **Nano** | Yes | Symlinks nanorc + appends `~/.nanorc` include |
+| **Helix** | Yes | Appends `vorzela-vm` to `languages.toml` |
+| **Zed** | Detected | Prints settings snippet (Ini map) |
+| **JetBrains** | Detected | Prints TextMate bundle path to add |
+
+`editors/vscode/install.sh` is a thin wrapper around `./editors/install.sh --vscode`.
+
+Workspace [`.vscode/settings.json`](../.vscode/settings.json) maps `.vm` → `vorzela-vm` once the extension is linked.
 
 ## Features (VS Code / Cursor)
 
@@ -48,8 +61,9 @@ Extension lives in [`vscode/`](vscode/). Includes highlighting **plus** hover + 
 ### One-shot install (from repo root)
 
 ```bash
-chmod +x editors/vscode/install.sh
-./editors/vscode/install.sh
+./editors/install.sh              # detect all editors
+# or:
+./editors/vscode/install.sh       # Cursor / VS Code family only
 # then: Developer: Reload Window
 ```
 
