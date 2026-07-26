@@ -1,0 +1,12 @@
+{
+  "files.associations": {
+    ".vm": "vorzela-vm",
+    "*.vm": "vorzela-vm"
+  },
+  "files.exclude": {},
+  "[vorzela-vm]": {
+    "editor.tabSize": 2,
+    "editor.insertSpaces": true,
+    "editor.autoIndent": "none"
+  }
+}

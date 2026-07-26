@@ -47,6 +47,7 @@
 
 - 🎨 **Colorized Output** - Beautiful, easy-to-read colored terminal output
 - ⚙️ **Multiple Configuration Methods** - `.vm` config files, `.env` files, or environment variables
+- 🖍️ **`.vm` Editor Support** - Syntax highlighting, key hover docs, and live lint (VS Code/Cursor) — see [`editors/`](editors/README.md)
 - 🚀 **No DSN Flag Required** - Use config files instead of repeating `--dsn` flag
 - 🐘 **Multi-Database Support** - PostgreSQL and MySQL/MariaDB with automatic detection
 - 📦 **Batch Tracking** - Organized rollback with batch numbers
@@ -905,6 +906,11 @@ This gives you:
 - ✅ Zero-downtime deployments
 
 ## Configuration
+
+> **Editor highlighting:** Syntax coloring, **hover docs**, and **live lint** for `.vm` files (VS Code/Cursor) live in [`editors/`](editors/README.md). Other editors get grammars under the same folder.
+>
+> - **Required key:** `DATABASE_URL` (hover explains formats; missing/empty is flagged)
+> - **Unknown keys:** red error underline + “did you mean …?” (same as `vm lint`)
 
 ### Three Ways to Configure
 

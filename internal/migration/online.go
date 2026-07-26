@@ -26,7 +26,7 @@ func (om *OnlineMigration) AddColumnOnline(ctx context.Context, table, column, c
 	switch om.dialect {
 	case PostgreSQL:
 		return om.addColumnPostgres(ctx, table, column, columnType, nullable, defaultValue)
-	case MySQL:
+	case MySQL, MariaDB:
 		return om.addColumnMySQL(ctx, table, column, columnType, nullable, defaultValue)
 	default:
 		return fmt.Errorf("online migrations not supported for dialect: %s", om.dialect)
@@ -79,7 +79,7 @@ func (om *OnlineMigration) addColumnPostgres(ctx context.Context, table, column,
 	return nil
 }
 
-// addColumnMySQL adds column using MySQL non-blocking technique (requires Percona/MySQL 8.0+)
+// addColumnMySQL adds a column using MySQL/MariaDB non-blocking DDL (ALGORITHM=INSTANT / INPLACE).
 func (om *OnlineMigration) addColumnMySQL(ctx context.Context, table, column, columnType string, nullable bool, defaultValue *string) error {
 	var addSQL string
 
@@ -179,8 +179,8 @@ func (om *OnlineMigration) DropColumnOnline(ctx context.Context, table, column s
 		if _, err := om.db.ExecContext(ctx, dropSQL); err != nil {
 			return fmt.Errorf("failed to drop column: %w", err)
 		}
-	case MySQL:
-		// Use ALGORITHM=INSTANT for MySQL 8.0.29+
+	case MySQL, MariaDB:
+		// ALGORITHM=INSTANT where supported (MySQL 8.0.29+ / recent MariaDB)
 		dropSQL := fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s, ALGORITHM=INSTANT", table, column)
 		if _, err := om.db.ExecContext(ctx, dropSQL); err != nil {
 			// Fall back to INPLACE
@@ -216,12 +216,11 @@ func (om *OnlineMigration) ValidateOnlineSupport() error {
 			return fmt.Errorf("failed to check PostgreSQL version: %w", err)
 		}
 		return nil
-	case MySQL:
-		// Check for InnoDB and version
+	case MySQL, MariaDB:
 		var version string
 		err := om.db.QueryRow("SELECT VERSION()").Scan(&version)
 		if err != nil {
-			return fmt.Errorf("failed to check MySQL version: %w", err)
+			return fmt.Errorf("failed to check %s version: %w", om.dialect, err)
 		}
 		return nil
 	default:

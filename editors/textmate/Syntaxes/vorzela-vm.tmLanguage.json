@@ -1,0 +1,100 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Vorzela VM",
+  "scopeName": "source.vorzela-vm",
+  "fileTypes": ["vm"],
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#assignment" },
+    { "include": "#invalid-line" }
+  ],
+  "repository": {
+    "comment": {
+      "name": "comment.line.number-sign.vorzela-vm",
+      "match": "#.*$"
+    },
+    "assignment": {
+      "name": "meta.assignment.vorzela-vm",
+      "begin": "^(\\s*)([A-Za-z_][A-Za-z0-9_]*)(\\s*)(=)(\\s*)",
+      "beginCaptures": {
+        "2": { "patterns": [{ "include": "#key" }] },
+        "3": { "name": "meta.whitespace.vorzela-vm" },
+        "4": { "name": "keyword.operator.assignment.vorzela-vm" },
+        "5": { "name": "meta.whitespace.vorzela-vm" }
+      },
+      "end": "$",
+      "patterns": [
+        { "include": "#comment" },
+        { "include": "#value" }
+      ]
+    },
+    "key": {
+      "patterns": [
+        {
+          "name": "keyword.other.known-key.vorzela-vm",
+          "match": "\\b(DATABASE_URL|MIGRATION_PATH|SQLC_SUPPORT|ENVIRONMENT|ENV|ENHANCED|ONLINE|VERIFY_CHECKSUMS|DETECT_DRIFT|VERBOSE|AUTO_RUN_EXTENSIONS|AUTO_RUN_FUNCTIONS|AUTO_RUN_ENUMS|DRIFT_HANDLING)\\b"
+        },
+        {
+          "name": "variable.other.key.vorzela-vm",
+          "match": "[A-Za-z_][A-Za-z0-9_]*"
+        }
+      ]
+    },
+    "value": {
+      "patterns": [
+        {
+          "name": "constant.language.boolean.vorzela-vm",
+          "match": "(?i)\\b(true|false|1|0)\\b(?=\\s*(#|$))"
+        },
+        {
+          "name": "constant.language.environment.vorzela-vm",
+          "match": "(?i)\\b(development|dev|develop|production|prod)\\b(?=\\s*(#|$))"
+        },
+        {
+          "name": "constant.language.drift-handling.vorzela-vm",
+          "match": "(?i)\\b(auto|prompt|reject)\\b(?=\\s*(#|$))"
+        },
+        {
+          "name": "string.unquoted.dsn.postgres.vorzela-vm",
+          "match": "(?i)\\b(postgres(?:ql)?)://[^\\s#]+"
+        },
+        {
+          "name": "string.unquoted.dsn.mysql.vorzela-vm",
+          "match": "(?i)\\bmysql://[^\\s#]+"
+        },
+        {
+          "name": "string.unquoted.dsn.tcp.vorzela-vm",
+          "match": "[^\\s#]*@tcp\\([^\\s#]+"
+        },
+        {
+          "name": "string.quoted.double.vorzela-vm",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            { "name": "constant.character.escape.vorzela-vm", "match": "\\\\." }
+          ]
+        },
+        {
+          "name": "string.quoted.single.vorzela-vm",
+          "begin": "'",
+          "end": "'",
+          "patterns": [
+            { "name": "constant.character.escape.vorzela-vm", "match": "\\\\." }
+          ]
+        },
+        {
+          "name": "string.unquoted.path.vorzela-vm",
+          "match": "\\./[^\\s#]+|/[^\\s#]+"
+        },
+        {
+          "name": "string.unquoted.value.vorzela-vm",
+          "match": "[^\\s#]+"
+        }
+      ]
+    },
+    "invalid-line": {
+      "name": "invalid.illegal.malformed.vorzela-vm",
+      "match": "^\\s*[^#\\s=][^\\n=]*$"
+    }
+  }
+}

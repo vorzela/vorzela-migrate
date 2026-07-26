@@ -1,0 +1,4 @@
+.vscode/**
+.vsixmanifest
+*.vsix
+node_modules

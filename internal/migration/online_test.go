@@ -11,6 +11,7 @@ func TestNewOnlineMigration(t *testing.T) {
 	}{
 		{"postgres online migration", PostgreSQL},
 		{"mysql online migration", MySQL},
+		{"mariadb online migration", MariaDB},
 	}
 
 	for _, tt := range tests {
@@ -41,7 +42,7 @@ func TestOnlineMigration_InitialState(t *testing.T) {
 }
 
 func TestOnlineMigration_DialectSupport(t *testing.T) {
-	supportedDialects := []Dialect{PostgreSQL, MySQL}
+	supportedDialects := []Dialect{PostgreSQL, MySQL, MariaDB}
 
 	for _, d := range supportedDialects {
 		om := NewOnlineMigration(nil, d)

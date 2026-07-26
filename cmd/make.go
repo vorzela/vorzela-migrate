@@ -154,11 +154,13 @@ var MakeCommand = &cli.Command{
 				}
 
 				migrationPath := cfg.MigrationPath
+				dialect := migration.DetectDialect(cfg.DatabaseURL)
 
 				// Create migration file
 				opts := migration.CreateMigrationOptions{
 					SoftDelete:    softDelete,
 					Triggers:      triggers,
+					Dialect:       dialect,
 					Relationships: relationships,
 					IsPivot:       isPivot,
 					PivotTables:   pivotTables,

@@ -99,6 +99,7 @@ func PivotTableName(table1, table2 string) string {
 
 // GeneratePivotMigration generates a complete many-to-many pivot table migration
 func GeneratePivotMigration(table1, table2 string, opts CreateMigrationOptions) string {
+	dialect := ResolveDialect(opts.Dialect)
 	now := time.Now().Format("2006-01-02 15:04:05")
 	pivotName := PivotTableName(table1, table2)
 	upperName := strings.ToUpper("CREATE_" + pivotName + "_TABLE")
@@ -114,13 +115,13 @@ func GeneratePivotMigration(table1, table2 string, opts CreateMigrationOptions) 
 
 	// Build column list
 	var columnParts []string
-	columnParts = append(columnParts, "    id BIGSERIAL PRIMARY KEY")
+	columnParts = append(columnParts, "    "+PrimaryKeyColumnSQL(dialect))
 	columnParts = append(columnParts, fmt.Sprintf("    %s BIGINT NOT NULL", fk1))
 	columnParts = append(columnParts, fmt.Sprintf("    %s BIGINT NOT NULL", fk2))
-	columnParts = append(columnParts, "    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP")
+	columnParts = append(columnParts, "    "+TimestampColumnSQL(dialect, "created_at"))
 
 	if opts.SoftDelete {
-		columnParts = append(columnParts, "    deleted_at TIMESTAMPTZ DEFAULT NULL")
+		columnParts = append(columnParts, "    "+SoftDeleteColumnSQL(dialect))
 	}
 
 	// Add constraints
@@ -156,21 +157,7 @@ CREATE INDEX IF NOT EXISTS idx_%s_%s ON %s(%s);`,
 	// Trigger section
 	var triggerUp, triggerDown string
 	if opts.Triggers {
-		funcName := "auto_update_timestamp"
-		if opts.SoftDelete {
-			funcName = "auto_update_with_soft_delete_protection"
-		}
-		triggerUp = fmt.Sprintf(`
-
--- Auto-update trigger (requires: vm functions migrate)
-DROP TRIGGER IF EXISTS trigger_%s_auto_update ON %s;
-CREATE TRIGGER trigger_%s_auto_update
-    BEFORE UPDATE ON %s
-    FOR EACH ROW
-    EXECUTE FUNCTION %s();`,
-			pivotName, pivotName, pivotName, pivotName, funcName)
-		triggerDown = fmt.Sprintf("\nDROP TRIGGER IF EXISTS trigger_%s_auto_update ON %s;\n",
-			pivotName, pivotName)
+		triggerUp, triggerDown = generateTriggerSQL(pivotName, opts.SoftDelete, dialect)
 	}
 
 	// Build goose markers if sqlc support enabled
@@ -193,10 +180,10 @@ CREATE TABLE IF NOT EXISTS %s (
 
 %s-- ⬇ Down (Run when rolling back)
 %s
-DROP TABLE IF EXISTS %s CASCADE;
+%s
 `, upperName, now, tables[0], tables[1],
 		gooseUp, pivotName, columns, indexes, triggerUp,
-		gooseDown, triggerDown, pivotName)
+		gooseDown, triggerDown, DropTableSQL(dialect, pivotName))
 }
 
 // RelationshipComment generates a comment line describing the relationships

@@ -1,6 +1,7 @@
 package migration
 
 import (
+	"fmt"
 	"strings"
 )
 
@@ -22,6 +23,57 @@ func DetectDialect(dsn string) Dialect {
 		return MySQL
 	}
 	return PostgreSQL
+}
+
+// ResolveDialect returns PostgreSQL when d is empty (scaffold / opts default).
+func ResolveDialect(d Dialect) Dialect {
+	if d == "" {
+		return PostgreSQL
+	}
+	return d
+}
+
+// IsMySQLFamily reports whether d is MySQL or MariaDB.
+func IsMySQLFamily(d Dialect) bool {
+	d = ResolveDialect(d)
+	return d == MySQL || d == MariaDB
+}
+
+// PrimaryKeyColumnSQL returns the id column definition for scaffolds.
+func PrimaryKeyColumnSQL(d Dialect) string {
+	if IsMySQLFamily(d) {
+		return "id BIGINT AUTO_INCREMENT PRIMARY KEY"
+	}
+	return "id BIGSERIAL PRIMARY KEY"
+}
+
+// TimestampType returns TIMESTAMPTZ (Postgres) or TIMESTAMP (MySQL/MariaDB).
+func TimestampType(d Dialect) string {
+	if IsMySQLFamily(d) {
+		return "TIMESTAMP"
+	}
+	return "TIMESTAMPTZ"
+}
+
+// TimestampColumnSQL returns e.g. "created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP".
+func TimestampColumnSQL(d Dialect, name string) string {
+	return fmt.Sprintf("%s %s DEFAULT CURRENT_TIMESTAMP", name, TimestampType(d))
+}
+
+// SoftDeleteColumnSQL returns the deleted_at column definition.
+func SoftDeleteColumnSQL(d Dialect) string {
+	if IsMySQLFamily(d) {
+		return "deleted_at TIMESTAMP NULL"
+	}
+	return "deleted_at TIMESTAMPTZ DEFAULT NULL"
+}
+
+// DropTableSQL returns DROP TABLE for the dialect (no CASCADE on MySQL/MariaDB).
+func DropTableSQL(d Dialect, table string) string {
+	if IsMySQLFamily(d) {
+		return fmt.Sprintf("DROP TABLE IF EXISTS %s;", table)
+	}
+	return fmt.Sprintf("DROP TABLE IF EXISTS %s CASCADE;", table)
 }
 
 // CreateMigrationTableSQL returns the CREATE TABLE statement for migrations table based on dialect

@@ -79,6 +79,30 @@ func TestCreateMigrationTableSQL(t *testing.T) {
 	}
 }
 
+func TestScaffoldDialectHelpers(t *testing.T) {
+	if PrimaryKeyColumnSQL(PostgreSQL) != "id BIGSERIAL PRIMARY KEY" {
+		t.Fatal("unexpected postgres PK")
+	}
+	if PrimaryKeyColumnSQL(MySQL) != "id BIGINT AUTO_INCREMENT PRIMARY KEY" {
+		t.Fatal("unexpected mysql PK")
+	}
+	if PrimaryKeyColumnSQL(MariaDB) != "id BIGINT AUTO_INCREMENT PRIMARY KEY" {
+		t.Fatal("unexpected mariadb PK")
+	}
+	if TimestampType("") != "TIMESTAMPTZ" {
+		t.Fatal("empty dialect should resolve to postgres timestamp type")
+	}
+	if !IsMySQLFamily(MariaDB) || IsMySQLFamily(PostgreSQL) {
+		t.Fatal("IsMySQLFamily mismatch")
+	}
+	if DropTableSQL(MySQL, "users") != "DROP TABLE IF EXISTS users;" {
+		t.Fatal("unexpected mysql drop")
+	}
+	if DropTableSQL(PostgreSQL, "users") != "DROP TABLE IF EXISTS users CASCADE;" {
+		t.Fatal("unexpected postgres drop")
+	}
+}
+
 func TestExtractSection(t *testing.T) {
 	standardMigration := `-- Migration: TEST
 -- Created at: 2026-01-01 00:00:00

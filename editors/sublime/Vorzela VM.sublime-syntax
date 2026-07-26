@@ -1,0 +1,68 @@
+%YAML 1.2
+---
+# Vorzela Migrate .vm config — Sublime Text 3 / 4
+name: Vorzela VM
+file_extensions:
+  - vm
+scope: source.vorzela-vm
+
+variables:
+  known_key: 'DATABASE_URL|MIGRATION_PATH|SQLC_SUPPORT|ENVIRONMENT|ENV|ENHANCED|ONLINE|VERIFY_CHECKSUMS|DETECT_DRIFT|VERBOSE|AUTO_RUN_EXTENSIONS|AUTO_RUN_FUNCTIONS|AUTO_RUN_ENUMS|DRIFT_HANDLING'
+
+contexts:
+  main:
+    - match: '#.*$'
+      scope: comment.line.number-sign.vorzela-vm
+    - match: '^(\s*)({{known_key}})(\s*)(=)(\s*)'
+      captures:
+        2: keyword.other.known-key.vorzela-vm
+        4: keyword.operator.assignment.vorzela-vm
+      push: value
+    - match: '^(\s*)([A-Za-z_][A-Za-z0-9_]*)(\s*)(=)(\s*)'
+      captures:
+        2: variable.other.key.vorzela-vm
+        4: keyword.operator.assignment.vorzela-vm
+      push: value
+    - match: '^\s*[^#\s=][^\n=]*$'
+      scope: invalid.illegal.malformed.vorzela-vm
+
+  value:
+    - match: '#.*$'
+      scope: comment.line.number-sign.vorzela-vm
+      pop: true
+    - match: (?i)\b(true|false|1|0)\b(?=\s*(#|$))
+      scope: constant.language.boolean.vorzela-vm
+    - match: (?i)\b(development|dev|develop|production|prod)\b(?=\s*(#|$))
+      scope: constant.language.environment.vorzela-vm
+    - match: (?i)\b(auto|prompt|reject)\b(?=\s*(#|$))
+      scope: constant.language.drift-handling.vorzela-vm
+    - match: (?i)\b(postgres(?:ql)?)://[^\s#]+
+      scope: string.unquoted.dsn.postgres.vorzela-vm
+    - match: (?i)\bmysql://[^\s#]+
+      scope: string.unquoted.dsn.mysql.vorzela-vm
+    - match: '[^\s#]*@tcp\([^\s#]+'
+      scope: string.unquoted.dsn.tcp.vorzela-vm
+    - match: '"'
+      scope: punctuation.definition.string.begin.vorzela-vm
+      push:
+        - meta_scope: string.quoted.double.vorzela-vm
+        - match: '\\.'
+          scope: constant.character.escape.vorzela-vm
+        - match: '"'
+          scope: punctuation.definition.string.end.vorzela-vm
+          pop: true
+    - match: "'"
+      scope: punctuation.definition.string.begin.vorzela-vm
+      push:
+        - meta_scope: string.quoted.single.vorzela-vm
+        - match: '\\.'
+          scope: constant.character.escape.vorzela-vm
+        - match: "'"
+          scope: punctuation.definition.string.end.vorzela-vm
+          pop: true
+    - match: '\./[^\s#]+|/[^\s#]+'
+      scope: string.unquoted.path.vorzela-vm
+    - match: '[^\s#]+'
+      scope: string.unquoted.value.vorzela-vm
+    - match: $
+      pop: true

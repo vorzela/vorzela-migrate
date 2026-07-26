@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>contactEmailRot13</key>
+	<string></string>
+	<key>description</key>
+	<string>Syntax highlighting for Vorzela Migrate .vm configuration files</string>
+	<key>name</key>
+	<string>Vorzela VM</string>
+	<key>uuid</key>
+	<string>A7C3E8F1-2B4D-4E9A-9C1F-8D6E5B4A3210</string>
+</dict>
+</plist>

@@ -64,6 +64,7 @@ func TestGenerateMigrationTemplate(t *testing.T) {
 		migName     string
 		opts        CreateMigrationOptions
 		wantStrings []string
+		notStrings  []string
 	}{
 		{
 			name:    "basic migration",
@@ -76,6 +77,32 @@ func TestGenerateMigrationTemplate(t *testing.T) {
 				"updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP",
 				"DROP TABLE IF EXISTS users CASCADE",
 			},
+		},
+		{
+			name:    "mysql basic migration",
+			migName: "create_users_table",
+			opts:    CreateMigrationOptions{Dialect: MySQL},
+			wantStrings: []string{
+				"id BIGINT AUTO_INCREMENT PRIMARY KEY",
+				"created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+				"updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+				"DROP TABLE IF EXISTS users;",
+			},
+			notStrings: []string{
+				"BIGSERIAL",
+				"TIMESTAMPTZ",
+				"users CASCADE",
+			},
+		},
+		{
+			name:    "mariadb soft delete",
+			migName: "create_posts_table",
+			opts:    CreateMigrationOptions{Dialect: MariaDB, SoftDelete: true},
+			wantStrings: []string{
+				"id BIGINT AUTO_INCREMENT PRIMARY KEY",
+				"deleted_at TIMESTAMP NULL",
+			},
+			notStrings: []string{"TIMESTAMPTZ", "BIGSERIAL"},
 		},
 		{
 			name:    "with soft delete",
@@ -94,6 +121,20 @@ func TestGenerateMigrationTemplate(t *testing.T) {
 				"CREATE TRIGGER trigger_comments_auto_update",
 				"EXECUTE FUNCTION auto_update_timestamp()",
 				"DROP TRIGGER IF EXISTS trigger_comments_auto_update",
+			},
+		},
+		{
+			name:    "mysql with triggers",
+			migName: "create_comments_table",
+			opts:    CreateMigrationOptions{Dialect: MySQL, Triggers: true},
+			wantStrings: []string{
+				"CREATE TRIGGER trigger_comments_auto_update",
+				"SET NEW.updated_at = CURRENT_TIMESTAMP",
+				"DROP TRIGGER IF EXISTS trigger_comments_auto_update;",
+			},
+			notStrings: []string{
+				"EXECUTE FUNCTION",
+				"vm functions migrate",
 			},
 		},
 		{
@@ -121,7 +162,12 @@ func TestGenerateMigrationTemplate(t *testing.T) {
 			got := generateMigrationTemplate(tt.migName, tt.opts)
 			for _, want := range tt.wantStrings {
 				if !strings.Contains(got, want) {
-					t.Errorf("generateMigrationTemplate() missing string %q", want)
+					t.Errorf("generateMigrationTemplate() missing string %q\nGot:\n%s", want, got)
+				}
+			}
+			for _, not := range tt.notStrings {
+				if strings.Contains(got, not) {
+					t.Errorf("generateMigrationTemplate() unexpectedly contains %q\nGot:\n%s", not, got)
 				}
 			}
 		})
@@ -167,6 +213,12 @@ func TestCreateMigrationWithOptions(t *testing.T) {
 			opts:    CreateMigrationOptions{Triggers: true},
 			wantErr: false,
 		},
+		{
+			name:    "mysql with triggers skips functions.sql",
+			migName: "create_comments_table",
+			opts:    CreateMigrationOptions{Dialect: MySQL, Triggers: true},
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -190,11 +242,16 @@ func TestCreateMigrationWithOptions(t *testing.T) {
 					t.Error("No migration file created")
 				}
 
-				// Check if triggers option created functions.sql
-				if tt.opts.Triggers {
-					functionsPath := filepath.Join(testDir, "functions.sql")
-					if _, err := os.Stat(functionsPath); os.IsNotExist(err) {
-						t.Error("functions.sql should be created with triggers option")
+				functionsPath := filepath.Join(testDir, "functions.sql")
+				_, functionsErr := os.Stat(functionsPath)
+				if tt.opts.Triggers && !IsMySQLFamily(tt.opts.Dialect) {
+					if os.IsNotExist(functionsErr) {
+						t.Error("functions.sql should be created with triggers option on PostgreSQL")
+					}
+				}
+				if tt.opts.Triggers && IsMySQLFamily(tt.opts.Dialect) {
+					if functionsErr == nil {
+						t.Error("functions.sql should not be created with triggers on MySQL/MariaDB")
 					}
 				}
 			}

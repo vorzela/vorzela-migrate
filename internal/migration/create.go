@@ -11,8 +11,8 @@ import (
 // CreateMigrationOptions defines options for migration creation
 type CreateMigrationOptions struct {
 	SoftDelete    bool
-	Triggers      bool // Add trigger functions for updated_at automation
-	Dialect       string
+	Triggers      bool // Add trigger / ON UPDATE for updated_at automation
+	Dialect       Dialect
 	Relationships []Relationship // FK relationships (belongs-to, one-to-one)
 	IsPivot       bool           // True when creating a many-to-many pivot table
 	PivotTables   [2]string      // The two table names for pivot generation
@@ -36,8 +36,8 @@ func CreateMigrationWithOptions(name, path string, opts CreateMigrationOptions) 
 		return fmt.Errorf("failed to create migrations directory: %w", err)
 	}
 
-	// Ensure functions.sql exists if triggers are enabled
-	if opts.Triggers {
+	// Ensure functions.sql exists if triggers are enabled (PostgreSQL PL/pgSQL helpers only)
+	if opts.Triggers && !IsMySQLFamily(opts.Dialect) {
 		if err := EnsureFunctionsFile(path); err != nil {
 			return err
 		}
@@ -106,15 +106,60 @@ func extractTableName(migrationName string) string {
 	return name
 }
 
+// generateTriggerSQL returns Up/Down trigger snippets for the dialect.
+// MySQL/MariaDB use a single-statement FOR EACH ROW SET … trigger (safe for statement splitters).
+// PostgreSQL uses functions from functions.sql.
+func generateTriggerSQL(tableName string, softDelete bool, dialect Dialect) (up string, down string) {
+	if IsMySQLFamily(dialect) {
+		note := ""
+		if softDelete {
+			note = "\n-- Note: soft-delete update protection (protect_soft_deleted) is PostgreSQL-only;\n-- only auto-updating updated_at is scaffolded for MySQL/MariaDB.\n"
+		}
+		up = fmt.Sprintf(`%s
+DROP TRIGGER IF EXISTS trigger_%s_auto_update;
+CREATE TRIGGER trigger_%s_auto_update
+    BEFORE UPDATE ON %s
+    FOR EACH ROW
+    SET NEW.updated_at = CURRENT_TIMESTAMP;
+`, note, tableName, tableName, tableName)
+		down = fmt.Sprintf(`
+DROP TRIGGER IF EXISTS trigger_%s_auto_update;
+`, tableName)
+		return up, down
+	}
+
+	functionName := "auto_update_timestamp"
+	if softDelete {
+		functionName = "auto_update_with_soft_delete_protection"
+	}
+
+	up = fmt.Sprintf(`
+
+-- Create trigger using centralized function from functions.sql
+-- IMPORTANT: Run 'vm functions migrate' first to install the required functions
+DROP TRIGGER IF EXISTS trigger_%s_auto_update ON %s;
+CREATE TRIGGER trigger_%s_auto_update
+    BEFORE UPDATE ON %s
+    FOR EACH ROW
+    EXECUTE FUNCTION %s();
+`, tableName, tableName, tableName, tableName, functionName)
+
+	down = fmt.Sprintf(`
+DROP TRIGGER IF EXISTS trigger_%s_auto_update ON %s;
+`, tableName, tableName)
+	return up, down
+}
+
 // generateMigrationTemplate generates a migration template
 func generateMigrationTemplate(name string, opts CreateMigrationOptions) string {
+	dialect := ResolveDialect(opts.Dialect)
 	timestamp := time.Now().Format("2006-01-02 15:04:05")
 	upperName := strings.ToUpper(name)
 	tableName := extractTableName(name)
 
 	// Build column definitions
 	var columnParts []string
-	columnParts = append(columnParts, "    id BIGSERIAL PRIMARY KEY")
+	columnParts = append(columnParts, "    "+PrimaryKeyColumnSQL(dialect))
 
 	// Add FK columns from relationships
 	for _, rel := range opts.Relationships {
@@ -127,11 +172,11 @@ func generateMigrationTemplate(name string, opts CreateMigrationOptions) string 
 		}
 	}
 
-	columnParts = append(columnParts, "    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP")
-	columnParts = append(columnParts, "    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP")
+	columnParts = append(columnParts, "    "+TimestampColumnSQL(dialect, "created_at"))
+	columnParts = append(columnParts, "    "+TimestampColumnSQL(dialect, "updated_at"))
 
 	if opts.SoftDelete {
-		columnParts = append(columnParts, "    deleted_at TIMESTAMPTZ DEFAULT NULL")
+		columnParts = append(columnParts, "    "+SoftDeleteColumnSQL(dialect))
 	}
 
 	// Add FK constraints
@@ -163,29 +208,10 @@ func generateMigrationTemplate(name string, opts CreateMigrationOptions) string 
 		extraIndexes = "\n" + extraIndexes + "\n"
 	}
 
-	// Add trigger using centralized functions from functions.sql
 	var triggerFunctions string
 	var triggerCleanup string
 	if opts.Triggers {
-		functionName := "auto_update_timestamp"
-		if opts.SoftDelete {
-			functionName = "auto_update_with_soft_delete_protection"
-		}
-
-		triggerFunctions = fmt.Sprintf(`
-
--- Create trigger using centralized function from functions.sql
--- IMPORTANT: Run 'vm functions migrate' first to install the required functions
-DROP TRIGGER IF EXISTS trigger_%s_auto_update ON %s;
-CREATE TRIGGER trigger_%s_auto_update
-    BEFORE UPDATE ON %s
-    FOR EACH ROW
-    EXECUTE FUNCTION %s();
-`, tableName, tableName, tableName, tableName, functionName)
-
-		triggerCleanup = fmt.Sprintf(`
-DROP TRIGGER IF EXISTS trigger_%s_auto_update ON %s;
-`, tableName, tableName)
+		triggerFunctions, triggerCleanup = generateTriggerSQL(tableName, opts.SoftDelete, dialect)
 	}
 
 	// Build relationship comment
@@ -209,6 +235,6 @@ CREATE TABLE IF NOT EXISTS %s (
 
 %s-- ⬇ Down (Run when rolling back)
 %s
-DROP TABLE IF EXISTS %s CASCADE;
-`, upperName, timestamp, relComment, gooseUp, tableName, columns, extraIndexes, triggerFunctions, gooseDown, triggerCleanup, tableName)
+%s
+`, upperName, timestamp, relComment, gooseUp, tableName, columns, extraIndexes, triggerFunctions, gooseDown, triggerCleanup, DropTableSQL(dialect, tableName))
 }

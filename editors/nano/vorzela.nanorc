@@ -1,0 +1,23 @@
+## Vorzela Migrate .vm configuration
+syntax vorzela
+header "\.vm$" "\.vm$"
+
+comment "#"
+
+# Known keys
+color brightcyan "\<(DATABASE_URL|MIGRATION_PATH|SQLC_SUPPORT|ENVIRONMENT|ENV|ENHANCED|ONLINE|VERIFY_CHECKSUMS|DETECT_DRIFT|VERBOSE|AUTO_RUN_EXTENSIONS|AUTO_RUN_FUNCTIONS|AUTO_RUN_ENUMS|DRIFT_HANDLING)\>"
+
+# Assignment
+color brightwhite "="
+
+# Booleans / enums
+color brightgreen "\<(true|false|TRUE|FALSE|True|False|1|0)\>"
+color brightmagenta "\<(development|dev|develop|production|prod|auto|prompt|reject)\>"
+
+# DSNs and paths
+color brightyellow "(postgres(ql)?|mysql)://[^[:space:]#]+"
+color brightyellow "[^[:space:]#]*@tcp\([^[:space:]#]+"
+color brightblue "\./[^[:space:]#]+"
+
+# Comments last so they win
+color brightblack "#.*"

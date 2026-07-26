@@ -1,0 +1,48 @@
+{
+  "name": "vorzela-vm",
+  "displayName": "Vorzela VM Config",
+  "description": "Syntax highlighting, hover docs, and live lint for Vorzela Migrate .vm files",
+  "version": "1.1.0",
+  "publisher": "vorzela",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": ["Programming Languages", "Linters"],
+  "keywords": ["vorzela", "vm", "migrate", "dotenv", "config", "lint"],
+  "activationEvents": [
+    "onLanguage:vorzela-vm"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "vorzela-vm",
+        "aliases": ["Vorzela VM", "vorzela-vm", "vm"],
+        "extensions": [".vm"],
+        "filenames": [".vm"],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icons/vm-light.svg",
+          "dark": "./icons/vm-dark.svg"
+        }
+      }
+    ],
+    "grammars": [
+      {
+        "language": "vorzela-vm",
+        "scopeName": "source.vorzela-vm",
+        "path": "./syntaxes/vorzela-vm.tmLanguage.json"
+      }
+    ],
+    "configurationDefaults": {
+      "[vorzela-vm]": {
+        "editor.autoIndent": "none",
+        "editor.quickSuggestions": {
+          "other": true,
+          "comments": false,
+          "strings": true
+        }
+      }
+    }
+  }
+}

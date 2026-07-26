@@ -1,0 +1,13 @@
+# Helix — merge into ~/.config/helix/languages.toml
+#
+# Uses the built-in / installed `ini` tree-sitter grammar for coloring.
+# Rebuild grammars after first add:  hx --grammar fetch && hx --grammar build
+
+[[language]]
+name = "vorzela-vm"
+scope = "source.vorzela-vm"
+injection-regex = "vorzela-vm"
+file-types = ["vm", { glob = ".vm" }]
+comment-tokens = "#"
+indent = { tab-width = 2, unit = "  " }
+grammar = "ini"

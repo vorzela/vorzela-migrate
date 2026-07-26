@@ -84,6 +84,7 @@ func TestGeneratePivotMigration(t *testing.T) {
 		table1      string
 		table2      string
 		sqlcSupport bool
+		dialect     Dialect
 		wantStrings []string
 	}{
 		{
@@ -97,6 +98,17 @@ func TestGeneratePivotMigration(t *testing.T) {
 				"REFERENCES posts(id) ON DELETE CASCADE",
 				"REFERENCES tags(id) ON DELETE CASCADE",
 				"DROP TABLE IF EXISTS post_tag CASCADE",
+			},
+		},
+		{
+			name:    "mysql pivot table",
+			table1:  "posts",
+			table2:  "tags",
+			dialect: MySQL,
+			wantStrings: []string{
+				"id BIGINT AUTO_INCREMENT PRIMARY KEY",
+				"created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+				"DROP TABLE IF EXISTS post_tag;",
 			},
 		},
 		{
@@ -134,7 +146,7 @@ func TestGeneratePivotMigration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			opts := CreateMigrationOptions{SqlcSupport: tt.sqlcSupport}
+			opts := CreateMigrationOptions{SqlcSupport: tt.sqlcSupport, Dialect: tt.dialect}
 			got := GeneratePivotMigration(tt.table1, tt.table2, opts)
 			for _, want := range tt.wantStrings {
 				if !strings.Contains(got, want) {
