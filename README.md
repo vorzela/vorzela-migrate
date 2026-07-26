@@ -907,7 +907,7 @@ This gives you:
 
 ## Configuration
 
-> **Editor highlighting:** Syntax coloring, **hover docs**, and **live lint** for `.vm` files (VS Code/Cursor) live in [`editors/`](editors/README.md). Other editors get grammars under the same folder.
+> **Editor highlighting:** Syntax coloring, **hover docs**, **Ctrl+Space** key list, and **live lint** for `.vm` files live in [`editors/`](editors/README.md). **Not automatic** — install once with `./editors/vscode/install.sh` (Cursor/VS Code) or follow that README for other editors.
 >
 > - **Required key:** `DATABASE_URL` (hover explains formats; missing/empty is flagged)
 > - **Unknown keys:** red error underline + “did you mean …?” (same as `vm lint`)

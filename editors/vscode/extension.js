@@ -228,38 +228,110 @@ function activate(context) {
       "vorzela-vm",
       {
         provideCompletionItems(document, position) {
-          const line = document.lineAt(position.line).text;
-          if (line.includes("=") && position.character > line.indexOf("=")) {
-            const key = line.slice(0, line.indexOf("=")).trim();
-            const doc = KEYS[key];
-            if (!doc?.values) {
-              return undefined;
-            }
-            return doc.values.map((v) => {
-              const item = new vscode.CompletionItem(v, vscode.CompletionItemKind.EnumMember);
-              item.detail = `${key} value`;
-              return item;
-            });
+          const line = document.lineAt(position.line);
+          const before = line.text.slice(0, position.character);
+          const trimmedBefore = before.trimStart();
+
+          // Inside a comment — no suggestions
+          if (trimmedBefore.startsWith("#")) {
+            return undefined;
           }
 
-          // Completing a key name (start of line / before =)
-          return KNOWN_KEYS.map((key) => {
+          const eqInBefore = before.indexOf("=");
+
+          // ── Value side (after =) ──────────────────────────────────────────
+          if (eqInBefore !== -1) {
+            const key = before.slice(0, eqInBefore).trim();
             const doc = KEYS[key];
+            if (!doc?.values?.length) {
+              return undefined;
+            }
+            const afterEq = before.slice(eqInBefore + 1);
+            // Skip if an inline comment has started
+            if (afterEq.includes(" #")) {
+              return undefined;
+            }
+            const valuePrefix = afterEq.trimStart();
+            const valueStart = eqInBefore + 1 + (afterEq.length - afterEq.trimStart().length);
+            const range = new vscode.Range(
+              position.line,
+              valueStart,
+              position.line,
+              position.character
+            );
+            return doc.values
+              .filter((v) => v.toLowerCase().startsWith(valuePrefix.toLowerCase()) || valuePrefix === "")
+              .map((v) => {
+                const item = new vscode.CompletionItem(v, vscode.CompletionItemKind.EnumMember);
+                item.detail = `${key} value`;
+                item.range = range;
+                item.sortText = v;
+                return item;
+              });
+          }
+
+          // ── Key side (Ctrl+Space / typing) — list all known keys ──────────
+          // Prefix: trailing KEY fragment, or empty on a blank line
+          const keyPrefixMatch = before.match(/([A-Za-z_][A-Za-z0-9_]*)?$/);
+          const prefix = keyPrefixMatch?.[1] ?? "";
+          const startChar = position.character - prefix.length;
+          const range = new vscode.Range(position.line, startChar, position.line, position.character);
+          const used = collectUsedKeys(document);
+
+          /** @type {vscode.CompletionItem[]} */
+          const items = [];
+          for (const key of KNOWN_KEYS) {
+            const doc = KEYS[key];
+            const already = used.has(key);
             const item = new vscode.CompletionItem(
               key,
               doc.required ? vscode.CompletionItemKind.Keyword : vscode.CompletionItemKind.Property
             );
-            item.detail = doc.required ? "Required" : "Optional";
-            item.documentation = new vscode.MarkdownString(hoverMarkdown(key));
+            item.detail = doc.required
+              ? already
+                ? "Required · already set"
+                : "Required"
+              : already
+                ? "Optional · already set"
+                : "Optional";
+            item.documentation = new vscode.MarkdownString(
+              hoverMarkdown(key) +
+                (already ? "\n\n_Already present in this file — choosing again creates a duplicate._" : "")
+            );
+            item.range = range;
             item.insertText = new vscode.SnippetString(`${key}=$0`);
-            return item;
-          });
+            item.filterText = key;
+            item.sortText = `${doc.required ? "0" : "1"}${already ? "1" : "0"}_${key}`;
+            item.preselect = Boolean(doc.required && !already && !prefix);
+            items.push(item);
+          }
+
+          return new vscode.CompletionList(items, /* isIncomplete */ false);
         },
       },
-      "=",
-      "_"
+      // Trigger while typing key names + after = for values
+      ..."ABCDEFGHIJKLMNOPQRSTUVWXYZ_=".split("")
     )
   );
+}
+
+/**
+ * @param {vscode.TextDocument} document
+ * @returns {Set<string>}
+ */
+function collectUsedKeys(document) {
+  const used = new Set();
+  for (let i = 0; i < document.lineCount; i++) {
+    const trimmed = document.lineAt(i).text.trim();
+    if (!trimmed || trimmed.startsWith("#") || !trimmed.includes("=")) {
+      continue;
+    }
+    const key = trimmed.slice(0, trimmed.indexOf("=")).trim();
+    if (key in KEYS) {
+      used.add(key);
+    }
+  }
+  return used;
 }
 
 function deactivate() {}

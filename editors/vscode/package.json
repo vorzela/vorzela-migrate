@@ -2,7 +2,7 @@
   "name": "vorzela-vm",
   "displayName": "Vorzela VM Config",
   "description": "Syntax highlighting, hover docs, and live lint for Vorzela Migrate .vm files",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "publisher": "vorzela",
   "engines": {
     "vscode": "^1.74.0"
@@ -41,7 +41,10 @@
           "other": true,
           "comments": false,
           "strings": true
-        }
+        },
+        "editor.suggestOnTriggerCharacters": true,
+        "editor.wordBasedSuggestions": "off",
+        "editor.suggest.showStatusBar": true
       }
     }
   }

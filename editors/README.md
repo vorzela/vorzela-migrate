@@ -2,6 +2,17 @@
 
 Editor support for Vorzela Migrate config files (`.vm` / `*.vm`).
 
+## Does it install automatically?
+
+**No.** Checking out this repo does **not** auto-enable the extension for Cursor/VS Code (or other editors). You install once per machine:
+
+| Editor | Auto? | What to do |
+|--------|-------|------------|
+| **Cursor / VS Code** | No | Run [`vscode/install.sh`](vscode/install.sh) (or symlink — below) |
+| Sublime / Vim / Nano / Helix / JetBrains / Zed | No | Follow that editor’s section below |
+
+Workspace [`.vscode/settings.json`](../.vscode/settings.json) only maps `.vm` → language id `vorzela-vm`. That coloring/lint/hover works **after** the extension is installed.
+
 ## Features (VS Code / Cursor)
 
 | Feature | Behaviour |
@@ -9,7 +20,7 @@ Editor support for Vorzela Migrate config files (`.vm` / `*.vm`).
 | **Syntax colors** | Keys, booleans, enums, DSNs, comments |
 | **Hover docs** | Hover any key for type, required/optional, allowed values, and usage |
 | **Live lint** | Unknown keys → **error** (red); invalid bool/enum → **error**; duplicates → warning; missing `DATABASE_URL` → warning |
-| **Completions** | Suggest known keys (`KEY=`) and enum/boolean values after `=` |
+| **Completions** | **Ctrl+Space** (or start typing a key) lists all known keys — Required first; marks already-set. After `=` offers allowed values |
 
 ### Required vs optional keys
 
@@ -32,21 +43,33 @@ Highlights (all editors with grammar support):
 
 ## VS Code / Cursor (recommended)
 
-Extension lives in [`vscode/`](vscode/). Includes highlighting **plus** hover + live diagnostics.
+Extension lives in [`vscode/`](vscode/). Includes highlighting **plus** hover + live diagnostics + Ctrl+Space keys.
 
-### Install from this repo
+### One-shot install (from repo root)
+
+```bash
+chmod +x editors/vscode/install.sh
+./editors/vscode/install.sh
+# then: Developer: Reload Window
+```
+
+### Manual symlink
 
 ```bash
 # Cursor
 mkdir -p ~/.cursor/extensions
-ln -sfn "$(pwd)/editors/vscode" ~/.cursor/extensions/vorzela.vorzela-vm-1.1.0
+ln -sfn "$(pwd)/editors/vscode" ~/.cursor/extensions/vorzela.vorzela-vm-1.1.1
 
 # VS Code
 mkdir -p ~/.vscode/extensions
-ln -sfn "$(pwd)/editors/vscode" ~/.vscode/extensions/vorzela.vorzela-vm-1.1.0
+ln -sfn "$(pwd)/editors/vscode" ~/.vscode/extensions/vorzela.vorzela-vm-1.1.1
 ```
 
-Reload the window (`Developer: Reload Window`). Open `.vm` — language mode **Vorzela VM**. Hover a key; watch Problems for lint.
+Reload the window (`Developer: Reload Window`). Open `.vm` — language mode **Vorzela VM**.
+
+- **Hover** a key for docs (required vs optional)
+- **Ctrl+Space** on a blank line (or while typing) to pick a forgotten key
+- **Problems** panel for unknown / invalid keys
 
 ### Install as VSIX
 

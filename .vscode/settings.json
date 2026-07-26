@@ -7,6 +7,13 @@
   "[vorzela-vm]": {
     "editor.tabSize": 2,
     "editor.insertSpaces": true,
-    "editor.autoIndent": "none"
+    "editor.autoIndent": "none",
+    "editor.quickSuggestions": {
+      "other": true,
+      "comments": false,
+      "strings": true
+    },
+    "editor.suggestOnTriggerCharacters": true,
+    "editor.wordBasedSuggestions": "off"
   }
 }
