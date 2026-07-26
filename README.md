@@ -45,29 +45,24 @@
 
 ## ✨ Features
 
-- 🎨 **Colorized Output** - Beautiful, easy-to-read colored terminal output
+- 🎨 **Colorized Output** - Beautiful, easy-to-read colored terminal output with execution timing
 - ⚙️ **Multiple Configuration Methods** - `.vm` config files, `.env` files, or environment variables
 - 🖍️ **`.vm` Editor Support** - Syntax highlighting, key hover docs, live lint, Ctrl+Space (VS Code/Cursor) — run `./editors/install.sh` once; see [`editors/`](editors/README.md)
 - 🚀 **No DSN Flag Required** - Use config files instead of repeating `--dsn` flag
 - 🐘 **Multi-Database Support** - PostgreSQL and MySQL/MariaDB with automatic detection
-- 📦 **Batch Tracking** - Organized rollback with batch numbers
-- 🔒 **Transaction Safety** - All-or-nothing migration execution
-- ⚠️ **Warning System** - Alerts for missing migration sections
-- 🌍 **Global CLI** - Install and use from anywhere
-- � **sqlc & goose Compatible** - Full integration with sqlc (type-safe queries) and goose migrations
-- �📚 **Comprehensive Docs** - Full documentation and examples
-
-### 🚀 Enhanced Features (v2.0.2)
-
-- 🌍 **Environment-Based Auto Config** - Set ENVIRONMENT in .vm file, tool auto-configures everything
+- 🌍 **Environment-Based Auto Config** - Set `ENVIRONMENT` in `.vm`; the tool auto-configures everything
 - ✅ **Checksum Validation** - Detect if migration files have been modified after execution
 - 🔐 **Migration Locking** - Prevent concurrent migrations (advisory locks for PostgreSQL, named locks for MySQL)
 - 🔍 **Schema Drift Detection** - Automatically detect and fix manual database changes
-- 🎨 **Enhanced Logging** - Colored output with execution timing and progress tracking
+- 🤖 **Auto Drift Handling** - Configure `auto` / `prompt` / `reject` modes for schema drift
+- 🌐 **Online Migrations** - Zero-downtime strategies for production (PostgreSQL & MySQL 8.0+ / MariaDB)
 - 🛡️ **Partial Failure Recovery** - Track which statements succeeded before a failure
 - ⚠️ **Safe Rollback** - Confirmation prompts and detailed warnings before rollback
-- 🌐 **Online Migrations** - Zero-downtime strategies for production (PostgreSQL & MySQL 8.0+)
-- 🤖 **Auto Drift Handling** - Configure auto/prompt/reject modes for schema drift
+- 📦 **Batch Tracking** - Organized rollback with batch numbers
+- 🔒 **Transaction Safety** - All-or-nothing migration execution
+- 🌍 **Global CLI** - Install and use from anywhere
+- 🔌 **sqlc & goose Compatible** - Full integration with sqlc (type-safe queries) and goose migrations
+- 📚 **Comprehensive Docs** - Full documentation and examples
 
 ## Requirements
 
