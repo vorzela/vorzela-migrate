@@ -2,6 +2,18 @@
 
 All notable changes to Vorzela Migration Tool are documented in this file.
 
+## [2.2.8] - 2026-08-09
+
+### Bug Fixes
+
+- **`install.sh`: upgrade under GitHub API rate limits** 🔧
+  - Resolve the latest tag via `/releases/latest` redirect (and `git ls-remote`) first —
+    unauthenticated `api.github.com` was often 403, so discovery failed.
+  - Do not treat an existing `~/.local/bin/vm` as a successful install when download/build
+    never ran (left users stuck on older versions like v2.2.4).
+
+---
+
 ## [2.2.7] - 2026-08-09
 
 ### Bug Fixes

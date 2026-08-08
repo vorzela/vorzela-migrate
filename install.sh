@@ -49,28 +49,45 @@ detect_arch() {
     esac
 }
 
-# Helper: try to get latest tag robustly
+# Prefer non-API discovery — unauthenticated api.github.com is often rate-limited.
 get_latest_version() {
     GITHUB_REPO="$1"
-    # Try GitHub API releases/latest first
-    ver=$(curl -fsSL "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" 2>/dev/null | grep -oP '"tag_name": "\K[^"]+' | head -1 || true)
-    if [ -n "$ver" ]; then
-        echo "$ver"
-        return 0
-    fi
 
-    # Fallback: use tags API to get the most recent tag
-    ver=$(curl -fsSL "https://api.github.com/repos/${GITHUB_REPO}/tags" 2>/dev/null | grep -oP '"name": "\K[^"]+' | head -1 || true)
-    if [ -n "$ver" ]; then
-        echo "$ver"
-        return 0
+    # 1) HTML redirect from /releases/latest (no API quota). Do NOT use -L:
+    #    with -L, curl's %{redirect_url} is empty after the final hop.
+    redirect=$(curl -fsSI -o /dev/null -w "%{redirect_url}" \
+        "https://github.com/${GITHUB_REPO}/releases/latest" 2>/dev/null || true)
+    if [ -z "$redirect" ]; then
+        redirect=$(curl -fsSI "https://github.com/${GITHUB_REPO}/releases/latest" 2>/dev/null \
+            | awk 'BEGIN{IGNORECASE=1} /^location:/{print $2}' | tr -d '\r' | tail -1 || true)
     fi
-
-    # Final fallback: follow redirect from /releases/latest page
-    redirect=$(curl -fsSLI -o /dev/null -w "%{redirect_url}" "https://github.com/${GITHUB_REPO}/releases/latest" 2>/dev/null || true)
     if [ -n "$redirect" ]; then
-        # last path component is the tag
-        echo "${redirect##*/}"
+        ver="${redirect##*/}"
+        if [ -n "$ver" ] && [ "$ver" != "latest" ]; then
+            echo "$ver"
+            return 0
+        fi
+    fi
+
+    # 2) git ls-remote (no API quota)
+    if command -v git >/dev/null 2>&1; then
+        ver=$(git ls-remote --refs --tags "https://github.com/${GITHUB_REPO}.git" 'v*' 2>/dev/null \
+            | awk -F/ '{print $NF}' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+            | sort -V \
+            | tail -1 || true)
+        if [ -n "$ver" ]; then
+            echo "$ver"
+            return 0
+        fi
+    fi
+
+    # 3) GitHub API (may fail with 403 rate limit)
+    ver=$(curl -fsSL -A "vorzela-migrate-install" \
+        "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" 2>/dev/null \
+        | grep -oP '"tag_name": "\K[^"]+' | head -1 || true)
+    if [ -n "$ver" ]; then
+        echo "$ver"
         return 0
     fi
 
@@ -89,26 +106,27 @@ build_from_source() {
 
     tmpdir=$(mktemp -d)
     print_status "Cloning source to $tmpdir"
-    if ! git clone --depth 1 "https://github.com/${GITHUB_REPO}.git" "$tmpdir" >/dev/null 2>&1; then
-        rm -rf "$tmpdir"
-        return 1
+
+    # Prefer a tagged shallow clone so ldflags get a real version.
+    if [ -n "$BUILD_VERSION" ]; then
+        if ! git clone --depth 1 --branch "$BUILD_VERSION" \
+            "https://github.com/${GITHUB_REPO}.git" "$tmpdir" >/dev/null 2>&1; then
+            rm -rf "$tmpdir"
+            return 1
+        fi
+    else
+        if ! git clone --depth 1 "https://github.com/${GITHUB_REPO}.git" "$tmpdir" >/dev/null 2>&1; then
+            rm -rf "$tmpdir"
+            return 1
+        fi
+        # depth-1 clones omit tags; fetch them so we can stamp a version.
+        git -C "$tmpdir" fetch --tags --depth 1 >/dev/null 2>&1 || true
+        BUILD_VERSION=$(git -C "$tmpdir" tag --list 'v*.*.*' --sort=v:refname | tail -1 || true)
     fi
 
     pushd "$tmpdir" >/dev/null
     print_status "Building from source (this may take a moment)..."
 
-    # If no build version was provided, try to detect the latest tag from the cloned repo
-    if [ -z "$BUILD_VERSION" ]; then
-        tag=""
-        if git -C "$tmpdir" describe --tags --abbrev=0 >/dev/null 2>&1; then
-            tag=$(git -C "$tmpdir" describe --tags --abbrev=0 2>/dev/null || true)
-        fi
-        if [ -n "$tag" ]; then
-            BUILD_VERSION="$tag"
-        fi
-    fi
-
-    # Fallback to 'dev' if we still don't have a version
     if [ -z "$BUILD_VERSION" ]; then
         BUILD_VERSION="dev"
     fi
@@ -119,13 +137,10 @@ build_from_source() {
         mkdir -p "$(dirname "$BINARY_PATH")"
 
         # Backup existing binary if present
-        if command -v vm &>/dev/null; then
-            EXISTING=$(command -v vm)
-            if [ -f "$EXISTING" ]; then
-                ts=$(date +%s)
-                mv "$EXISTING" "${EXISTING}.bak.${ts}" 2>/dev/null || true
-                print_status "Backed up existing binary to ${EXISTING}.bak.${ts}"
-            fi
+        if [ -f "$BINARY_PATH" ]; then
+            ts=$(date +%s)
+            mv "$BINARY_PATH" "${BINARY_PATH}.bak.${ts}" 2>/dev/null || true
+            print_status "Backed up existing binary to ${BINARY_PATH}.bak.${ts}"
         fi
 
         mv vm "$BINARY_PATH"
@@ -194,32 +209,48 @@ main() {
     # Prepare download path
     DOWNLOAD_URL="${RELEASE_URL}/${LATEST_VERSION}/${BINARY_NAME}"
     BINARY_PATH="${INSTALL_DIR}/vm"
+    INSTALLED=0
 
     # Try to download if we have a version
     if [ -n "$LATEST_VERSION" ]; then
         print_status "Attempting to download: ${DOWNLOAD_URL}"
-        if curl -fsSL "$DOWNLOAD_URL" -o "$BINARY_PATH"; then
-            chmod +x "$BINARY_PATH"
+        tmpbin=$(mktemp)
+        if curl -fsSL "$DOWNLOAD_URL" -o "$tmpbin"; then
+            chmod +x "$tmpbin"
+            if [ -f "$BINARY_PATH" ]; then
+                ts=$(date +%s)
+                mv "$BINARY_PATH" "${BINARY_PATH}.bak.${ts}" 2>/dev/null || true
+            fi
+            mv "$tmpbin" "$BINARY_PATH"
             print_success "Binary downloaded and made executable"
+            INSTALLED=1
         else
             print_warning "Pre-built binary not available for ${LATEST_VERSION}/${BINARY_NAME}"
-            rm -f "$BINARY_PATH" || true
+            rm -f "$tmpbin" || true
         fi
     fi
 
-    # If download failed or no prebuilt, attempt to build from source if go is available
-    if [ ! -x "$BINARY_PATH" ]; then
+    # If download failed, attempt to build from source if go is available.
+    # Do NOT treat a pre-existing binary as a successful install — that left
+    # users stuck on old versions when version discovery failed (API rate limit).
+    if [ "$INSTALLED" -ne 1 ]; then
         print_status "Attempting to build from source (requires Go)..."
         if build_from_source "${GITHUB_REPO}" "$INSTALL_DIR" "$BINARY_PATH" "$LATEST_VERSION"; then
             print_success "Built and installed vm from source"
+            INSTALLED=1
         else
             print_warning "Automatic build failed or Go not installed"
+            if [ -x "$BINARY_PATH" ]; then
+                OLD=$("$BINARY_PATH" --version 2>&1 | head -1 || true)
+                print_error "Left existing binary in place (${OLD:-$BINARY_PATH})"
+                print_error "Upgrade did not run — fix network/rate-limit and re-run, or install Go and retry."
+            fi
             print_status "Fallback instructions:"
             print_status "  1) Install Go (https://go.dev/dl/) and re-run this script"
             print_status "  2) Or build manually:"
             print_status "     git clone https://github.com/${GITHUB_REPO}.git"
             print_status "     cd vorzela-migrate"
-            print_status "     go build -o vm main.go"
+            print_status "     go build -ldflags \"-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=vX.Y.Z'\" -o vm main.go"
             print_status "     mv vm ${INSTALL_DIR}/vm # or /usr/local/bin"
             exit 1
         fi
@@ -279,7 +310,7 @@ main() {
         # If we have a latest version and it mismatches, warn
         if [ -n "$LATEST_VERSION" ]; then
             # normalize by removing leading v/V
-            norm() { echo "$1" | sed -E 's/^v|V//'; }
+            norm() { echo "$1" | sed -E 's/^[vV]//'; }
             if [ "$(norm "$VERSION")" != "$(norm "$LATEST_VERSION")" ]; then
                 print_warning "Installed binary version ($VERSION) does not match expected $LATEST_VERSION"
             fi
@@ -295,7 +326,7 @@ main() {
     echo ""
     print_status "Next steps:"
     echo "    1. Read INSTALL.md for platform-specific setup"
-    echo "    2. Create .vorzela config in your project"
+    echo "    2. Create a .vm config in your project (vm init)"
     echo "    3. Create your first migration: vm make migration create_users_table"
     echo "    4. Read QUICK_REFERENCE.md for examples"
     echo ""
