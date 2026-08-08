@@ -49,27 +49,16 @@ detect_arch() {
     esac
 }
 
+norm_ver() {
+    echo "$1" | sed -E 's/^[vV]//'
+}
+
 # Prefer non-API discovery — unauthenticated api.github.com is often rate-limited.
 get_latest_version() {
     GITHUB_REPO="$1"
 
-    # 1) HTML redirect from /releases/latest (no API quota). Do NOT use -L:
-    #    with -L, curl's %{redirect_url} is empty after the final hop.
-    redirect=$(curl -fsSI -o /dev/null -w "%{redirect_url}" \
-        "https://github.com/${GITHUB_REPO}/releases/latest" 2>/dev/null || true)
-    if [ -z "$redirect" ]; then
-        redirect=$(curl -fsSI "https://github.com/${GITHUB_REPO}/releases/latest" 2>/dev/null \
-            | awk 'BEGIN{IGNORECASE=1} /^location:/{print $2}' | tr -d '\r' | tail -1 || true)
-    fi
-    if [ -n "$redirect" ]; then
-        ver="${redirect##*/}"
-        if [ -n "$ver" ] && [ "$ver" != "latest" ]; then
-            echo "$ver"
-            return 0
-        fi
-    fi
-
-    # 2) git ls-remote (no API quota)
+    # 1) git ls-remote (no API quota; version-sorted — more reliable than
+    #    /releases/latest while a new release is still publishing assets)
     if command -v git >/dev/null 2>&1; then
         ver=$(git ls-remote --refs --tags "https://github.com/${GITHUB_REPO}.git" 'v*' 2>/dev/null \
             | awk -F/ '{print $NF}' \
@@ -82,8 +71,25 @@ get_latest_version() {
         fi
     fi
 
+    # 2) HTML redirect from /releases/latest (no API quota). Do NOT use -L:
+    #    with -L, curl's %{redirect_url} is empty after the final hop.
+    redirect=$(curl -fsSI --connect-timeout 10 --max-time 20 -o /dev/null -w "%{redirect_url}" \
+        "https://github.com/${GITHUB_REPO}/releases/latest" 2>/dev/null || true)
+    if [ -z "$redirect" ]; then
+        redirect=$(curl -fsSI --connect-timeout 10 --max-time 20 \
+            "https://github.com/${GITHUB_REPO}/releases/latest" 2>/dev/null \
+            | awk 'BEGIN{IGNORECASE=1} /^location:/{print $2}' | tr -d '\r' | tail -1 || true)
+    fi
+    if [ -n "$redirect" ]; then
+        ver="${redirect##*/}"
+        if [ -n "$ver" ] && [ "$ver" != "latest" ]; then
+            echo "$ver"
+            return 0
+        fi
+    fi
+
     # 3) GitHub API (may fail with 403 rate limit)
-    ver=$(curl -fsSL -A "vorzela-migrate-install" \
+    ver=$(curl -fsSL --connect-timeout 10 --max-time 20 -A "vorzela-migrate-install" \
         "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" 2>/dev/null \
         | grep -oP '"tag_name": "\K[^"]+' | head -1 || true)
     if [ -n "$ver" ]; then
@@ -91,6 +97,20 @@ get_latest_version() {
         return 0
     fi
 
+    return 1
+}
+
+# Download a release asset with a visible progress bar and hard timeouts.
+# Silent curl makes a ~20MB GitHub CDN fetch look "stuck".
+download_release_binary() {
+    url="$1"
+    dest="$2"
+    print_status "Downloading ~20 MB from GitHub (progress below; may take 1–3 min on slow links)..."
+    # -# progress bar on stderr; no -s so the user sees activity
+    if curl -fL --connect-timeout 20 --max-time 300 --retry 2 --retry-delay 3 \
+        -# "$url" -o "$dest"; then
+        return 0
+    fi
     return 1
 }
 
@@ -211,11 +231,21 @@ main() {
     BINARY_PATH="${INSTALL_DIR}/vm"
     INSTALLED=0
 
-    # Try to download if we have a version
-    if [ -n "$LATEST_VERSION" ]; then
+    # Already on this version — skip the slow CDN download
+    if [ -n "$LATEST_VERSION" ] && [ -x "$BINARY_PATH" ]; then
+        CURRENT_OUT=$("$BINARY_PATH" --version 2>/dev/null | head -1 || true)
+        CURRENT_VER=$(echo "$CURRENT_OUT" | awk '{print $NF}')
+        if [ -n "$CURRENT_VER" ] && [ "$(norm_ver "$CURRENT_VER")" = "$(norm_ver "$LATEST_VERSION")" ]; then
+            print_success "Already on ${LATEST_VERSION} — nothing to download"
+            INSTALLED=1
+        fi
+    fi
+
+    # Try to download if we have a version and still need to install
+    if [ "$INSTALLED" -ne 1 ] && [ -n "$LATEST_VERSION" ]; then
         print_status "Attempting to download: ${DOWNLOAD_URL}"
         tmpbin=$(mktemp)
-        if curl -fsSL "$DOWNLOAD_URL" -o "$tmpbin"; then
+        if download_release_binary "$DOWNLOAD_URL" "$tmpbin"; then
             chmod +x "$tmpbin"
             if [ -f "$BINARY_PATH" ]; then
                 ts=$(date +%s)
@@ -225,7 +255,7 @@ main() {
             print_success "Binary downloaded and made executable"
             INSTALLED=1
         else
-            print_warning "Pre-built binary not available for ${LATEST_VERSION}/${BINARY_NAME}"
+            print_warning "Download failed or timed out for ${LATEST_VERSION}/${BINARY_NAME}"
             rm -f "$tmpbin" || true
         fi
     fi
@@ -309,9 +339,7 @@ main() {
         print_success "Vorzela installed successfully! ($VERSION_OUTPUT)"
         # If we have a latest version and it mismatches, warn
         if [ -n "$LATEST_VERSION" ]; then
-            # normalize by removing leading v/V
-            norm() { echo "$1" | sed -E 's/^[vV]//'; }
-            if [ "$(norm "$VERSION")" != "$(norm "$LATEST_VERSION")" ]; then
+            if [ "$(norm_ver "$VERSION")" != "$(norm_ver "$LATEST_VERSION")" ]; then
                 print_warning "Installed binary version ($VERSION) does not match expected $LATEST_VERSION"
             fi
         fi

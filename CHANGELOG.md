@@ -2,6 +2,17 @@
 
 All notable changes to Vorzela Migration Tool are documented in this file.
 
+## [2.2.9] - 2026-08-09
+
+### Bug Fixes
+
+- **`install.sh`: visible download progress + timeouts** 🔧
+  - Show a curl progress bar and note that the ~20 MB GitHub CDN fetch can take minutes.
+  - Hard connect/max timeouts (and retries) so a hung download fails instead of sitting silent.
+  - Skip re-download when `~/.local/bin/vm` is already on the latest tag.
+
+---
+
 ## [2.2.8] - 2026-08-09
 
 ### Bug Fixes
