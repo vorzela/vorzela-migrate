@@ -1,160 +1,138 @@
 package version
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 )
 
-func TestNormalizeVersion(t *testing.T) {
+func TestNormalizeVersionExported(t *testing.T) {
 	tests := []struct {
-		name  string
-		input string
-		want  string
+		in, want string
 	}{
-		{"with v prefix", "v1.2.3", "1.2.3"},
-		{"with V prefix", "V1.2.3", "1.2.3"},
-		{"without prefix", "1.2.3", "1.2.3"},
-		{"empty string", "", ""},
+		{"v1.2.3", "1.2.3"},
+		{"V1.2.3", "1.2.3"},
+		{"1.2.3", "1.2.3"},
+		{"", ""},
 	}
-
-	// Test the normalize function logic
-	normalize := func(s string) string {
-		if s == "" {
-			return s
-		}
-		if s[0] == 'v' || s[0] == 'V' {
-			return s[1:]
-		}
-		return s
-	}
-
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := normalize(tt.input)
-			if got != tt.want {
-				t.Errorf("normalize(%q) = %q, want %q", tt.input, got, tt.want)
-			}
-		})
+		if got := normalizeVersion(tt.in); got != tt.want {
+			t.Errorf("normalizeVersion(%q)=%q want %q", tt.in, got, tt.want)
+		}
 	}
 }
 
-func TestCheckForUpdate(t *testing.T) {
-	// Note: This is a network test, so we skip it in CI unless specifically enabled
-	if testing.Short() {
-		t.Skip("Skipping network test in short mode")
-	}
+func TestCheckForUpdateHTTPErrorNotAlreadyLatest(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"message":"API rate limit exceeded"}`))
+	}))
+	defer srv.Close()
+
+	origAPI, origClient, origVer := GitHubAPI, HTTPClient, CurrentVersion
+	GitHubAPI = srv.URL
+	HTTPClient = srv.Client()
+	CurrentVersion = "v2.2.4"
+	defer func() {
+		GitHubAPI, HTTPClient, CurrentVersion = origAPI, origClient, origVer
+	}()
 
 	newVersion, available, err := CheckForUpdate()
-
-	// We don't assert specific values since they depend on what's actually released
-	// Just ensure the function doesn't error and returns sensible values
-	if err != nil {
-		t.Logf("CheckForUpdate() returned error (might be expected if network unavailable): %v", err)
-		return
+	if err == nil {
+		t.Fatal("expected error on HTTP 403")
 	}
-
 	if available {
-		if newVersion == "" {
-			t.Error("CheckForUpdate() available=true but newVersion is empty")
-		}
-		t.Logf("New version available: %s (current: %s)", newVersion, CurrentVersion)
-	} else {
-		t.Logf("Already on latest version: %s", CurrentVersion)
+		t.Fatal("must not claim update available on error")
+	}
+	if newVersion != "" {
+		t.Fatalf("newVersion=%q", newVersion)
+	}
+	if !strings.Contains(err.Error(), "403") && !strings.Contains(err.Error(), "rate limit") {
+		t.Fatalf("error should mention HTTP/rate limit: %v", err)
 	}
 }
 
-func TestCurrentVersionSet(t *testing.T) {
-	if CurrentVersion == "" {
-		t.Error("CurrentVersion should not be empty")
-	}
-}
+func TestCheckForUpdateDetectsNewer(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"tag_name":"v2.2.6","name":"v2.2.6"}`))
+	}))
+	defer srv.Close()
 
-func TestPrintVersionNoticeNoError(t *testing.T) {
-	// PrintVersionNotice should not panic or error
-	// It silently fails on network errors, which is expected
-
-	// Save and restore original GitHubAPI to prevent network calls
-	originalAPI := GitHubAPI
-	GitHubAPI = "" // Empty URL will cause silent failure without network call
+	origAPI, origClient, origVer := GitHubAPI, HTTPClient, CurrentVersion
+	GitHubAPI = srv.URL
+	HTTPClient = srv.Client()
+	CurrentVersion = "v2.2.4"
 	defer func() {
-		GitHubAPI = originalAPI
+		GitHubAPI, HTTPClient, CurrentVersion = origAPI, origClient, origVer
+	}()
+
+	newVersion, available, err := CheckForUpdate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !available || newVersion != "v2.2.6" {
+		t.Fatalf("got available=%v version=%q", available, newVersion)
+	}
+}
+
+func TestCheckForUpdateSameVersion(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"tag_name":"v2.2.4"}`))
+	}))
+	defer srv.Close()
+
+	origAPI, origClient, origVer := GitHubAPI, HTTPClient, CurrentVersion
+	GitHubAPI = srv.URL
+	HTTPClient = srv.Client()
+	CurrentVersion = "v2.2.4"
+	defer func() {
+		GitHubAPI, HTTPClient, CurrentVersion = origAPI, origClient, origVer
+	}()
+
+	_, available, err := CheckForUpdate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if available {
+		t.Fatal("expected no update when versions match")
+	}
+}
+
+func TestCheckForUpdateNetworkError(t *testing.T) {
+	origAPI, origClient, origTimeout := GitHubAPI, HTTPClient, Timeout
+	GitHubAPI = "http://127.0.0.1:1" // nothing listening
+	Timeout = 200 * time.Millisecond
+	HTTPClient = &http.Client{Timeout: Timeout}
+	defer func() {
+		GitHubAPI, HTTPClient, Timeout = origAPI, origClient, origTimeout
+	}()
+
+	_, available, err := CheckForUpdate()
+	if err == nil {
+		t.Fatal("expected network error")
+	}
+	if available {
+		t.Fatal("must not claim update on network error")
+	}
+}
+
+func TestPrintVersionNoticeNoPanicOnError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	origAPI, origClient := GitHubAPI, HTTPClient
+	GitHubAPI = srv.URL
+	HTTPClient = srv.Client()
+	defer func() {
+		GitHubAPI, HTTPClient = origAPI, origClient
 		if r := recover(); r != nil {
-			t.Errorf("PrintVersionNotice() panicked: %v", r)
+			t.Fatalf("panic: %v", r)
 		}
 	}()
 
 	PrintVersionNotice()
-	// If we reach here without panic, test passes
-}
-
-func TestCheckForUpdateGracefulFailure(t *testing.T) {
-	// Test that CheckForUpdate handles errors gracefully
-	// by verifying it doesn't panic and returns sensible defaults
-
-	// Save original values
-	originalAPI := GitHubAPI
-	originalTimeout := Timeout
-
-	// Test with invalid URL
-	GitHubAPI = "http://invalid-url-that-does-not-exist.local/api"
-	defer func() {
-		GitHubAPI = originalAPI
-		Timeout = originalTimeout
-	}()
-
-	newVersion, available, err := CheckForUpdate()
-
-	// Should gracefully handle error
-	if err != nil {
-		// Errors are acceptable but should be returned, not panic
-		t.Logf("CheckForUpdate gracefully handled error: %v", err)
-	}
-
-	// When error occurs, should not claim update is available
-	if available {
-		t.Error("CheckForUpdate() should not claim update available on error")
-	}
-
-	// Version should be empty string on error
-	if available && newVersion == "" {
-		t.Error("If available=true, newVersion should not be empty")
-	}
-}
-
-func TestVersionComparison(t *testing.T) {
-	// Test the normalize function used in CheckForUpdate
-	normalize := func(s string) string {
-		if s == "" {
-			return s
-		}
-		if s[0] == 'v' || s[0] == 'V' {
-			return s[1:]
-		}
-		return s
-	}
-
-	tests := []struct {
-		current string
-		latest  string
-		isDiff  bool
-	}{
-		{"v1.0.0", "v1.0.0", false},
-		{"1.0.0", "1.0.0", false},
-		{"v1.0.0", "1.0.0", false}, // After normalization, should be same
-		{"v1.0.0", "v2.0.0", true},
-		{"1.0.0", "2.0.0", true},
-		{"V1.0.0", "v1.0.0", false}, // Case insensitive normalization
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.current+"_vs_"+tt.latest, func(t *testing.T) {
-			normalizedCurrent := normalize(tt.current)
-			normalizedLatest := normalize(tt.latest)
-			isDiff := normalizedCurrent != normalizedLatest
-
-			if isDiff != tt.isDiff {
-				t.Errorf("normalize(%q) vs normalize(%q): got isDiff=%v, want %v",
-					tt.current, tt.latest, isDiff, tt.isDiff)
-			}
-		})
-	}
 }

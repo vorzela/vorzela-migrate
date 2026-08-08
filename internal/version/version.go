@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -15,6 +16,9 @@ var (
 	CurrentVersion = "dev"
 	GitHubAPI      = "https://api.github.com/repos/vorzela/vorzela-migrate/releases/latest"
 	Timeout        = 5 * time.Second
+
+	// HTTPClient is overridable in tests.
+	HTTPClient = http.DefaultClient
 )
 
 // LatestRelease represents a GitHub release
@@ -24,66 +28,87 @@ type LatestRelease struct {
 	Body    string `json:"body"`
 }
 
-// CheckForUpdate checks if a new version is available
+// CheckForUpdate checks if a newer release than CurrentVersion is available.
+// On network/API failure it returns err — callers must NOT treat that as "already latest".
 func CheckForUpdate() (newVersion string, available bool, err error) {
 	ctx, cancel := context.WithTimeout(context.Background(), Timeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", GitHubAPI, nil)
 	if err != nil {
-		return "", false, nil // Silently fail, don't disrupt user
+		return "", false, fmt.Errorf("build update request: %w", err)
 	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("User-Agent", "vorzela-migrate/"+normalizeVersion(CurrentVersion))
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := HTTPClient.Do(req)
 	if err != nil {
-		return "", false, nil // Network error, silently fail
+		return "", false, fmt.Errorf("check for updates failed (network): %w", err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return "", false, nil
+	body, readErr := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if readErr != nil {
+		return "", false, fmt.Errorf("read update response: %w", readErr)
 	}
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", false, nil
+	if resp.StatusCode != http.StatusOK {
+		msg := strings.TrimSpace(string(body))
+		if msg == "" {
+			msg = resp.Status
+		}
+		// GitHub often returns a JSON {"message":"..."} on 403 rate limit.
+		var apiErr struct {
+			Message string `json:"message"`
+		}
+		if json.Unmarshal(body, &apiErr) == nil && apiErr.Message != "" {
+			msg = apiErr.Message
+		}
+		return "", false, fmt.Errorf("check for updates failed (HTTP %d): %s", resp.StatusCode, msg)
 	}
 
 	var release LatestRelease
 	if err := json.Unmarshal(body, &release); err != nil {
-		return "", false, nil
+		return "", false, fmt.Errorf("parse update response: %w", err)
 	}
 
-	version := release.TagName
+	version := strings.TrimSpace(release.TagName)
 	if version == "" {
-		return "", false, nil
+		return "", false, fmt.Errorf("check for updates failed: empty tag_name in latest release")
 	}
 
-	// Normalize versions by stripping leading 'v' or 'V'
-	normalize := func(s string) string {
-		if s == "" {
-			return s
-		}
-		if s[0] == 'v' || s[0] == 'V' {
-			return s[1:]
-		}
-		return s
-	}
-	currentVer := normalize(CurrentVersion)
-	latestVer := normalize(version)
+	currentVer := normalizeVersion(CurrentVersion)
+	latestVer := normalizeVersion(version)
 
-	if latestVer != "" && currentVer != latestVer {
-		return version, true, nil // return the original tag (e.g. "v2.0.3")
+	// "dev" / empty always treat remote as newer when we got a tag.
+	if currentVer == "" || currentVer == "dev" {
+		return version, true, nil
+	}
+	if latestVer != "" && latestVer != currentVer {
+		return version, true, nil
 	}
 
-	return "", false, nil
+	return version, false, nil
 }
 
-// PrintVersionNotice prints an update notice if a new version is available
-func PrintVersionNotice() {
-	newVersion, available, _ := CheckForUpdate()
-	if available {
-		fmt.Printf("\n⚠️  A new version is available: vm %s (current: %s)\n", newVersion, CurrentVersion)
-		fmt.Printf("   Run 'vm upgrade' to update\n\n")
+func normalizeVersion(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return s
 	}
+	if s[0] == 'v' || s[0] == 'V' {
+		return s[1:]
+	}
+	return s
+}
+
+// PrintVersionNotice prints an update notice if a new version is available.
+// Network/API errors are ignored here so everyday commands stay quiet.
+func PrintVersionNotice() {
+	newVersion, available, err := CheckForUpdate()
+	if err != nil || !available {
+		return
+	}
+	fmt.Printf("\n⚠️  A new version is available: vm %s (current: %s)\n", newVersion, CurrentVersion)
+	fmt.Printf("   Run 'vm upgrade' to update\n\n")
 }

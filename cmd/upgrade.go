@@ -16,8 +16,11 @@ var UpgradeCommand = &cli.Command{
 	Action: func(c *cli.Context) error {
 		newVersion, available, err := version.CheckForUpdate()
 		if err != nil {
-			output.Error("Failed to check for updates")
-			return err
+			output.Error("Could not check for updates: %v", err)
+			output.Info("Your installed version is %s", version.CurrentVersion)
+			output.Info("If a newer release exists, install with:")
+			output.Info("  curl -sSL https://github.com/vorzela/vorzela-migrate/raw/main/install.sh | bash")
+			return fmt.Errorf("update check failed: %w", err)
 		}
 
 		if !available {

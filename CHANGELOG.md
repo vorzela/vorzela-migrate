@@ -2,6 +2,17 @@
 
 All notable changes to Vorzela Migration Tool are documented in this file.
 
+## [2.2.7] - 2026-08-09
+
+### Bug Fixes
+
+- **`vm upgrade`: stop claiming “already latest” when the update check fails** 🔧
+  - Network / GitHub API errors (including rate limits) now surface as real failures with
+    an install-script hint, instead of silently looking like you’re up to date.
+  - Everyday commands still stay quiet on check failures (`PrintVersionNotice`).
+
+---
+
 ## [2.2.6] - 2026-08-09
 
 ### Bug Fixes
