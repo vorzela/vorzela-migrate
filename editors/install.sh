@@ -13,7 +13,7 @@ set -euo pipefail
 EDITORS_ROOT="$(cd "$(dirname "$0")" && pwd)"
 VSCODE_EXT="$EDITORS_ROOT/vscode"
 EXT_ID="vorzela.vorzela-vm"
-EXT_VER="1.1.1"
+EXT_VER="1.2.0"
 LIST_ONLY=0
 FILTER=""
 
@@ -124,6 +124,7 @@ detect_sublime() {
   fi
   mkdir -p "$dest"
   link_file "$EDITORS_ROOT/sublime/Vorzela VM.sublime-syntax" "$dest/Vorzela VM.sublime-syntax"
+  link_file "$EDITORS_ROOT/sublime/Vorzela VORM.sublime-syntax" "$dest/Vorzela VORM.sublime-syntax"
   ok "Linked Sublime Text → $dest"
 }
 

@@ -1,0 +1,46 @@
+%YAML 1.2
+---
+# Vorzela vorm .vorm config — Sublime Text 3 / 4
+name: Vorzela VORM
+file_extensions:
+  - vorm
+scope: source.vorzela-vorm
+
+variables:
+  known_key: 'PACKAGE|OUT_DIR|DRIVER|DIALECT|QUERY_DIR|MODEL_DIR|SCHEMA_DIR|MODEL_PACKAGE|MODEL_IMPORT|GEN_PACKAGE|PACKAGE_NAME|GEN_DIR|QUERIES_DIR|MODELS_DIR'
+
+contexts:
+  main:
+    - match: '#.*$'
+      scope: comment.line.number-sign.vorzela-vorm
+    - match: '^(\s*)({{known_key}})(\s*)(=)(\s*)'
+      captures:
+        2: keyword.other.known-key.vorzela-vorm
+        4: keyword.operator.assignment.vorzela-vorm
+      push: value
+    - match: '^(\s*)([A-Za-z_][A-Za-z0-9_]*)(\s*)(=)(\s*)'
+      captures:
+        2: variable.other.key.vorzela-vorm
+        4: keyword.operator.assignment.vorzela-vorm
+      push: value
+    - match: '^\s*[^#\s=][^\n=]*$'
+      scope: invalid.illegal.malformed.vorzela-vorm
+
+  value:
+    - match: '#.*$'
+      scope: comment.line.number-sign.vorzela-vorm
+      pop: true
+    - match: (?i)\b(pgx|pq)\b(?=\s*(#|$))
+      scope: constant.language.driver.vorzela-vorm
+    - match: (?i)\b(postgres(?:ql)?|mysql|mariadb)\b(?=\s*(#|$))
+      scope: constant.language.dialect.vorzela-vorm
+    - match: '".*?"'
+      scope: string.quoted.double.vorzela-vorm
+    - match: "'.*?'"
+      scope: string.quoted.single.vorzela-vorm
+    - match: \./[^\s#]+
+      scope: string.unquoted.path.vorzela-vorm
+    - match: '[^\s#]+'
+      scope: string.unquoted.value.vorzela-vorm
+    - match: $
+      pop: true

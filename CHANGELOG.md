@@ -2,6 +2,35 @@
 
 All notable changes to Vorzela Migration Tool are documented in this file.
 
+## [2.2.6] - 2026-08-09
+
+### Bug Fixes
+
+- **`vm migrate`: stop and retry on auto-run failure** 🔧
+  - Extension / function / enum sync failures no longer warn-and-continue into the next step
+    (e.g. bad password after “Apply extension sync?” used to proceed to function sync).
+  - On failure, migrate stops, explains the error, and prompts `Retry …?`.
+  - Retry reloads `.vm` / `DATABASE_URL` and reconnects so fixed credentials take effect.
+  - Decline retry aborts migrate; set `AUTO_RUN_EXTENSIONS|FUNCTIONS|ENUMS=false` to skip.
+
+### Features
+
+- **Optional vorm ORM (`orm/go`)** 🧩
+  - Laravel-style `Schema.Create` + hybrid `// vorm:query` codegen (no sqlc).
+  - `vorm/gen` emits sqlc-style `*Row` / `*Params`, parameterized SQL (pgx / pq / MySQL).
+  - `.vorm` project config (`vorm init`, `vorm config`, `vorm config lint`).
+  - Column existence + type checks; never `SELECT *`.
+
+- **`.vorm` editor support** 🖍️
+  - Same VS Code/Cursor extension (v1.2.0): highlight, hover, completions, live lint for `.vorm`.
+  - Helix, Sublime, Nano, Vim updated; `./editors/install.sh` links VORM syntax.
+
+### Documentation
+
+- LLM / README notes for migrate retry behaviour and vorm layout.
+
+---
+
 ## [2.2.5] - 2026-07-26
 
 ### Features

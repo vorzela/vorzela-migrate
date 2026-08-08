@@ -11,3 +11,12 @@ file-types = ["vm", { glob = ".vm" }]
 comment-tokens = "#"
 indent = { tab-width = 2, unit = "  " }
 grammar = "ini"
+
+[[language]]
+name = "vorzela-vorm"
+scope = "source.vorzela-vorm"
+injection-regex = "vorzela-vorm"
+file-types = ["vorm", { glob = ".vorm" }]
+comment-tokens = "#"
+indent = { tab-width = 2, unit = "  " }
+grammar = "ini"

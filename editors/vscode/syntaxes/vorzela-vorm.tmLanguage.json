@@ -1,0 +1,84 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Vorzela VORM",
+  "scopeName": "source.vorzela-vorm",
+  "fileTypes": ["vorm"],
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#assignment" },
+    { "include": "#invalid-line" }
+  ],
+  "repository": {
+    "comment": {
+      "name": "comment.line.number-sign.vorzela-vorm",
+      "match": "#.*$"
+    },
+    "assignment": {
+      "name": "meta.assignment.vorzela-vorm",
+      "begin": "^(\\s*)([A-Za-z_][A-Za-z0-9_]*)(\\s*)(=)(\\s*)",
+      "beginCaptures": {
+        "2": { "patterns": [{ "include": "#key" }] },
+        "3": { "name": "meta.whitespace.vorzela-vorm" },
+        "4": { "name": "keyword.operator.assignment.vorzela-vorm" },
+        "5": { "name": "meta.whitespace.vorzela-vorm" }
+      },
+      "end": "$",
+      "patterns": [
+        { "include": "#comment" },
+        { "include": "#value" }
+      ]
+    },
+    "key": {
+      "patterns": [
+        {
+          "name": "keyword.other.known-key.vorzela-vorm",
+          "match": "\\b(PACKAGE|OUT_DIR|DRIVER|DIALECT|QUERY_DIR|MODEL_DIR|SCHEMA_DIR|MODEL_PACKAGE|MODEL_IMPORT|GEN_PACKAGE|PACKAGE_NAME|GEN_DIR|QUERIES_DIR|MODELS_DIR)\\b"
+        },
+        {
+          "name": "variable.other.key.vorzela-vorm",
+          "match": "[A-Za-z_][A-Za-z0-9_]*"
+        }
+      ]
+    },
+    "value": {
+      "patterns": [
+        {
+          "name": "constant.language.driver.vorzela-vorm",
+          "match": "(?i)\\b(pgx|pq)\\b(?=\\s*(#|$))"
+        },
+        {
+          "name": "constant.language.dialect.vorzela-vorm",
+          "match": "(?i)\\b(postgres(?:ql)?|mysql|mariadb)\\b(?=\\s*(#|$))"
+        },
+        {
+          "name": "string.quoted.double.vorzela-vorm",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            { "name": "constant.character.escape.vorzela-vorm", "match": "\\\\." }
+          ]
+        },
+        {
+          "name": "string.quoted.single.vorzela-vorm",
+          "begin": "'",
+          "end": "'",
+          "patterns": [
+            { "name": "constant.character.escape.vorzela-vorm", "match": "\\\\." }
+          ]
+        },
+        {
+          "name": "string.unquoted.path.vorzela-vorm",
+          "match": "\\./[^\\s#]+|/[\\w./-]+"
+        },
+        {
+          "name": "string.unquoted.value.vorzela-vorm",
+          "match": "[^\\s#]+"
+        }
+      ]
+    },
+    "invalid-line": {
+      "name": "invalid.illegal.vorzela-vorm",
+      "match": "^.+$"
+    }
+  }
+}

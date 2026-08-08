@@ -1,10 +1,24 @@
 {
   "files.associations": {
     ".vm": "vorzela-vm",
-    "*.vm": "vorzela-vm"
+    "*.vm": "vorzela-vm",
+    ".vorm": "vorzela-vorm",
+    "*.vorm": "vorzela-vorm"
   },
   "files.exclude": {},
   "[vorzela-vm]": {
+    "editor.tabSize": 2,
+    "editor.insertSpaces": true,
+    "editor.autoIndent": "none",
+    "editor.quickSuggestions": {
+      "other": true,
+      "comments": false,
+      "strings": true
+    },
+    "editor.suggestOnTriggerCharacters": true,
+    "editor.wordBasedSuggestions": "off"
+  },
+  "[vorzela-vorm]": {
     "editor.tabSize": 2,
     "editor.insertSpaces": true,
     "editor.autoIndent": "none",

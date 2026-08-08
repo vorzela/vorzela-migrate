@@ -638,7 +638,9 @@ vm extensions drop --step       # one at a time with y/N per extension
 ```
 
 ### Auto-run
-When `AUTO_RUN_EXTENSIONS=true` (default), `vm migrate` calls `vm extensions migrate` automatically before running migration files. No manual invocation needed after initial setup.
+When `AUTO_RUN_EXTENSIONS=true` (default), `vm migrate` calls extension sync automatically before running migration files. No manual invocation needed after initial setup.
+
+If extension / function / enum sync **fails** (e.g. bad password), migrate **stops** and offers `Retry …?` after you fix `.vm` / `DATABASE_URL` — it does not continue to the next step. Decline retry to abort; or set `AUTO_RUN_*=false` to skip that step.
 
 ---
 

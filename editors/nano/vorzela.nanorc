@@ -1,18 +1,21 @@
-## Vorzela Migrate .vm configuration
+## Vorzela Migrate .vm + vorm .vorm configuration
 syntax vorzela
-header "\.vm$" "\.vm$"
+header "\.vm$" "\.vm$" "\.vorm$" "\.vorm$"
 
 comment "#"
 
-# Known keys
+# .vm known keys
 color brightcyan "\<(DATABASE_URL|MIGRATION_PATH|SQLC_SUPPORT|ENVIRONMENT|ENV|ENHANCED|ONLINE|VERIFY_CHECKSUMS|DETECT_DRIFT|VERBOSE|AUTO_RUN_EXTENSIONS|AUTO_RUN_FUNCTIONS|AUTO_RUN_ENUMS|DRIFT_HANDLING)\>"
+
+# .vorm known keys
+color brightcyan "\<(PACKAGE|OUT_DIR|DRIVER|DIALECT|QUERY_DIR|MODEL_DIR|SCHEMA_DIR|MODEL_PACKAGE|MODEL_IMPORT)\>"
 
 # Assignment
 color brightwhite "="
 
-# Booleans / enums
+# Booleans / enums / drivers
 color brightgreen "\<(true|false|TRUE|FALSE|True|False|1|0)\>"
-color brightmagenta "\<(development|dev|develop|production|prod|auto|prompt|reject)\>"
+color brightmagenta "\<(development|dev|develop|production|prod|auto|prompt|reject|pgx|pq|postgres|postgresql|mysql|mariadb)\>"
 
 # DSNs and paths
 color brightyellow "(postgres(ql)?|mysql)://[^[:space:]#]+"

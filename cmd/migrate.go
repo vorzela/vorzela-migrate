@@ -103,46 +103,35 @@ var MigrateCommand = &cli.Command{
 			output.Error("Failed to connect to database: %v", err)
 			return fmt.Errorf("failed to connect to database: %w", err)
 		}
-		defer db.Close()
+		defer func() { db.Close() }()
 
-		// Auto-run extensions, functions and enums if enabled (default: true)
-		// These are PostgreSQL-only features — skip silently on MySQL/MariaDB
+		// Auto-run extensions, functions and enums if enabled (default: true).
+		// These are PostgreSQL-only — skip silently on MySQL/MariaDB.
+		// On failure: do NOT continue to the next step; offer retry after the user fixes the issue.
 		dialect := migration.DetectDialect(cfg.DatabaseURL)
 		isPostgres := dialect == migration.PostgreSQL
 
 		if cfg.AutoRunExtensions {
 			if !isPostgres {
 				output.Info("Skipping auto-run extensions (PostgreSQL only)")
-			} else if err := runExtensionsIfNeeded(db, cfg); err != nil {
-				extensionsPath := filepath.Join(cfg.MigrationPath, "extensions.sql")
-				if _, statErr := os.Stat(extensionsPath); statErr == nil {
-					output.Warning("Failed to run extensions: %v", err)
-					output.Info("To skip auto-run, set AUTO_RUN_EXTENSIONS=false in .vm file")
-				}
+			} else if err := runAutoPrerequisite(c, "extensions", "AUTO_RUN_EXTENSIONS", &cfg, &db, runExtensionsIfNeeded); err != nil {
+				return err
 			}
 		}
 
 		if cfg.AutoRunFunctions {
 			if !isPostgres {
 				output.Info("Skipping auto-run functions (PostgreSQL only)")
-			} else if err := runFunctionsIfNeeded(db, cfg); err != nil {
-				functionsPath := filepath.Join(cfg.MigrationPath, "functions.sql")
-				if _, statErr := os.Stat(functionsPath); statErr == nil {
-					output.Warning("Failed to run functions: %v", err)
-					output.Info("To skip auto-run, set AUTO_RUN_FUNCTIONS=false in .vm file")
-				}
+			} else if err := runAutoPrerequisite(c, "functions", "AUTO_RUN_FUNCTIONS", &cfg, &db, runFunctionsIfNeeded); err != nil {
+				return err
 			}
 		}
 
 		if cfg.AutoRunEnums {
 			if !isPostgres {
 				output.Info("Skipping auto-run enums (PostgreSQL only)")
-			} else if err := runEnumsIfNeeded(db, cfg); err != nil {
-				enumsPath := filepath.Join(cfg.MigrationPath, "enums.sql")
-				if _, statErr := os.Stat(enumsPath); statErr == nil {
-					output.Warning("Failed to run enums: %v", err)
-					output.Info("To skip auto-run, set AUTO_RUN_ENUMS=false in .vm file")
-				}
+			} else if err := runAutoPrerequisite(c, "enums", "AUTO_RUN_ENUMS", &cfg, &db, runEnumsIfNeeded); err != nil {
+				return err
 			}
 		}
 
@@ -256,6 +245,51 @@ var MigrateCommand = &cli.Command{
 
 		return nil
 	},
+}
+
+// runAutoPrerequisite runs an auto-run step (extensions / functions / enums).
+// On failure it does NOT continue to the next migrate step — it prompts to retry
+// after the user fixes credentials/config, reloading .vm and reconnecting.
+func runAutoPrerequisite(
+	c *cli.Context,
+	name, skipFlag string,
+	cfg **config.Config,
+	dbp *db.DB,
+	step func(db.DB, *config.Config) error,
+) error {
+	for {
+		err := step(*dbp, *cfg)
+		if err == nil {
+			return nil
+		}
+
+		output.Error("Failed to run %s: %v", name, err)
+		output.Info("Migrate will not continue until this succeeds.")
+		output.Info("Fix the issue (e.g. DATABASE_URL / password in .vm or env), then retry.")
+		output.Info("To skip this step, set %s=false in .vm and re-run `vm migrate`", skipFlag)
+
+		if !output.Confirm(fmt.Sprintf("Retry %s?", name)) {
+			return fmt.Errorf("%s failed: %w", name, err)
+		}
+
+		// Reload config so fixed credentials / .vm changes take effect.
+		newCfg, lerr := config.LoadConfig(c.String("dsn"), c.String("path"))
+		if lerr != nil {
+			output.Warning("Could not reload config: %v — retrying with previous settings", lerr)
+		} else if verr := newCfg.Validate(); verr != nil {
+			output.Warning("Reloaded config invalid: %v — retrying with previous settings", verr)
+		} else {
+			*cfg = newCfg
+		}
+
+		newDB, cerr := database.Connect((*cfg).DatabaseURL)
+		if cerr != nil {
+			output.Warning("Reconnect failed: %v — retrying with existing connection", cerr)
+			continue
+		}
+		(*dbp).Close()
+		*dbp = newDB
+	}
 }
 
 // enumOp describes a single pending enum change for display before prompting.

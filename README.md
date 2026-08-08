@@ -48,6 +48,7 @@
 - 🎨 **Colorized Output** - Beautiful, easy-to-read colored terminal output with execution timing
 - ⚙️ **Multiple Configuration Methods** - `.vm` config files, `.env` files, or environment variables
 - 🖍️ **`.vm` Editor Support** - Syntax highlighting, key hover docs, live lint, Ctrl+Space (VS Code/Cursor) — run `./editors/install.sh` once; see [`editors/`](editors/README.md)
+- 🧩 **Optional ORM (v3 / vorm)** - Go Schema + `vorm/gen` (pgx v5 / MySQL; **no sqlc**); see [`orm/go/README.md`](orm/go/README.md)
 - 🚀 **No DSN Flag Required** - Use config files instead of repeating `--dsn` flag
 - 🐘 **Multi-Database Support** - PostgreSQL and MySQL/MariaDB with automatic detection
 - 🌍 **Environment-Based Auto Config** - Set `ENVIRONMENT` in `.vm`; the tool auto-configures everything
@@ -1438,30 +1439,13 @@ vorzela-migrate/
 ├── go.mod
 ├── README.md
 ├── cmd/
-│   ├── make.go
-│   ├── migrate.go
-│   ├── rollback.go
-│   ├── refresh.go
-│   ├── fresh.go
-│   └── status.go
 ├── internal/
-│   ├── config/
-│   │   └── config.go
-│   ├── database/
-│   │   └── connection.go
-│   ├── db/
-│   │   ├── db.go
-│   │   ├── postgres.go
-│   │   └── mysql.go
-│   └── migration/
-│       ├── types.go
-│       ├── create.go
-│       ├── executor.go
-│       ├── status.go
-│       └── dialect.go
+├── editors/          # .vm syntax / hover / lint
+├── orm/              # optional vorm (multi-language ORM)
+│   ├── go/           # github.com/vorzela/vorm (active)
+│   ├── typescript/   # planned
+│   └── python/       # planned
 └── migrations/
-    ├── .gitkeep
-    └── 1707123456_create_users_table.sql
 ```
 
 ## Tips & Best Practices

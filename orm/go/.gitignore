@@ -1,0 +1,6 @@
+# Ignore app-local generated / runtime dirs when experimenting
+/vorm/
+/models/
+/queries/
+/schema/
+/migrations/

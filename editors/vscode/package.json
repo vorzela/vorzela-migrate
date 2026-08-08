@@ -1,16 +1,17 @@
 {
   "name": "vorzela-vm",
-  "displayName": "Vorzela VM Config",
-  "description": "Syntax highlighting, hover docs, and live lint for Vorzela Migrate .vm files",
-  "version": "1.1.1",
+  "displayName": "Vorzela Config (.vm + .vorm)",
+  "description": "Syntax highlighting, hover docs, completions, and live lint for Vorzela .vm and vorm .vorm files",
+  "version": "1.2.0",
   "publisher": "vorzela",
   "engines": {
     "vscode": "^1.74.0"
   },
   "categories": ["Programming Languages", "Linters"],
-  "keywords": ["vorzela", "vm", "migrate", "dotenv", "config", "lint"],
+  "keywords": ["vorzela", "vm", "vorm", "migrate", "orm", "dotenv", "config", "lint"],
   "activationEvents": [
-    "onLanguage:vorzela-vm"
+    "onLanguage:vorzela-vm",
+    "onLanguage:vorzela-vorm"
   ],
   "main": "./extension.js",
   "contributes": {
@@ -25,6 +26,17 @@
           "light": "./icons/vm-light.svg",
           "dark": "./icons/vm-dark.svg"
         }
+      },
+      {
+        "id": "vorzela-vorm",
+        "aliases": ["Vorzela VORM", "vorzela-vorm", "vorm"],
+        "extensions": [".vorm"],
+        "filenames": [".vorm"],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icons/vm-light.svg",
+          "dark": "./icons/vm-dark.svg"
+        }
       }
     ],
     "grammars": [
@@ -32,10 +44,26 @@
         "language": "vorzela-vm",
         "scopeName": "source.vorzela-vm",
         "path": "./syntaxes/vorzela-vm.tmLanguage.json"
+      },
+      {
+        "language": "vorzela-vorm",
+        "scopeName": "source.vorzela-vorm",
+        "path": "./syntaxes/vorzela-vorm.tmLanguage.json"
       }
     ],
     "configurationDefaults": {
       "[vorzela-vm]": {
+        "editor.autoIndent": "none",
+        "editor.quickSuggestions": {
+          "other": true,
+          "comments": false,
+          "strings": true
+        },
+        "editor.suggestOnTriggerCharacters": true,
+        "editor.wordBasedSuggestions": "off",
+        "editor.suggest.showStatusBar": true
+      },
+      "[vorzela-vorm]": {
         "editor.autoIndent": "none",
         "editor.quickSuggestions": {
           "other": true,
