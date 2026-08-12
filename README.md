@@ -908,8 +908,8 @@ This gives you:
 of the same migration files: models introspected from your database, sqlc-style
 typed queries, relations, and structured errors.
 
-It is a separate module — `vm` does not depend on it, and it does not require
-`vm`.
+It lives in its own repository, [vorzela/vorm](https://github.com/vorzela/vorm) —
+`vm` does not depend on it, and it does not require `vm`.
 
 ```bash
 go install github.com/vorzela/vorm/cmd/vorm@latest
@@ -963,10 +963,10 @@ migrations to run inside your own binary with no external dependency.
 
 ### Docs
 
-- [`orm/go/README.md`](orm/go/README.md) — overview and configuration
-- [`orm/go/docs/USAGE.md`](orm/go/docs/USAGE.md) — end-to-end usage guide
-- [`orm/go/docs/MIGRATIONS.md`](orm/go/docs/MIGRATIONS.md) — runner, locks, prerequisites
-- [`orm/go/LLM.md`](orm/go/LLM.md) — rules for AI agents in a vorm project
+- [vorzela/vorm](https://github.com/vorzela/vorm) — overview and configuration
+- [USAGE.md](https://github.com/vorzela/vorm/blob/main/docs/USAGE.md) — end-to-end usage guide
+- [MIGRATIONS.md](https://github.com/vorzela/vorm/blob/main/docs/MIGRATIONS.md) — runner, locks, prerequisites
+- [LLM.md](https://github.com/vorzela/vorm/blob/main/LLM.md) — rules for AI agents in a vorm project
 
 ## Configuration
 
@@ -1508,15 +1508,6 @@ vorzela-migrate/
 ├── cmd/
 ├── internal/
 ├── editors/          # .vm syntax / hover / lint
-├── orm/              # optional vorm (multi-language ORM)
-│   ├── go/           # github.com/vorzela/vorm (active)
-│   │   ├── cmd/vorm/     # the vorm CLI
-│   │   ├── migrate/      # in-process migration runner (vm-compatible)
-│   │   ├── introspect/   # PostgreSQL / MySQL schema reader
-│   │   ├── generate/     # models, enums, relations, typed queries
-│   │   └── query/        # runtime builder, scanning, relations, errors
-│   ├── typescript/   # planned
-│   └── python/       # planned
 └── migrations/
 ```
 

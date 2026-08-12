@@ -2,6 +2,18 @@
 
 All notable changes to Vorzela Migration Tool are documented in this file.
 
+## [Unreleased]
+
+### Changed
+
+- **vorm ORM moved to its own repository** 🧩
+  - The `orm/` tree now lives at [vorzela/vorm](https://github.com/vorzela/vorm),
+    released as `v0.0.1`: `go install github.com/vorzela/vorm/cmd/vorm@latest`.
+  - `vm` never depended on it, so nothing changes for migration users. vorm keeps
+    reading and writing the same migration files, tracking table and locks.
+
+---
+
 ## [2.2.9] - 2026-08-09
 
 ### Bug Fixes
