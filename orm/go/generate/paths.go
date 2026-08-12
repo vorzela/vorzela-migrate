@@ -8,8 +8,10 @@ package generate
 //	migrations/         — SQL for vm (Schema.Create)
 //	vorm/gen/           — generated Go (pgx v5 / MySQL drivers via query.DB)
 const (
-	DefaultSchemaDir = "./schema/migrations"
-	DefaultQueryDir  = "./queries"
-	DefaultModelDir  = "./models"
-	DefaultOutDir    = "./vorm/gen"
+	DefaultSchemaDir     = "./schema/migrations"
+	DefaultQueryDir      = "./queries"
+	DefaultModelDir      = "./models"
+	DefaultOutDir        = "./vorm/gen"
+	DefaultModelPkg      = "models"
+	DefaultMigrationPath = "./migrations"
 )

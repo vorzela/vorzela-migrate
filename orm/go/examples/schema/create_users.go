@@ -10,7 +10,7 @@ import (
 //
 //	Schema::create('users', function (Blueprint $table) { … });
 //
-// Auto-writes migrations/*.sql and runs `vm migrate` (vorm.Schema.AutoMigrate).
+// Writes migrations/*.sql and applies it in-process (vorm.Schema.AutoMigrate).
 func CreateUsersTable() error {
 	return vorm.Schema.Create("users", func(t *schema.Blueprint) {
 		t.ID()

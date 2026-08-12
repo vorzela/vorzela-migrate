@@ -62,17 +62,63 @@ func emitParamsStruct(b *strings.Builder, st StubFunc) bool {
 			name = "Arg"
 		}
 		field := exportIdent(name)
-		fmt.Fprintf(b, "\t%s %s\n", field, rewriteType(p.Type))
+		fmt.Fprintf(b, "\t%s %s\n", field, paramFieldType(p.Type))
 	}
 	b.WriteString("}\n\n")
 	return true
+}
+
+// paramFieldType turns a stub parameter type into a struct field type: a
+// variadic `...T` becomes the slice it already is at the call site.
+func paramFieldType(typ string) string {
+	if rest, ok := strings.CutPrefix(strings.TrimSpace(typ), "..."); ok {
+		return "[]" + rest
+	}
+	return rewriteType(typ)
+}
+
+// goPredeclared are the type names that never need package qualification.
+var goPredeclared = map[string]bool{
+	"bool": true, "string": true, "int": true, "int8": true, "int16": true,
+	"int32": true, "int64": true, "uint": true, "uint8": true, "uint16": true,
+	"uint32": true, "uint64": true, "uintptr": true, "byte": true, "rune": true,
+	"float32": true, "float64": true, "complex64": true, "complex128": true,
+	"any": true, "error": true,
+}
+
+// qualifyFieldType prefixes a model field's type when it is declared in the
+// models package (a generated enum such as UserStatus), so the generated Row
+// struct compiles from its own package.
+func qualifyFieldType(ms ModelSpec, typ string) string {
+	if ms.Package == "" || ms.Package == "gen" {
+		return typ
+	}
+	base := typ
+	var prefix string
+	for {
+		switch {
+		case strings.HasPrefix(base, "*"):
+			prefix, base = prefix+"*", base[1:]
+		case strings.HasPrefix(base, "[]"):
+			prefix, base = prefix+"[]", base[2:]
+		default:
+			if base == "" || strings.Contains(base, ".") || goPredeclared[base] {
+				return typ
+			}
+			r := rune(base[0])
+			if r < 'A' || r > 'Z' {
+				return typ
+			}
+			return prefix + ms.Package + "." + base
+		}
+	}
 }
 
 func fieldForColumn(ms ModelSpec, col string) (field, goType string) {
 	bare := bareColumnName(col)
 	for _, f := range ms.Fields {
 		if f.Column == bare {
-			return f.Name, f.Type
+			return f.Name, qualifyFieldType(ms, f.Type)
 		}
 	}
 	switch bare {

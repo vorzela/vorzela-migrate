@@ -61,10 +61,12 @@ func Dir(path string) (*Result, error) {
 		})
 		return res, nil
 	}
+	migrations := 0
 	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".sql") {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".sql") || !isMigrationFile(e.Name()) {
 			continue
 		}
+		migrations++
 		full := filepath.Join(path, e.Name())
 		body, err := os.ReadFile(full)
 		if err != nil {
@@ -72,7 +74,22 @@ func Dir(path string) (*Result, error) {
 		}
 		res.Findings = append(res.Findings, File(full, string(body))...)
 	}
+	if migrations == 0 {
+		res.Findings = append(res.Findings, Finding{
+			Severity:   Hint,
+			Message:    "no migration files yet",
+			Suggestion: "vorm make migration users",
+		})
+	}
 	return res, nil
+}
+
+// isMigrationFile reports whether name belongs to the migration sequence. The
+// declarative helpers — extensions.sql, enums.sql, functions.sql — share the
+// directory but have no Up/Down sections, so linting them as migrations would
+// report errors for files that are correct as they are.
+func isMigrationFile(name string) bool {
+	return len(name) > 0 && name[0] >= '0' && name[0] <= '9'
 }
 
 // File lints a single migration body.

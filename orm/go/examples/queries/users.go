@@ -1,3 +1,5 @@
+// Package queries holds hand-written // vorm:query stubs. Run `vorm generate`
+// to lower each fluent chain into parameterized SQL under ./vorm/gen.
 package queries
 
 import (
@@ -33,7 +35,7 @@ func scanUser(rows query.Rows) (User, error) {
 	return u, err
 }
 
-// ListActiveAdults — fluent IR for vorm generate → gen.ListActiveAdults ([]models.User).
+// ListActiveAdults — fluent IR for vorm generate → gen.ListActiveAdults.
 // Prefer calling the generated func in app code after `vorm generate`.
 //
 // vorm:query name=ListActiveAdults
@@ -47,7 +49,8 @@ func ListActiveAdults(ctx context.Context, db query.DB) ([]User, error) {
 		Get(ctx, db)
 }
 
-// ListActiveAdultsFind — TypeORM-style Find options.
+// ListActiveAdultsFind — TypeORM-style Find options (runtime only: the options
+// struct is built at call time).
 //
 // vorm:query name=ListActiveAdultsFind
 func ListActiveAdultsFind(ctx context.Context, db query.DB) ([]User, error) {
@@ -68,6 +71,128 @@ func ListActiveAdultsFind(ctx context.Context, db query.DB) ([]User, error) {
 func GetUserByEmail(ctx context.Context, db query.DB, email string) (*User, error) {
 	ctx = query.WithMapper(ctx, scanUser)
 	return Users.Where("email", email).First(ctx, db)
+}
+
+// GetUserOrFail — First that turns "no rows" into an error.
+//
+// vorm:query name=GetUserOrFail
+func GetUserOrFail(ctx context.Context, db query.DB, id int64) (*User, error) {
+	ctx = query.WithMapper(ctx, scanUser)
+	return Users.Where("id", id).FirstOrFail(ctx, db)
+}
+
+// ListUsersByIDs — IN over a slice: the placeholder count is only known at call
+// time, so the generated code assembles that one group and binds every element.
+//
+// vorm:query name=ListUsersByIDs
+func ListUsersByIDs(ctx context.Context, db query.DB, ids ...any) ([]User, error) {
+	ctx = query.WithMapper(ctx, scanUser)
+	return Users.WhereIn("id", ids...).OrderBy("id").Get(ctx, db)
+}
+
+// ListUsersExcept — NOT IN over a slice, plus a fixed filter.
+//
+// vorm:query name=ListUsersExcept
+func ListUsersExcept(ctx context.Context, db query.DB, ids ...any) ([]User, error) {
+	ctx = query.WithMapper(ctx, scanUser)
+	return Users.Where("active", true).WhereNotIn("id", ids...).OrderByDesc("created_at").Get(ctx, db)
+}
+
+// ListUsersByStatus — IN over a fixed set, which stays a const statement.
+//
+// vorm:query name=ListUsersByStatus
+func ListUsersByStatus(ctx context.Context, db query.DB) ([]User, error) {
+	ctx = query.WithMapper(ctx, scanUser)
+	return Users.WhereIn("age", 18, 21, 65).OrderBy("age").Get(ctx, db)
+}
+
+// ListTrashedUsers — WithTrashed drops the automatic deleted_at filter, then an
+// explicit IS NOT NULL keeps only the soft-deleted rows.
+//
+// vorm:query name=ListTrashedUsers
+func ListTrashedUsers(ctx context.Context, db query.DB) ([]User, error) {
+	ctx = query.WithMapper(ctx, scanUser)
+	return Users.WithTrashed().WhereNotNull("deleted_at").OrderByDesc("deleted_at").Get(ctx, db)
+}
+
+// ListActiveOrAdult — OR groups.
+//
+// vorm:query name=ListActiveOrAdult
+func ListActiveOrAdult(ctx context.Context, db query.DB) ([]User, error) {
+	ctx = query.WithMapper(ctx, scanUser)
+	return Users.Where("active", true).OrWhere("age", ">=", 18).OrderBy("id").Get(ctx, db)
+}
+
+// SearchUsers — case-insensitive search across name + email with a bound LIMIT,
+// so one prepared statement serves every page size.
+//
+// vorm:query name=SearchUsers
+func SearchUsers(ctx context.Context, db query.DB, q string, limit int) ([]User, error) {
+	ctx = query.WithMapper(ctx, scanUser)
+	return Users.WhereSearch([]string{"name", "email"}, q).OrderBy("name").Limit(limit).Get(ctx, db)
+}
+
+// ListUsersWithPosts — join + explicit projection across both tables.
+//
+// vorm:query name=ListUsersWithPosts
+func ListUsersWithPosts(ctx context.Context, db query.DB) ([]User, error) {
+	ctx = query.WithMapper(ctx, scanUser)
+	return Users.New().
+		Join("posts", "posts.user_id = users.id").
+		Select("id", "email", "name", "active", "age", "created_at", "updated_at", "deleted_at").
+		Where("active", true).
+		GroupBy("id").
+		OrderBy("name").
+		Get(ctx, db)
+}
+
+// CountActiveUsers — COUNT(*) with the same predicate pipeline.
+//
+// vorm:query name=CountActiveUsers
+func CountActiveUsers(ctx context.Context, db query.DB) (int64, error) {
+	return Users.Where("active", true).Count(ctx, db)
+}
+
+// UserExistsByEmail — existence probe (SELECT 1 … LIMIT 1).
+//
+// vorm:query name=UserExistsByEmail
+func UserExistsByEmail(ctx context.Context, db query.DB, email string) (bool, error) {
+	return Users.Where("email", email).Exists(ctx, db)
+}
+
+// PaginateActiveUsers — offset pagination: one page query plus one COUNT.
+//
+// vorm:query name=PaginateActiveUsers
+func PaginateActiveUsers(ctx context.Context, db query.DB, page, perPage int) (*query.PageResult[User], error) {
+	ctx = query.WithMapper(ctx, scanUser)
+	return Users.Where("active", true).OrderBy("id").OffsetPage(ctx, db, page, perPage)
+}
+
+// PaginateUsersCursor — keyset cursor; stateful, so it stays on the builder.
+//
+// vorm:query name=PaginateUsersCursor
+func PaginateUsersCursor(ctx context.Context, db query.DB, cursor string, perPage int) (*query.PageResult[User], error) {
+	ctx = query.WithMapper(ctx, scanUser)
+	ctx = query.WithCursorValue(ctx, func(u User, col string) any {
+		if col == "id" {
+			return u.ID
+		}
+		return nil
+	})
+	return Users.Paginate(ctx, db, query.PageRequest{
+		Style:   query.PageCursor,
+		Cursor:  cursor,
+		PerPage: perPage,
+		OrderBy: "id",
+	})
+}
+
+// LockUserForUpdate — row lock for read-modify-write inside a transaction.
+//
+// vorm:query name=LockUserForUpdate
+func LockUserForUpdate(ctx context.Context, db query.DB, id int64) (*User, error) {
+	ctx = query.WithMapper(ctx, scanUser)
+	return Users.Where("id", id).LockForUpdate().First(ctx, db)
 }
 
 // CreateUser — easy CRUD insert (explicit columns).
@@ -96,6 +221,13 @@ func SoftDeleteUser(ctx context.Context, db query.DB, id int64) (int64, error) {
 	return Users.SoftDelete(ctx, db, id)
 }
 
+// RestoreUser — clear deleted_at again.
+//
+// vorm:query name=RestoreUser
+func RestoreUser(ctx context.Context, db query.DB, id int64) (int64, error) {
+	return Users.Where("id", id).Restore(ctx, db)
+}
+
 // ForceDeleteUser — permanent delete (ignores soft deletes).
 //
 // vorm:query name=ForceDeleteUser
@@ -103,47 +235,8 @@ func ForceDeleteUser(ctx context.Context, db query.DB, id int64) (int64, error) 
 	return Users.ForceDelete(ctx, db, id)
 }
 
-// SearchUsers — complex search across name + email (ILIKE / LIKE).
-//
-// vorm:query name=SearchUsers
-func SearchUsers(ctx context.Context, db query.DB, q string, limit int) ([]User, error) {
-	ctx = query.WithMapper(ctx, scanUser)
-	return Users.WhereSearch([]string{"name", "email"}, q).OrderBy("name").Limit(limit).Get(ctx, db)
-}
-
-// PaginateUsersOffset — classic page/perPage (+ total + pages/last_page).
-//
-// vorm:query name=PaginateUsersOffset
-func PaginateUsersOffset(ctx context.Context, db query.DB, page, perPage int) (*query.PageResult[User], error) {
-	ctx = query.WithMapper(ctx, scanUser)
-	return Users.Paginate(ctx, db, query.PageRequest{
-		Style:   query.PageOffset, // user preference
-		Page:    page,
-		PerPage: perPage,
-	})
-	// result.Pages / result.LastPage = total page count; result.Total = row count
-}
-
-// PaginateUsersCursor — keyset cursor (prefer for large tables).
-//
-// vorm:query name=PaginateUsersCursor
-func PaginateUsersCursor(ctx context.Context, db query.DB, cursor string, perPage int) (*query.PageResult[User], error) {
-	ctx = query.WithMapper(ctx, scanUser)
-	ctx = query.WithCursorValue(ctx, func(u User, col string) any {
-		if col == "id" {
-			return u.ID
-		}
-		return nil
-	})
-	return Users.Paginate(ctx, db, query.PageRequest{
-		Style:   query.PageCursor, // user preference
-		Cursor:  cursor,
-		PerPage: perPage,
-		OrderBy: "id",
-	})
-}
-
-// ActivateUsersInTx — transaction + lock + update (performant, race-safe).
+// ActivateUsersInTx — transaction + lock + update; multi-statement bodies stay
+// on the runtime builder.
 //
 // vorm:query name=ActivateUsersInTx
 func ActivateUsersInTx(ctx context.Context, db query.Beginner, ids ...any) error {

@@ -10,7 +10,7 @@ var allowedOps = map[string]bool{
 	"=": true, "<>": true, "!=": true,
 	">": true, ">=": true, "<": true, "<=": true,
 	"LIKE": true, "ILIKE": true, "NOT LIKE": true, "NOT ILIKE": true,
-	"IN": true, "IS NULL": true, "IS NOT NULL": true,
+	"IN": true, "NOT IN": true, "IS NULL": true, "IS NOT NULL": true,
 }
 
 // SafeOp validates a comparison operator (whitelist).

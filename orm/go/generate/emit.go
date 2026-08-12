@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -15,6 +16,18 @@ func emitQueries(opts *Options, stubs []StubFunc, models map[string]ModelSpec) (
 	driver := strings.ToLower(opts.Driver)
 	if driver == "" {
 		driver = "pgx"
+	}
+
+	qDialect := query.DialectPostgres
+	if dialect == "mysql" || dialect == "mariadb" {
+		qDialect = query.DialectMySQL
+	}
+
+	// The body is rendered first so the import list can reflect what it
+	// actually uses instead of guessing.
+	body, err := emitBody(stubs, models, qDialect)
+	if err != nil {
+		return "", err
 	}
 
 	var b strings.Builder
@@ -36,34 +49,69 @@ func emitQueries(opts *Options, stubs []StubFunc, models map[string]ModelSpec) (
 	fmt.Fprintf(&b, "package %s\n\n", pkg)
 
 	imports := map[string]bool{
-		`"context"`:                      true,
-		`"fmt"`:                          true,
+		`"context"`:                       true,
 		`"github.com/vorzela/vorm/query"`: true,
 	}
-	for _, st := range stubs {
-		ms := resolveModel(st, models)
-		if needsTimeImport(st, ms) {
-			imports[`"time"`] = true
+	modelPkg := opts.ModelPackage
+	if modelPkg == "" {
+		modelPkg = DefaultModelPkg
+	}
+	for pkg, used := range map[string]bool{
+		`"fmt"`:     strings.Contains(body, "fmt."),
+		`"strings"`: strings.Contains(body, "strings."),
+		`"time"`:    strings.Contains(body, "time."),
+		// Row structs reference generated enums (models.UserStatus).
+		strconv.Quote(opts.ModelImport): opts.ModelImport != "" && strings.Contains(body, modelPkg+"."),
+	} {
+		if used {
+			imports[pkg] = true
 		}
 	}
 
-	b.WriteString("import (\n")
-	imps := make([]string, 0, len(imports))
-	for imp := range imports {
-		imps = append(imps, imp)
-	}
-	sort.Strings(imps)
-	for _, imp := range imps {
-		fmt.Fprintf(&b, "\t%s\n", imp)
-	}
-	b.WriteString(")\n\n")
+	writeImports(&b, imports)
 	fmt.Fprintf(&b, "const GeneratedDialect = %q\n", dialect)
 	fmt.Fprintf(&b, "const GeneratedDriver = %q\n\n", driver)
+	b.WriteString(body)
+	return b.String(), nil
+}
 
-	qDialect := query.DialectPostgres
-	if dialect == "mysql" || dialect == "mariadb" {
-		qDialect = query.DialectMySQL
+// writeImports emits a goimports-style block: standard library first, then a
+// blank line, then everything else.
+func writeImports(b *strings.Builder, imports map[string]bool) {
+	// The generator only ever emits this handful of standard packages, so an
+	// explicit set beats guessing from the path shape (a module named
+	// "vorme2e/models" has no dot to give it away).
+	stdlib := map[string]bool{
+		"context": true, "database/sql": true, "errors": true, "fmt": true,
+		"strings": true, "time": true,
 	}
+	var std, ext []string
+	for imp := range imports {
+		if stdlib[strings.Trim(imp, `"`)] {
+			std = append(std, imp)
+		} else {
+			ext = append(ext, imp)
+		}
+	}
+	sort.Strings(std)
+	sort.Strings(ext)
+
+	b.WriteString("import (\n")
+	for _, imp := range std {
+		fmt.Fprintf(b, "\t%s\n", imp)
+	}
+	if len(std) > 0 && len(ext) > 0 {
+		b.WriteString("\n")
+	}
+	for _, imp := range ext {
+		fmt.Fprintf(b, "\t%s\n", imp)
+	}
+	b.WriteString(")\n\n")
+}
+
+// emitBody renders the Row/Params types, the query functions and the scanners.
+func emitBody(stubs []StubFunc, models map[string]ModelSpec, qDialect query.Dialect) (string, error) {
+	var b strings.Builder
 
 	// Emit Row + Params types first (sqlc-style).
 	for _, st := range stubs {
@@ -71,13 +119,10 @@ func emitQueries(opts *Options, stubs []StubFunc, models map[string]ModelSpec) (
 		if st.Pending || st.Action == "" {
 			continue
 		}
-		switch st.Action {
-		case "Get", "First":
+		if returnsRows(st.Action) {
 			emitRowStruct(&b, st, ms)
-			emitParamsStruct(&b, st)
-		case "Create", "Update", "SoftDelete", "ForceDelete":
-			emitParamsStruct(&b, st)
 		}
+		emitParamsStruct(&b, st)
 	}
 
 	for _, st := range stubs {
@@ -86,52 +131,65 @@ func emitQueries(opts *Options, stubs []StubFunc, models map[string]ModelSpec) (
 			return "", fmt.Errorf("%s: %w", st.Name, err)
 		}
 
+		// Stubs that stay on the runtime builder are reported instead of
+		// emitted: a generated function that always fails is worse than none,
+		// and the hand-written stub is already callable.
+		if st.Pending || st.Action == "" {
+			fmt.Fprintf(&b, "// %s stays on the runtime builder: %s\n\n", st.Name, pendingReason(st))
+			continue
+		}
+
 		hasParams := len(userParams(st)) > 0
 		fmt.Fprintf(&b, "// %s is generated from // vorm:query in %s\n", st.Name, filepath.Base(st.File))
 		sig := emitTypedSignature(st, hasParams)
 		fmt.Fprintf(&b, "func %s%s {\n", st.Name, sig)
 
-		if st.Pending || st.Action == "" {
-			why := st.PendingWhy
-			if why == "" {
-				why = "unsupported stub body"
-			}
-			b.WriteString("\t_ = ctx\n\t_ = db\n")
-			if hasParams {
-				b.WriteString("\t_ = arg\n")
-			}
-			fmt.Fprintf(&b, "\treturn %s // %s\n}\n\n", pendingTypedReturn(st), why)
-			continue
-		}
-
+		var err error
 		switch st.Action {
-		case "Get", "First":
-			sql, argExprs, err := compileSelectSQL(st, ms, qDialect)
-			if err != nil {
-				return "", fmt.Errorf("%s: %w", st.Name, err)
-			}
-			argExprs = bindExprs(argExprs, st, hasParams)
-			constName := constSQLName(st.Name)
-			fmt.Fprintf(&b, "\tconst %s = %s\n", constName, strconvQuote(sql))
-			if st.Action == "First" {
-				emitFirstRowBody(&b, st, ms, constName, argExprs)
-			} else {
-				emitGetRowBody(&b, st, ms, constName, argExprs)
-			}
+		case "Get", "First", "FirstOrFail":
+			err = emitSelectBody(&b, st, ms, qDialect, hasParams)
+		case "Count", "Exists":
+			err = emitCountBody(&b, st, ms, qDialect, hasParams)
+		case "Paginate":
+			err = emitPaginateBody(&b, st, ms, qDialect, hasParams)
 		case "Create":
 			emitCreateBody(&b, st, ms, qDialect, hasParams)
 		case "Update":
-			emitUpdateBody(&b, st, ms, qDialect, hasParams)
+			err = emitUpdateSetBody(&b, st, ms, qDialect, hasParams, st.UpdateVals, nil, true)
 		case "SoftDelete":
-			emitSoftDeleteBody(&b, st, ms, qDialect, hasParams)
+			err = emitSoftDeleteBody(&b, st, ms, qDialect, hasParams)
+		case "Delete":
+			err = emitSmartDeleteBody(&b, st, ms, qDialect, hasParams)
 		case "ForceDelete":
-			emitForceDeleteBody(&b, st, ms, qDialect, hasParams)
+			err = emitForceDeleteBody(&b, st, ms, qDialect, hasParams)
+		case "Restore":
+			err = emitRestoreBody(&b, st, ms, qDialect, hasParams)
 		default:
 			fmt.Fprintf(&b, "\treturn %s\n", pendingTypedReturn(st))
 		}
+		if err != nil {
+			return "", fmt.Errorf("%s: %w", st.Name, err)
+		}
 		b.WriteString("}\n\n")
 	}
+	emitScanners(&b, stubs, models, "")
 	return b.String(), nil
+}
+
+// returnsRows reports whether an action projects columns into a Row struct.
+func returnsRows(action string) bool {
+	switch action {
+	case "Get", "First", "FirstOrFail", "Paginate":
+		return true
+	}
+	return false
+}
+
+func pendingReason(st StubFunc) string {
+	if st.PendingWhy != "" {
+		return st.PendingWhy
+	}
+	return "unsupported stub body"
 }
 
 func emitTypedSignature(st StubFunc, hasParams bool) string {
@@ -143,9 +201,13 @@ func emitTypedSignature(st StubFunc, hasParams bool) string {
 	switch st.Action {
 	case "Get":
 		results = "([]" + rowTypeName(st.Name) + ", error)"
-	case "First":
+	case "First", "FirstOrFail":
 		results = "(*" + rowTypeName(st.Name) + ", error)"
-	case "Create", "Update", "SoftDelete", "ForceDelete":
+	case "Paginate":
+		results = "(*query.PageResult[" + rowTypeName(st.Name) + "], error)"
+	case "Exists":
+		results = "(bool, error)"
+	case "Count", "Create", "Update", "Delete", "SoftDelete", "ForceDelete", "Restore":
 		results = "(int64, error)"
 	default:
 		// fall back to stub results
@@ -160,11 +222,11 @@ func emitTypedSignature(st StubFunc, hasParams bool) string {
 
 func pendingTypedReturn(st StubFunc) string {
 	switch st.Action {
-	case "Get":
+	case "Get", "First", "FirstOrFail", "Paginate":
 		return "nil, query.ErrGeneratePending"
-	case "First":
-		return "nil, query.ErrGeneratePending"
-	case "Create", "Update", "SoftDelete", "ForceDelete":
+	case "Exists":
+		return "false, query.ErrGeneratePending"
+	case "Count", "Create", "Update", "Delete", "SoftDelete", "ForceDelete", "Restore":
 		return "0, query.ErrGeneratePending"
 	default:
 		return pendingReturn(st)
@@ -191,28 +253,6 @@ func bindExpr(expr string, st StubFunc) string {
 	return expr
 }
 
-func emitGetRowBody(b *strings.Builder, st StubFunc, ms ModelSpec, constName string, argExprs []string) {
-	rowT := rowTypeName(st.Name)
-	emitQueryContext(b, constName, argExprs)
-	b.WriteString("\tif err != nil {\n\t\treturn nil, err\n\t}\n\tdefer rows.Close()\n")
-	fmt.Fprintf(b, "\tvar out []%s\n", rowT)
-	b.WriteString("\tfor rows.Next() {\n")
-	fmt.Fprintf(b, "\t\trow, err := scan%s(rows)\n", rowT)
-	b.WriteString("\t\tif err != nil {\n\t\t\treturn nil, err\n\t\t}\n\t\tout = append(out, row)\n\t}\n")
-	b.WriteString("\tif err := rows.Err(); err != nil {\n\t\treturn nil, err\n\t}\n\treturn out, nil\n")
-}
-
-func emitFirstRowBody(b *strings.Builder, st StubFunc, ms ModelSpec, constName string, argExprs []string) {
-	rowT := rowTypeName(st.Name)
-	emitQueryContext(b, constName, argExprs)
-	b.WriteString("\tif err != nil {\n\t\treturn nil, err\n\t}\n\tdefer rows.Close()\n")
-	b.WriteString("\tif !rows.Next() {\n\t\treturn nil, fmt.Errorf(\"vorm/gen: not found\")\n\t}\n")
-	fmt.Fprintf(b, "\trow, err := scan%s(rows)\n", rowT)
-	b.WriteString("\tif err != nil {\n\t\treturn nil, err\n\t}\n")
-	b.WriteString("\treturn &row, nil\n")
-	_ = ms
-}
-
 func resolveModel(st StubFunc, models map[string]ModelSpec) ModelSpec {
 	if ms, ok := models[st.Entity]; ok {
 		return ms
@@ -236,8 +276,21 @@ func validateStubColumns(st StubFunc, ms ModelSpec) error {
 		return nil // can't validate without model
 	}
 	meta := query.Meta{Table: ms.Table, Columns: ms.Columns}
-	for _, w := range st.Wheres {
+	for _, w := range append(append([]WhereSpec(nil), st.Wheres...), st.Havings...) {
+		for _, c := range w.Cols {
+			if err := meta.RequireColumn(c); err != nil {
+				return err
+			}
+		}
+		if w.Col == "" {
+			continue
+		}
 		if err := meta.RequireColumn(w.Col); err != nil {
+			return err
+		}
+	}
+	for _, g := range st.GroupBy {
+		if err := meta.RequireColumn(g); err != nil {
 			return err
 		}
 	}
@@ -264,85 +317,6 @@ func validateStubColumns(st StubFunc, ms ModelSpec) error {
 	return nil
 }
 
-func compileSelectSQL(st StubFunc, ms ModelSpec, d query.Dialect) (sql string, argExprs []string, err error) {
-	if ms.Table == "" {
-		return "", nil, fmt.Errorf("cannot resolve model/entity %q — run vorm generate models", st.Entity)
-	}
-	meta := query.Meta{Table: ms.Table, Columns: ms.Columns, SoftDeletes: ms.SoftDeletes, PrimaryKey: ms.PrimaryKey}
-	ent := query.Model[struct{}](meta)
-	b := ent.New().Dialect(d)
-	if st.Distinct {
-		b = b.Distinct()
-	}
-	if len(st.Selects) > 0 {
-		b = b.Select(st.Selects...)
-	}
-	for _, w := range st.Wheres {
-		lit, ok := tryLiteral(w.ArgExpr)
-		if !ok {
-			// use zero placeholder value for SQL shape; real expr used at call site
-			lit = placeholderValue(w.ArgExpr, ms, w.Col)
-		}
-		if w.Op == "" || w.Op == "=" {
-			b = b.Where(w.Col, lit)
-		} else {
-			b = b.Where(w.Col, w.Op, lit)
-		}
-		argExprs = append(argExprs, w.ArgExpr)
-	}
-	for _, o := range st.Orders {
-		b = b.OrderBy(o.Col, o.Dir)
-	}
-	if st.Limit > 0 {
-		b = b.Limit(st.Limit)
-	}
-	if st.Offset > 0 {
-		b = b.Offset(st.Offset)
-	}
-	if st.Action == "First" {
-		b = b.Limit(1)
-	}
-	sql, _, err = b.CompileSelect()
-	return sql, argExprs, err
-}
-
-func tryLiteral(expr string) (any, bool) {
-	switch expr {
-	case "true":
-		return true, true
-	case "false":
-		return false, true
-	}
-	if len(expr) >= 2 && expr[0] == '"' {
-		s, err := strconvUnquote(expr)
-		if err == nil {
-			return s, true
-		}
-	}
-	var n int
-	if _, err := fmt.Sscanf(expr, "%d", &n); err == nil && expr == fmt.Sprintf("%d", n) {
-		return n, true
-	}
-	return nil, false
-}
-
-func placeholderValue(expr string, ms ModelSpec, col string) any {
-	for _, f := range ms.Fields {
-		if f.Column == col {
-			switch {
-			case f.Type == "bool":
-				return false
-			case strings.Contains(f.Type, "int"):
-				return 0
-			case f.Type == "string":
-				return ""
-			}
-		}
-	}
-	_ = expr
-	return ""
-}
-
 func emitSignature(st StubFunc, ms ModelSpec, modelPkg string) string {
 	var params []string
 	for _, p := range st.Params {
@@ -366,6 +340,9 @@ func emitSignature(st StubFunc, ms ModelSpec, modelPkg string) string {
 	return "(" + strings.Join(params, ", ") + ") (" + strings.Join(res, ", ") + ")"
 }
 
+// qualifyModelType rewrites bare references to the model type so they resolve
+// from the generated package, including inside generics
+// (*query.PageResult[User] → *query.PageResult[models.User]).
 func qualifyModelType(typ string, ms ModelSpec, modelPkg string) string {
 	if ms.TypeName == "" {
 		return typ
@@ -375,23 +352,40 @@ func qualifyModelType(typ string, ms ModelSpec, modelPkg string) string {
 		pkg = modelPkg
 	}
 	if pkg == "" {
-		pkg = "models"
+		pkg = DefaultModelPkg
 	}
-	q := pkg + "." + ms.TypeName
-	switch typ {
-	case ms.TypeName:
-		return q
-	case "*" + ms.TypeName:
-		return "*" + q
-	case "[]" + ms.TypeName:
-		return "[]" + q
-	default:
-		if strings.Contains(typ, "."+ms.TypeName) || strings.HasSuffix(typ, q) {
-			return typ
-		}
+	if pkg == "gen" {
 		return typ
 	}
+
+	var b strings.Builder
+	for i := 0; i < len(typ); {
+		if !isIdentStart(typ[i]) {
+			b.WriteByte(typ[i])
+			i++
+			continue
+		}
+		j := i
+		for j < len(typ) && isIdentPart(typ[j]) {
+			j++
+		}
+		word := typ[i:j]
+		qualified := i > 0 && typ[i-1] == '.'
+		selector := j < len(typ) && typ[j] == '.'
+		if word == ms.TypeName && !qualified && !selector {
+			b.WriteString(pkg + ".")
+		}
+		b.WriteString(word)
+		i = j
+	}
+	return b.String()
 }
+
+func isIdentStart(c byte) bool {
+	return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+}
+
+func isIdentPart(c byte) bool { return isIdentStart(c) || (c >= '0' && c <= '9') }
 
 func rewriteType(t string) string {
 	// query.DB stays; User → keep if already qualified
@@ -481,80 +475,45 @@ func emitCreateBody(b *strings.Builder, st StubFunc, ms ModelSpec, d query.Diale
 	b.WriteString("\tif err != nil {\n\t\treturn 0, err\n\t}\n\treturn res.LastInsertId()\n")
 }
 
-func emitUpdateBody(b *strings.Builder, st StubFunc, ms ModelSpec, d query.Dialect, hasParams bool) {
-	if ms.Table == "" {
-		fmt.Fprintf(b, "\treturn 0, fmt.Errorf(%q)\n", "vorm/gen: missing model for Update")
-		return
+// primaryKeyStub rewrites Users.SoftDelete(ctx, db, id) into a WHERE on the
+// primary key so the entity-level shortcuts share the planner.
+func primaryKeyStub(st StubFunc, ms ModelSpec) StubFunc {
+	if st.SoftIDExpr == "" || len(st.Wheres) > 0 {
+		return st
 	}
-	var sets []string
-	var exprs []string
-	n := 1
-	for _, kv := range st.UpdateVals {
-		sets = append(sets, fmt.Sprintf("%s = %s", quoteIdent(d, kv.Col), ph(d, &n)))
-		e := kv.Expr
-		if hasParams {
-			e = bindExpr(kv.Expr, st)
-		}
-		exprs = append(exprs, e)
-	}
-	whereSQL, whereExprs := compileWhereFragment(st.Wheres, d, &n)
-	if hasParams {
-		whereExprs = bindExprs(whereExprs, st, true)
-	}
-	sql := fmt.Sprintf("UPDATE %s SET %s", quoteIdent(d, ms.Table), strings.Join(sets, ", "))
-	if whereSQL != "" {
-		sql += " WHERE " + whereSQL
-		exprs = append(exprs, whereExprs...)
-	}
-	fmt.Fprintf(b, "\tconst q = %s\n", strconvQuote(sql))
-	fmt.Fprintf(b, "\tres, err := db.ExecContext(ctx, q, %s)\n", joinArgs(exprs))
-	b.WriteString("\tif err != nil {\n\t\treturn 0, err\n\t}\n\treturn res.RowsAffected()\n")
+	cp := st
+	cp.Wheres = []WhereSpec{{Col: orPK(ms), Op: "=", ArgExpr: st.SoftIDExpr}}
+	return cp
 }
 
-func emitSoftDeleteBody(b *strings.Builder, st StubFunc, ms ModelSpec, d query.Dialect, hasParams bool) {
-	n := 1
-	idExpr := st.SoftIDExpr
-	if idExpr == "" {
-		idExpr = "id"
+func emitSoftDeleteBody(b *strings.Builder, st StubFunc, ms ModelSpec, d query.Dialect, hasParams bool) error {
+	if !ms.SoftDeletes {
+		return fmt.Errorf("SoftDelete needs a deleted_at column on %q", ms.Table)
 	}
-	if hasParams {
-		idExpr = bindExpr(idExpr, st)
-	}
-	sql := fmt.Sprintf(`UPDATE %s SET %s = CURRENT_TIMESTAMP WHERE %s = %s`,
-		quoteIdent(d, ms.Table), quoteIdent(d, "deleted_at"), quoteIdent(d, orPK(ms)), ph(d, &n))
-	fmt.Fprintf(b, "\tconst q = %s\n", strconvQuote(sql))
-	fmt.Fprintf(b, "\tres, err := db.ExecContext(ctx, q, %s)\n", idExpr)
-	b.WriteString("\tif err != nil {\n\t\treturn 0, err\n\t}\n\treturn res.RowsAffected()\n")
+	st = primaryKeyStub(st, ms)
+	return emitUpdateSetBody(b, st, ms, d, hasParams, nil,
+		[]string{quoteIdent(d, "deleted_at") + " = CURRENT_TIMESTAMP"}, true)
 }
 
-func emitForceDeleteBody(b *strings.Builder, st StubFunc, ms ModelSpec, d query.Dialect, hasParams bool) {
-	n := 1
-	idExpr := st.SoftIDExpr
-	if idExpr == "" {
-		idExpr = "id"
+func emitRestoreBody(b *strings.Builder, st StubFunc, ms ModelSpec, d query.Dialect, hasParams bool) error {
+	if !ms.SoftDeletes {
+		return fmt.Errorf("Restore needs a deleted_at column on %q", ms.Table)
 	}
-	if hasParams {
-		idExpr = bindExpr(idExpr, st)
-	}
-	sql := fmt.Sprintf(`DELETE FROM %s WHERE %s = %s`,
-		quoteIdent(d, ms.Table), quoteIdent(d, orPK(ms)), ph(d, &n))
-	fmt.Fprintf(b, "\tconst q = %s\n", strconvQuote(sql))
-	fmt.Fprintf(b, "\tres, err := db.ExecContext(ctx, q, %s)\n", idExpr)
-	b.WriteString("\tif err != nil {\n\t\treturn 0, err\n\t}\n\treturn res.RowsAffected()\n")
+	st = primaryKeyStub(st, ms)
+	return emitUpdateSetBody(b, st, ms, d, hasParams, nil,
+		[]string{quoteIdent(d, "deleted_at") + " = NULL"}, false)
 }
 
-func compileWhereFragment(wheres []WhereSpec, d query.Dialect, n *int) (string, []string) {
-	var parts []string
-	var exprs []string
-	for _, w := range wheres {
-		op := w.Op
-		if op == "" {
-			op = "="
-		}
-		parts = append(parts, fmt.Sprintf("%s %s %s", quoteIdent(d, w.Col), op, ph(d, n)))
-		exprs = append(exprs, w.ArgExpr)
+// emitSmartDeleteBody mirrors Builder.Delete: soft when the model supports it.
+func emitSmartDeleteBody(b *strings.Builder, st StubFunc, ms ModelSpec, d query.Dialect, hasParams bool) error {
+	if ms.SoftDeletes && !st.WithTrashed {
+		return emitSoftDeleteBody(b, st, ms, d, hasParams)
 	}
-	return strings.Join(parts, " AND "), exprs
+	return emitForceDeleteBody(b, st, ms, d, hasParams)
+}
+
+func emitForceDeleteBody(b *strings.Builder, st StubFunc, ms ModelSpec, d query.Dialect, hasParams bool) error {
+	return emitDeleteBody(b, primaryKeyStub(st, ms), ms, d, hasParams)
 }
 
 func modelTypeName(st StubFunc, ms ModelSpec, modelPkg string) string {
@@ -660,7 +619,7 @@ func strconvUnquote(s string) (string, error) {
 func emitScanners(b *strings.Builder, stubs []StubFunc, models map[string]ModelSpec, _ string) {
 	seen := map[string]bool{}
 	for _, st := range stubs {
-		if st.Pending || (st.Action != "Get" && st.Action != "First") {
+		if st.Pending || !returnsRows(st.Action) {
 			continue
 		}
 		rowT := rowTypeName(st.Name)

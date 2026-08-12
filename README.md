@@ -30,6 +30,7 @@
   - [Dry Run Mode](#dry-run-mode)
 - [Migration File Format](#migration-file-format)
 - [Integration with sqlc & goose](#-integration-with-sqlc--goose)
+- [Optional ORM (vorm)](#-optional-orm-vorm)
 - [Configuration](#configuration)
 - [Soft Delete Patterns](#soft-delete-patterns)
 - [PostgreSQL Extensions](#postgresql-extensions)
@@ -48,7 +49,7 @@
 - 🎨 **Colorized Output** - Beautiful, easy-to-read colored terminal output with execution timing
 - ⚙️ **Multiple Configuration Methods** - `.vm` config files, `.env` files, or environment variables
 - 🖍️ **`.vm` Editor Support** - Syntax highlighting, key hover docs, live lint, Ctrl+Space (VS Code/Cursor) — run `./editors/install.sh` once; see [`editors/`](editors/README.md)
-- 🧩 **Optional ORM (v3 / vorm)** - Go Schema + `vorm/gen` (pgx v5 / MySQL; **no sqlc**); see [`orm/go/README.md`](orm/go/README.md)
+- 🧩 **Optional ORM (v3 / vorm)** - Models introspected from your database, sqlc-style typed queries, relations, and its own in-process migration runner; see [Optional ORM (vorm)](#-optional-orm-vorm)
 - 🚀 **No DSN Flag Required** - Use config files instead of repeating `--dsn` flag
 - 🐘 **Multi-Database Support** - PostgreSQL and MySQL/MariaDB with automatic detection
 - 🌍 **Environment-Based Auto Config** - Set `ENVIRONMENT` in `.vm`; the tool auto-configures everything
@@ -901,6 +902,72 @@ This gives you:
 - ✅ Schema drift detection
 - ✅ Zero-downtime deployments
 
+## 🧩 Optional ORM (vorm)
+
+`vm` is a migration tool. **vorm** is the optional Go data layer that sits on top
+of the same migration files: models introspected from your database, sqlc-style
+typed queries, relations, and structured errors.
+
+It is a separate module — `vm` does not depend on it, and it does not require
+`vm`.
+
+```bash
+go install github.com/vorzela/vorm/cmd/vorm@latest
+
+export DATABASE_URL=postgres://user:pass@localhost:5432/app?sslmode=disable
+vorm init        # writes .vorm (dialect detected from DATABASE_URL)
+vorm migrate     # applies migrations/ in-process
+vorm generate    # models from the live schema + typed queries
+```
+
+### What it gives you
+
+| | |
+|---|---|
+| **Models from the database** | Structs, enum types with `Scan`/`Value`, indexes and foreign keys — introspected, not guessed |
+| **Typed queries** | `// vorm:query` stubs lower to `*Row` / `*Params` + parameterized SQL, sqlc-style, never `SELECT *` |
+| **Relations** | `.With("posts")` batch-loads in one extra query — no N+1 |
+| **Type safety** | Unknown columns and wrong Go types are rejected before any SQL is sent |
+| **Structured errors** | `query.IsUniqueViolation(err)`, `query.Constraint(err)`, `query.Code(err)` across PostgreSQL and MySQL |
+| **Logging** | `query.Logger` interface with an `slog` implementation; SQL, args, duration, rows |
+
+```go
+users, err := models.Users.
+	Where("active", true).
+	WhereIn("status", models.UserStatusActive, models.UserStatusInvited).
+	With("posts").
+	OrderBy("created_at", "DESC").
+	Limit(20).
+	Get(ctx, db)
+
+rows, err := gen.SearchUsers(ctx, db, gen.SearchUsersParams{Q: "ada", Limit: 20})
+```
+
+### Relationship to `vm`
+
+vorm ships its own migration runner that uses the **same file format, tracking
+table, checksums, batches and locks** as `vm`, so a directory works with either
+tool and you can move between them freely.
+
+| | `vm migrate` | `vorm migrate` |
+|---|---|---|
+| Runs | external binary | in-process (Go package) |
+| Migration files | same | same |
+| `migrations` table | same | same |
+| `extensions.sql` / `enums.sql` / `functions.sql` | same, `vm enums migrate` | same, `vorm enums` |
+| Drift detection, online DDL | ✅ | not yet — use `vm` |
+
+Set `RUNNER=vm` in `.vorm` to have vorm shell out to `vm` instead. Use `vm` when
+you want drift detection or zero-downtime online DDL; use `vorm` when you want
+migrations to run inside your own binary with no external dependency.
+
+### Docs
+
+- [`orm/go/README.md`](orm/go/README.md) — overview and configuration
+- [`orm/go/docs/USAGE.md`](orm/go/docs/USAGE.md) — end-to-end usage guide
+- [`orm/go/docs/MIGRATIONS.md`](orm/go/docs/MIGRATIONS.md) — runner, locks, prerequisites
+- [`orm/go/LLM.md`](orm/go/LLM.md) — rules for AI agents in a vorm project
+
 ## Configuration
 
 > **Editor highlighting:** Syntax coloring, **hover docs**, **Ctrl+Space** key list, and **live lint** for `.vm` files live in [`editors/`](editors/README.md). **Not automatic on clone** — run once:
@@ -1443,6 +1510,11 @@ vorzela-migrate/
 ├── editors/          # .vm syntax / hover / lint
 ├── orm/              # optional vorm (multi-language ORM)
 │   ├── go/           # github.com/vorzela/vorm (active)
+│   │   ├── cmd/vorm/     # the vorm CLI
+│   │   ├── migrate/      # in-process migration runner (vm-compatible)
+│   │   ├── introspect/   # PostgreSQL / MySQL schema reader
+│   │   ├── generate/     # models, enums, relations, typed queries
+│   │   └── query/        # runtime builder, scanning, relations, errors
 │   ├── typescript/   # planned
 │   └── python/       # planned
 └── migrations/

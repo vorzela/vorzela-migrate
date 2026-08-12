@@ -6,17 +6,18 @@ type Operator struct {
 	Value any
 }
 
-func Eq(v any) Operator             { return Operator{Op: "=", Value: v} }
-func Not(v any) Operator            { return Operator{Op: "<>", Value: v} }
-func MoreThan(v any) Operator       { return Operator{Op: ">", Value: v} }
+func Eq(v any) Operator              { return Operator{Op: "=", Value: v} }
+func Not(v any) Operator             { return Operator{Op: "<>", Value: v} }
+func MoreThan(v any) Operator        { return Operator{Op: ">", Value: v} }
 func MoreThanOrEqual(v any) Operator { return Operator{Op: ">=", Value: v} }
-func LessThan(v any) Operator       { return Operator{Op: "<", Value: v} }
+func LessThan(v any) Operator        { return Operator{Op: "<", Value: v} }
 func LessThanOrEqual(v any) Operator { return Operator{Op: "<=", Value: v} }
-func Like(v any) Operator           { return Operator{Op: "LIKE", Value: v} }
-func ILike(v any) Operator          { return Operator{Op: "ILIKE", Value: v} }
-func In(vals ...any) Operator       { return Operator{Op: "IN", Value: vals} }
-func IsNull() Operator              { return Operator{Op: "IS NULL", Value: nil} }
-func IsNotNull() Operator           { return Operator{Op: "IS NOT NULL", Value: nil} }
+func Like(v any) Operator            { return Operator{Op: "LIKE", Value: v} }
+func ILike(v any) Operator           { return Operator{Op: "ILIKE", Value: v} }
+func In(vals ...any) Operator        { return Operator{Op: "IN", Value: vals} }
+func NotIn(vals ...any) Operator     { return Operator{Op: "NOT IN", Value: vals} }
+func IsNull() Operator               { return Operator{Op: "IS NULL", Value: nil} }
+func IsNotNull() Operator            { return Operator{Op: "IS NOT NULL", Value: nil} }
 
 // Sort direction for FindOptions.Order.
 type Sort string

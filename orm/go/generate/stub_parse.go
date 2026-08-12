@@ -15,15 +15,15 @@ import (
 
 // ModelSpec is Meta + Go type info parsed from models/*.go (generated, DO NOT EDIT).
 type ModelSpec struct {
-	Entity     string   // Users
-	TypeName   string   // User
-	Package    string   // models
-	ImportPath string   // optional full import if known
-	Table      string
-	Columns    []string
-	Fields     []FieldSpec // db column order for Scan
+	Entity      string // Users
+	TypeName    string // User
+	Package     string // models
+	ImportPath  string // optional full import if known
+	Table       string
+	Columns     []string
+	Fields      []FieldSpec // db column order for Scan
 	SoftDeletes bool
-	PrimaryKey string
+	PrimaryKey  string
 }
 
 // FieldSpec is one scanned field.
@@ -35,23 +35,48 @@ type FieldSpec struct {
 
 // StubFunc is one // vorm:query function.
 type StubFunc struct {
-	Name       string
-	File       string
-	Params     []ParamSpec
-	Results    []string // Go type strings
-	Entity     string   // Users or models.Users
-	ModelType  string   // User or models.User
-	Action     string   // Get|First|Create|Update|SoftDelete|ForceDelete|""
+	Name    string
+	File    string
+	Params  []ParamSpec
+	Results []string // Go type strings
+
+	Entity    string // Users or models.Users
+	ModelType string // User or models.User
+
+	// Action is the terminal builder call: Get, First, FirstOrFail, Count,
+	// Exists, Paginate, Create, Update, Delete, SoftDelete, ForceDelete,
+	// Restore. Empty means the chain could not be lowered.
+	Action string
+
 	Selects    []string
 	Wheres     []WhereSpec
+	Havings    []WhereSpec
+	Joins      []JoinSpec
+	GroupBy    []string
 	Orders     []OrderSpec
 	Limit      int
 	Offset     int
+	LimitExpr  string // dynamic LIMIT bound as a parameter
+	OffsetExpr string
 	Distinct   bool
+	DistinctOn []string
+	Lock       string // FOR UPDATE | FOR SHARE | FOR UPDATE SKIP LOCKED
+
+	// WithTrashed drops the soft-delete filter for this query.
+	WithTrashed bool
+	// Relations requested via .With(...); they need model structs, so their
+	// presence keeps a stub on the runtime builder.
+	Relations []string
+
 	CreateVals []KVSpec
 	UpdateVals []KVSpec
 	SoftIDExpr string // SoftDelete/ForceDelete id expr
-	Pending    bool   // body too complex to lower
+
+	// Pagination arguments for the Paginate/OffsetPage terminal.
+	PageExpr    string
+	PerPageExpr string
+
+	Pending    bool // body too complex to lower
 	PendingWhy string
 }
 
@@ -60,10 +85,41 @@ type ParamSpec struct {
 	Type string
 }
 
+// WhereKind distinguishes predicate shapes that compile differently.
+type WhereKind string
+
+const (
+	// WhereValue is `col op $n`.
+	WhereValue WhereKind = ""
+	// WhereNull / WhereNotNull take no argument.
+	WhereNull    WhereKind = "null"
+	WhereNotNull WhereKind = "notnull"
+	// WhereInList is IN over a fixed set of expressions known at generate time.
+	WhereInList WhereKind = "in_list"
+	// WhereInSlice is IN over a slice whose length is only known at run time.
+	WhereInSlice WhereKind = "in_slice"
+	// WhereSearch is a case-insensitive OR search across columns.
+	WhereSearch WhereKind = "search"
+	// WhereRaw is a caller-supplied fragment with bound arguments.
+	WhereRaw WhereKind = "raw"
+)
+
 type WhereSpec struct {
+	Kind    WhereKind
 	Col     string
 	Op      string
-	ArgExpr string // Go source: true, 18, email
+	ArgExpr string   // scalar value, search pattern, or slice expression
+	Args    []string // IN list values / raw fragment arguments
+	Cols    []string // search columns
+	Raw     string   // raw SQL fragment
+	Or      bool     // joined with OR instead of AND
+	Negated bool     // NOT IN
+}
+
+type JoinSpec struct {
+	Type  string // INNER JOIN | LEFT JOIN | RIGHT JOIN
+	Table string
+	On    string
 }
 
 type OrderSpec struct {
@@ -72,8 +128,65 @@ type OrderSpec struct {
 }
 
 type KVSpec struct {
-	Col string
+	Col  string
 	Expr string
+}
+
+// pkgConsts holds package-level string and []string declarations so a Meta
+// literal can refer to them (generated models use UserTable / UserColumnList
+// rather than inline literals).
+type pkgConsts struct {
+	strings map[string]string
+	slices  map[string][]string
+}
+
+func newPkgConsts() *pkgConsts {
+	return &pkgConsts{strings: map[string]string{}, slices: map[string][]string{}}
+}
+
+func (c *pkgConsts) collect(f *ast.File) {
+	for _, decl := range f.Decls {
+		gd, ok := decl.(*ast.GenDecl)
+		if !ok || (gd.Tok != token.CONST && gd.Tok != token.VAR) {
+			continue
+		}
+		for _, sp := range gd.Specs {
+			vs, ok := sp.(*ast.ValueSpec)
+			if !ok || len(vs.Names) != 1 || len(vs.Values) != 1 {
+				continue
+			}
+			name := vs.Names[0].Name
+			if s, ok := litString(vs.Values[0]); ok {
+				c.strings[name] = s
+				continue
+			}
+			if vals := litStringSlice(vs.Values[0]); len(vals) > 0 {
+				c.slices[name] = vals
+			}
+		}
+	}
+}
+
+// resolveString reads a string literal or a package-level constant reference.
+func (c *pkgConsts) resolveString(e ast.Expr) (string, bool) {
+	if s, ok := litString(e); ok {
+		return s, true
+	}
+	if id, ok := e.(*ast.Ident); ok && c != nil {
+		s, ok := c.strings[id.Name]
+		return s, ok
+	}
+	return "", false
+}
+
+func (c *pkgConsts) resolveStrings(e ast.Expr) []string {
+	if vals := litStringSlice(e); len(vals) > 0 {
+		return vals
+	}
+	if id, ok := e.(*ast.Ident); ok && c != nil {
+		return c.slices[id.Name]
+	}
+	return nil
 }
 
 func parseModelsDir(dir string) (map[string]ModelSpec, error) {
@@ -81,7 +194,12 @@ func parseModelsDir(dir string) (map[string]ModelSpec, error) {
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
 		return out, nil
 	}
-	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+
+	// Two passes: package-level declarations first, since an entity in one file
+	// can reference constants declared in another.
+	consts := newPkgConsts()
+	files := map[string]*ast.File{}
+	if err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") {
 			return err
 		}
@@ -89,6 +207,21 @@ func parseModelsDir(dir string) (map[string]ModelSpec, error) {
 		f, err := parser.ParseFile(fset, path, nil, 0)
 		if err != nil {
 			return err
+		}
+		files[path] = f
+		consts.collect(f)
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") {
+			return err
+		}
+		f := files[path]
+		if f == nil {
+			return nil
 		}
 		pkg := f.Name.Name
 		// Find type decls + var Entity = query.Model[Type](query.Meta{...})
@@ -123,7 +256,7 @@ func parseModelsDir(dir string) (map[string]ModelSpec, error) {
 				if !ok {
 					continue
 				}
-				modelType, meta, ok := parseModelCall(call)
+				modelType, meta, ok := parseModelCall(call, consts)
 				if !ok {
 					continue
 				}
@@ -153,7 +286,7 @@ func parseModelsDir(dir string) (map[string]ModelSpec, error) {
 	return out, err
 }
 
-func parseModelCall(call *ast.CallExpr) (typeName string, meta query.Meta, ok bool) {
+func parseModelCall(call *ast.CallExpr, consts *pkgConsts) (typeName string, meta query.Meta, ok bool) {
 	var x ast.Expr
 	var index ast.Expr
 	switch fun := call.Fun.(type) {
@@ -174,11 +307,11 @@ func parseModelCall(call *ast.CallExpr) (typeName string, meta query.Meta, ok bo
 	if len(call.Args) == 0 {
 		return "", query.Meta{}, false
 	}
-	meta, ok = parseMetaLit(call.Args[0])
+	meta, ok = parseMetaLit(call.Args[0], consts)
 	return typeName, meta, ok
 }
 
-func parseMetaLit(expr ast.Expr) (query.Meta, bool) {
+func parseMetaLit(expr ast.Expr, consts *pkgConsts) (query.Meta, bool) {
 	cl, ok := expr.(*ast.CompositeLit)
 	if !ok {
 		return query.Meta{}, false
@@ -189,16 +322,15 @@ func parseMetaLit(expr ast.Expr) (query.Meta, bool) {
 		if !ok {
 			continue
 		}
-		key := exprString(kv.Key)
-		switch key {
+		switch exprString(kv.Key) {
 		case "Table":
-			m.Table, _ = litString(kv.Value)
+			m.Table, _ = consts.resolveString(kv.Value)
 		case "PrimaryKey":
-			m.PrimaryKey, _ = litString(kv.Value)
+			m.PrimaryKey, _ = consts.resolveString(kv.Value)
 		case "SoftDeletes":
 			m.SoftDeletes = exprString(kv.Value) == "true"
 		case "Columns":
-			m.Columns = litStringSlice(kv.Value)
+			m.Columns = consts.resolveStrings(kv.Value)
 		}
 	}
 	return m, m.Table != "" && len(m.Columns) > 0
@@ -366,14 +498,15 @@ func parseResults(ft *ast.FuncType) []string {
 }
 
 func lowerStubBody(fd *ast.FuncDecl, st *StubFunc, models map[string]ModelSpec) {
-	// Find return <call chain>
+	// Only the stub's own return counts; returns inside nested closures (a
+	// cursor extractor, say) belong to a different function.
 	var ret *ast.ReturnStmt
-	ast.Inspect(fd.Body, func(n ast.Node) bool {
-		if r, ok := n.(*ast.ReturnStmt); ok && ret == nil {
+	for _, stmt := range fd.Body.List {
+		if r, ok := stmt.(*ast.ReturnStmt); ok {
 			ret = r
+			break
 		}
-		return true
-	})
+	}
 	if ret == nil || len(ret.Results) == 0 {
 		st.Pending = true
 		st.PendingWhy = "no return expression"
@@ -394,15 +527,32 @@ func lowerStubBody(fd *ast.FuncDecl, st *StubFunc, models map[string]ModelSpec) 
 }
 
 func lowerCallChain(call *ast.CallExpr, st *StubFunc, models map[string]ModelSpec) bool {
-	// Peel terminal action: Get/First/Create/Update/SoftDelete/ForceDelete
 	sel, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok {
 		return false
 	}
 	action := sel.Sel.Name
 	switch action {
-	case "Get", "First":
+	case "Get", "First", "FirstOrFail", "Count", "Exists", "Delete", "Restore":
 		st.Action = action
+		return lowerBuilderChain(sel.X, st, models)
+	case "OffsetPage":
+		st.Action = "Paginate"
+		if len(call.Args) >= 4 {
+			st.PageExpr = exprString(call.Args[2])
+			st.PerPageExpr = exprString(call.Args[3])
+		}
+		return lowerBuilderChain(sel.X, st, models)
+	case "Paginate":
+		st.Action = "Paginate"
+		if len(call.Args) >= 3 {
+			page, perPage, ok := parsePageRequest(call.Args[2])
+			if !ok {
+				st.PendingWhy = "Paginate needs a query.PageRequest literal (cursor pages stay on the builder)"
+				return false
+			}
+			st.PageExpr, st.PerPageExpr = page, perPage
+		}
 		return lowerBuilderChain(sel.X, st, models)
 	case "Create":
 		st.Action = action
@@ -421,11 +571,42 @@ func lowerCallChain(call *ast.CallExpr, st *StubFunc, models map[string]ModelSpe
 		if len(call.Args) >= 3 {
 			st.SoftIDExpr = exprString(call.Args[2])
 		}
-		return lowerEntityStart(sel.X, st, models)
+		if len(call.Args) >= 3 {
+			return lowerEntityStart(sel.X, st, models)
+		}
+		return lowerBuilderChain(sel.X, st, models)
 	default:
-		st.PendingWhy = "action " + action
+		st.PendingWhy = "terminal call " + action + " is runtime-only"
 		return false
 	}
+}
+
+// parsePageRequest pulls Page/PerPage out of a query.PageRequest literal.
+// Cursor pagination is stateful, so it stays on the runtime builder.
+func parsePageRequest(expr ast.Expr) (page, perPage string, ok bool) {
+	cl, isLit := expr.(*ast.CompositeLit)
+	if !isLit {
+		return "", "", false
+	}
+	for _, elt := range cl.Elts {
+		kv, isKV := elt.(*ast.KeyValueExpr)
+		if !isKV {
+			continue
+		}
+		switch exprString(kv.Key) {
+		case "Page":
+			page = exprString(kv.Value)
+		case "PerPage":
+			perPage = exprString(kv.Value)
+		case "Cursor", "OrderBy", "Desc":
+			return "", "", false
+		case "Style":
+			if strings.Contains(exprString(kv.Value), "Cursor") {
+				return "", "", false
+			}
+		}
+	}
+	return page, perPage, true
 }
 
 func lowerEntityStart(x ast.Expr, st *StubFunc, models map[string]ModelSpec) bool {
@@ -485,71 +666,259 @@ func lowerBuilderChain(x ast.Expr, st *StubFunc, models map[string]ModelSpec) bo
 		if !ok {
 			return false
 		}
-		name := sel.Sel.Name
-		switch name {
-		case "Where":
-			if w, ok := parseWhereCall(n.Args); ok {
-				st.Wheres = append([]WhereSpec{w}, st.Wheres...)
-			} else {
-				return false
-			}
-			return lowerBuilderChain(sel.X, st, models)
-		case "OrderBy":
-			if len(n.Args) >= 1 {
-				col, _ := litString(n.Args[0])
-				dir := "ASC"
-				if len(n.Args) >= 2 {
-					dir, _ = litString(n.Args[1])
-					if dir == "" {
-						dir = "ASC"
-					}
-				}
-				st.Orders = append([]OrderSpec{{Col: col, Dir: strings.ToUpper(dir)}}, st.Orders...)
-			}
-			return lowerBuilderChain(sel.X, st, models)
-		case "Limit":
-			if len(n.Args) >= 1 {
-				if lim, ok := litInt(n.Args[0]); ok {
-					st.Limit = lim
-				} else {
-					st.PendingWhy = "dynamic Limit (use literal or runtime builder)"
-					return false
-				}
-			}
-			return lowerBuilderChain(sel.X, st, models)
-		case "Offset":
-			if len(n.Args) >= 1 {
-				if off, ok := litInt(n.Args[0]); ok {
-					st.Offset = off
-				} else {
-					st.PendingWhy = "dynamic Offset"
-					return false
-				}
-			}
-			return lowerBuilderChain(sel.X, st, models)
-		case "Select":
-			for _, a := range n.Args {
-				if s, ok := litString(a); ok {
-					st.Selects = append(st.Selects, s)
-				}
-			}
-			return lowerBuilderChain(sel.X, st, models)
-		case "Distinct":
-			st.Distinct = true
-			return lowerBuilderChain(sel.X, st, models)
-		case "WhereSearch":
-			return false // pending for now — complex
-		case "WhereIn":
-			return false
-		case "New":
-			return lowerBuilderChain(sel.X, st, models)
-		default:
-			st.PendingWhy = "method " + name
+		if !lowerBuilderCall(sel.Sel.Name, n, st) {
 			return false
 		}
+		return lowerBuilderChain(sel.X, st, models)
 	default:
 		return false
 	}
+}
+
+// lowerBuilderCall records one chained builder method. Calls arrive from the
+// outermost inward, so clauses are prepended to keep source order.
+func lowerBuilderCall(name string, call *ast.CallExpr, st *StubFunc) bool {
+	args := call.Args
+	switch name {
+	case "New", "Dialect":
+		return true
+
+	case "Where", "OrWhere", "Having":
+		w, ok := parseWhereCall(args)
+		if !ok {
+			st.PendingWhy = "Where form not supported (use column, [op], value)"
+			return false
+		}
+		if name == "OrWhere" {
+			w.Or = true
+		}
+		if name == "Having" {
+			st.Havings = append([]WhereSpec{w}, st.Havings...)
+			return true
+		}
+		st.Wheres = prependWhere(st.Wheres, w)
+		return true
+
+	case "WhereIn", "WhereNotIn":
+		w, ok := parseWhereIn(args, call.Ellipsis.IsValid(), name == "WhereNotIn")
+		if !ok {
+			st.PendingWhy = name + " needs a column and values"
+			return false
+		}
+		st.Wheres = prependWhere(st.Wheres, w)
+		return true
+
+	case "WhereNull", "WhereNotNull":
+		if len(args) < 1 {
+			return false
+		}
+		col, ok := litString(args[0])
+		if !ok {
+			st.PendingWhy = name + " needs a literal column name"
+			return false
+		}
+		kind := WhereNull
+		if name == "WhereNotNull" {
+			kind = WhereNotNull
+		}
+		st.Wheres = prependWhere(st.Wheres, WhereSpec{Kind: kind, Col: col})
+		return true
+
+	case "WhereSearch":
+		if len(args) != 2 {
+			return false
+		}
+		cols := litStringSlice(args[0])
+		if len(cols) == 0 {
+			st.PendingWhy = "WhereSearch needs a literal column list"
+			return false
+		}
+		st.Wheres = prependWhere(st.Wheres, WhereSpec{
+			Kind:    WhereSearch,
+			Cols:    cols,
+			ArgExpr: exprString(args[1]),
+		})
+		return true
+
+	case "WhereRaw":
+		if len(args) < 1 {
+			return false
+		}
+		frag, ok := litString(args[0])
+		if !ok {
+			st.PendingWhy = "WhereRaw needs a literal SQL fragment"
+			return false
+		}
+		if strings.ContainsAny(frag, ";") || strings.Contains(frag, "--") || strings.Contains(frag, "/*") {
+			st.PendingWhy = "WhereRaw rejects ; and SQL comments (injection risk)"
+			return false
+		}
+		w := WhereSpec{Kind: WhereRaw, Raw: frag}
+		for _, a := range args[1:] {
+			w.Args = append(w.Args, exprString(a))
+		}
+		st.Wheres = prependWhere(st.Wheres, w)
+		return true
+
+	case "OrderBy", "OrderByDesc":
+		if len(args) < 1 {
+			return false
+		}
+		col, ok := litString(args[0])
+		if !ok {
+			st.PendingWhy = "OrderBy needs a literal column name"
+			return false
+		}
+		dir := "ASC"
+		if name == "OrderByDesc" {
+			dir = "DESC"
+		} else if len(args) >= 2 {
+			if d, ok := litString(args[1]); ok && d != "" {
+				dir = d
+			}
+		}
+		st.Orders = append([]OrderSpec{{Col: col, Dir: strings.ToUpper(dir)}}, st.Orders...)
+		return true
+
+	case "GroupBy":
+		var cols []string
+		for _, a := range args {
+			c, ok := litString(a)
+			if !ok {
+				st.PendingWhy = "GroupBy needs literal column names"
+				return false
+			}
+			cols = append(cols, c)
+		}
+		st.GroupBy = append(cols, st.GroupBy...)
+		return true
+
+	case "Join", "InnerJoin", "LeftJoin", "RightJoin":
+		if len(args) != 2 {
+			return false
+		}
+		table, tok := litString(args[0])
+		on, ook := litString(args[1])
+		if !tok || !ook {
+			st.PendingWhy = "joins need literal table and ON clause"
+			return false
+		}
+		typ := "INNER JOIN"
+		switch name {
+		case "LeftJoin":
+			typ = "LEFT JOIN"
+		case "RightJoin":
+			typ = "RIGHT JOIN"
+		}
+		st.Joins = append([]JoinSpec{{Type: typ, Table: table, On: on}}, st.Joins...)
+		return true
+
+	case "Limit", "Offset":
+		if len(args) < 1 {
+			return false
+		}
+		n, isLit := litInt(args[0])
+		expr := exprString(args[0])
+		if name == "Limit" {
+			if isLit {
+				st.Limit = n
+			} else {
+				st.LimitExpr = expr
+			}
+			return true
+		}
+		if isLit {
+			st.Offset = n
+		} else {
+			st.OffsetExpr = expr
+		}
+		return true
+
+	case "Select":
+		for _, a := range args {
+			s, ok := litString(a)
+			if !ok {
+				st.PendingWhy = "Select needs literal column names"
+				return false
+			}
+			st.Selects = append(st.Selects, s)
+		}
+		return true
+
+	case "Distinct":
+		st.Distinct = true
+		return true
+
+	case "DistinctOn":
+		st.Distinct = true
+		for _, a := range args {
+			s, ok := litString(a)
+			if !ok {
+				st.PendingWhy = "DistinctOn needs literal column names"
+				return false
+			}
+			st.DistinctOn = append(st.DistinctOn, s)
+		}
+		return true
+
+	case "WithTrashed":
+		st.WithTrashed = true
+		return true
+
+	case "LockForUpdate", "ForUpdate":
+		st.Lock = "FOR UPDATE"
+		return true
+	case "LockForShare":
+		st.Lock = "FOR SHARE"
+		return true
+	case "SkipLocked":
+		st.Lock = "FOR UPDATE SKIP LOCKED"
+		return true
+
+	case "With":
+		for _, a := range args {
+			if s, ok := litString(a); ok {
+				st.Relations = append(st.Relations, s)
+			}
+		}
+		st.PendingWhy = "eager loading needs model structs — call the builder directly for .With(...)"
+		return false
+
+	default:
+		st.PendingWhy = "method " + name + " is runtime-only"
+		return false
+	}
+}
+
+func prependWhere(list []WhereSpec, w WhereSpec) []WhereSpec {
+	return append([]WhereSpec{w}, list...)
+}
+
+// parseWhereIn handles WhereIn("col", a, b) and WhereIn("col", ids...). The
+// spread form has a runtime length, so it compiles to a dynamic IN group.
+func parseWhereIn(args []ast.Expr, spread, negated bool) (WhereSpec, bool) {
+	if len(args) < 2 {
+		return WhereSpec{}, false
+	}
+	col, ok := litString(args[0])
+	if !ok {
+		return WhereSpec{}, false
+	}
+	return parseInValues(col, args[1:], spread, negated)
+}
+
+func parseInValues(col string, vals []ast.Expr, spread, negated bool) (WhereSpec, bool) {
+	if len(vals) == 0 {
+		return WhereSpec{}, false
+	}
+	if spread && len(vals) == 1 {
+		return WhereSpec{Kind: WhereInSlice, Col: col, ArgExpr: exprString(vals[0]), Negated: negated}, true
+	}
+	w := WhereSpec{Kind: WhereInList, Col: col, Negated: negated}
+	for _, a := range vals {
+		w.Args = append(w.Args, exprString(a))
+	}
+	return w, true
 }
 
 func parseWhereCall(args []ast.Expr) (WhereSpec, bool) {
@@ -557,6 +926,9 @@ func parseWhereCall(args []ast.Expr) (WhereSpec, bool) {
 		col, ok := litString(args[0])
 		if !ok {
 			return WhereSpec{}, false
+		}
+		if w, ok := parseOperatorHelper(col, args[1]); ok {
+			return w, true
 		}
 		return WhereSpec{Col: col, Op: "=", ArgExpr: exprString(args[1])}, true
 	}
@@ -570,6 +942,47 @@ func parseWhereCall(args []ast.Expr) (WhereSpec, bool) {
 			return WhereSpec{}, false
 		}
 		return WhereSpec{Col: col, Op: strings.ToUpper(op), ArgExpr: exprString(args[2])}, true
+	}
+	return WhereSpec{}, false
+}
+
+// operatorHelpers maps the query.Eq/MoreThan/… sugar to SQL operators so a
+// stub written with helpers lowers to the same SQL as the explicit form.
+var operatorHelpers = map[string]string{
+	"Eq": "=", "Not": "<>",
+	"MoreThan": ">", "MoreThanOrEqual": ">=",
+	"LessThan": "<", "LessThanOrEqual": "<=",
+	"Like": "LIKE", "ILike": "ILIKE",
+}
+
+// parseOperatorHelper recognises Where("age", query.MoreThan(18)) and friends.
+func parseOperatorHelper(col string, arg ast.Expr) (WhereSpec, bool) {
+	call, ok := arg.(*ast.CallExpr)
+	if !ok {
+		return WhereSpec{}, false
+	}
+	name := ""
+	switch fn := call.Fun.(type) {
+	case *ast.SelectorExpr:
+		name = fn.Sel.Name
+	case *ast.Ident:
+		name = fn.Name
+	default:
+		return WhereSpec{}, false
+	}
+
+	switch name {
+	case "IsNull":
+		return WhereSpec{Kind: WhereNull, Col: col}, true
+	case "IsNotNull":
+		return WhereSpec{Kind: WhereNotNull, Col: col}, true
+	case "In":
+		return parseInValues(col, call.Args, call.Ellipsis.IsValid(), false)
+	case "NotIn":
+		return parseInValues(col, call.Args, call.Ellipsis.IsValid(), true)
+	}
+	if op, ok := operatorHelpers[name]; ok && len(call.Args) == 1 {
+		return WhereSpec{Col: col, Op: op, ArgExpr: exprString(call.Args[0])}, true
 	}
 	return WhereSpec{}, false
 }

@@ -7,6 +7,18 @@ import (
 	"sync"
 )
 
+// IndexInfo mirrors a database index. Generated model code carries it so tools
+// and tests can reason about which filters are backed by an index.
+type IndexInfo struct {
+	Name      string
+	Columns   []string
+	Unique    bool
+	Primary   bool
+	Method    string
+	Partial   bool
+	Predicate string
+}
+
 // Meta describes a model's table and columns for codegen + runtime SQL.
 // Always list Columns explicitly — vorm never emits SELECT *.
 type Meta struct {
@@ -14,9 +26,34 @@ type Meta struct {
 	Columns     []string // required for reads
 	PrimaryKey  string   // default "id"
 	SoftDeletes bool
+	Indexes     []IndexInfo
+	Generated   []string // columns the database computes; excluded from writes
 
 	// columnTypes is filled by Model[T] from struct db tags for type checks.
 	columnTypes columnTypeMap
+}
+
+// Indexed reports whether col is the leading column of any index, i.e. whether
+// filtering on it can use an index.
+func (m Meta) Indexed(col string) bool {
+	bare := bareColumn(col)
+	for _, idx := range m.Indexes {
+		if len(idx.Columns) > 0 && idx.Columns[0] == bare {
+			return true
+		}
+	}
+	return false
+}
+
+// IsGenerated reports whether the database computes col (never written by vorm).
+func (m Meta) IsGenerated(col string) bool {
+	bare := bareColumn(col)
+	for _, g := range m.Generated {
+		if g == bare {
+			return true
+		}
+	}
+	return false
 }
 
 // Entity is a registered model handle: Users.Where(...).Get(...)
@@ -86,6 +123,41 @@ func (e *Entity[T]) WhereIn(col string, vals ...any) *Builder[T] {
 	return e.New().WhereIn(col, vals...)
 }
 
+// WhereNotIn starts with WHERE col NOT IN (...).
+func (e *Entity[T]) WhereNotIn(col string, vals ...any) *Builder[T] {
+	return e.New().WhereNotIn(col, vals...)
+}
+
+// WhereNull starts with WHERE col IS NULL.
+func (e *Entity[T]) WhereNull(col string) *Builder[T] {
+	return e.New().WhereNull(col)
+}
+
+// WhereNotNull starts with WHERE col IS NOT NULL.
+func (e *Entity[T]) WhereNotNull(col string) *Builder[T] {
+	return e.New().WhereNotNull(col)
+}
+
+// Select starts with a narrowed projection.
+func (e *Entity[T]) Select(cols ...string) *Builder[T] {
+	return e.New().Select(cols...)
+}
+
+// OrderByDesc starts with descending ordering.
+func (e *Entity[T]) OrderByDesc(col string) *Builder[T] {
+	return e.New().OrderByDesc(col)
+}
+
+// LeftJoin starts with a LEFT JOIN.
+func (e *Entity[T]) LeftJoin(table, on string) *Builder[T] {
+	return e.New().LeftJoin(table, on)
+}
+
+// WithTrashed starts a query that includes soft-deleted rows.
+func (e *Entity[T]) WithTrashed() *Builder[T] {
+	return e.New().WithTrashed()
+}
+
 // Distinct starts a DISTINCT query.
 func (e *Entity[T]) Distinct() *Builder[T] {
 	return e.New().Distinct()
@@ -94,6 +166,11 @@ func (e *Entity[T]) Distinct() *Builder[T] {
 // Join starts with an INNER JOIN.
 func (e *Entity[T]) Join(table, on string) *Builder[T] {
 	return e.New().Join(table, on)
+}
+
+// With starts a query with eager-loaded relations.
+func (e *Entity[T]) With(relations ...string) *Builder[T] {
+	return e.New().With(relations...)
 }
 
 // LookupMeta returns registered meta for T, if any.

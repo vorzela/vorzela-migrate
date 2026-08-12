@@ -110,6 +110,16 @@ func (r *pgxRows) Scan(dest ...any) error { return r.rows.Scan(dest...) }
 func (r *pgxRows) Close() error           { r.rows.Close(); return nil }
 func (r *pgxRows) Err() error             { return r.rows.Err() }
 
+// Columns satisfies ColumnNamer so ScanStructRows can map raw pgx result sets.
+func (r *pgxRows) Columns() ([]string, error) {
+	fds := r.rows.FieldDescriptions()
+	out := make([]string, len(fds))
+	for i := range fds {
+		out[i] = fds[i].Name
+	}
+	return out, nil
+}
+
 type pgxResult struct{ tag pgconn.CommandTag }
 
 func (r pgxResult) RowsAffected() (int64, error) { return r.tag.RowsAffected(), nil }

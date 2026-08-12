@@ -87,9 +87,9 @@ func normalizeTableName(raw string) (table string, softDeletes bool, pivot *pivo
 		// post_user / post_tag → pivot
 		left, right := parts[0], parts[1]
 		pivot = &pivotHint{
-			LeftCol:   left + "_id",
-			LeftTable: pluralize(left),
-			RightCol:  right + "_id",
+			LeftCol:    left + "_id",
+			LeftTable:  pluralize(left),
+			RightCol:   right + "_id",
 			RightTable: pluralize(right),
 		}
 		softDeletes = false // pivots usually no soft deletes
@@ -129,7 +129,7 @@ import "github.com/vorzela/vorm/schema"
 
 // %s — Laravel-style Schema::create in Go.
 // Edit the Blueprint, then call %s(nil) (or pass a Facade inside Schema.Batch).
-// That writes migrations/*.sql and runs vm migrate when AutoMigrate is true.
+// That writes migrations/*.sql and applies it in-process when AutoMigrate is true.
 func %s(s *schema.Facade) error {
 	if s == nil {
 		s = schema.Default

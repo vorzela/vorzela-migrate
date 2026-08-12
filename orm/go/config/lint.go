@@ -29,7 +29,10 @@ func LintFile(path string) ([]Finding, error) {
 		known[k] = true
 	}
 	// aliases accepted by set()
-	for _, k := range []string{"GEN_PACKAGE", "PACKAGE_NAME", "GEN_DIR", "QUERIES_DIR", "MODELS_DIR"} {
+	for _, k := range []string{
+		"GEN_PACKAGE", "PACKAGE_NAME", "GEN_DIR", "QUERIES_DIR", "MODELS_DIR",
+		"DSN", "MIGRATIONS_DIR", "SOURCE",
+	} {
 		known[k] = true
 	}
 

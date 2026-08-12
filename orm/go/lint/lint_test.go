@@ -29,6 +29,34 @@ DROP TABLE IF EXISTS x;
 	}
 }
 
+func TestDirIgnoresDeclarativeHelpers(t *testing.T) {
+	dir := t.TempDir()
+	files := map[string]string{
+		"1700000000_create_users_table.sql": "-- ⬆ Up\nCREATE TABLE users (id int);\n-- ⬇ Down\nDROP TABLE IF EXISTS users;\n",
+		"extensions.sql":                    "CREATE EXTENSION IF NOT EXISTS citext;\n",
+		"enums.sql":                         "CREATE TYPE status AS ENUM ('on');\n",
+		"functions.sql":                     "CREATE OR REPLACE FUNCTION f() RETURNS int AS $$ SELECT 1 $$ LANGUAGE sql;\n",
+	}
+	for name, body := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	res, err := lint.Dir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range res.Findings {
+		if strings.Contains(f.File, "extensions.sql") || strings.Contains(f.File, "enums.sql") || strings.Contains(f.File, "functions.sql") {
+			t.Errorf("declarative helper was linted as a migration: %+v", f)
+		}
+	}
+	if res.HasErrors() {
+		t.Errorf("clean directory reported errors: %+v", res.Findings)
+	}
+}
+
 func TestScaffoldAndLintOK(t *testing.T) {
 	dir := t.TempDir()
 	path, err := scaffold.CreateTable(scaffold.TableOptions{

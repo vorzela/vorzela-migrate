@@ -1,6 +1,6 @@
-# Ignore app-local generated / runtime dirs when experimenting
+# Ignore app-local generated / runtime dirs when experimenting.
+# Do not add /schema/ here — it is a real package in this module.
 /vorm/
 /models/
 /queries/
-/schema/
 /migrations/

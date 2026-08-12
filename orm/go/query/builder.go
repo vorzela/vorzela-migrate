@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync/atomic"
 )
 
 // DB is the minimal executor interface (database/sql or pgx adapters).
@@ -40,6 +41,28 @@ const (
 	DialectMySQL    Dialect = "mysql"
 )
 
+var defaultDialect atomic.Value // Dialect
+
+// SetDefaultDialect sets the dialect new builders start with, so MySQL projects
+// do not have to call .Dialect(...) on every query. Call it once at startup;
+// generated model packages emit it for you.
+func SetDefaultDialect(d Dialect) {
+	switch d {
+	case DialectPostgres, DialectMySQL:
+		defaultDialect.Store(d)
+	default:
+		panic(fmt.Sprintf("vorm/query: unknown dialect %q", d))
+	}
+}
+
+// DefaultDialect reports the dialect new builders start with (Postgres unless set).
+func DefaultDialect() Dialect {
+	if v, ok := defaultDialect.Load().(Dialect); ok && v != "" {
+		return v
+	}
+	return DialectPostgres
+}
+
 // Builder is a fluent query IR that also compiles/runs performant SQL
 // with explicit column lists (never SELECT *).
 type Builder[T any] struct {
@@ -57,6 +80,7 @@ type Builder[T any] struct {
 	limit      int
 	offset     int
 	soft       bool // respect soft deletes when meta.SoftDeletes
+	with       []string
 }
 
 type pred struct {
@@ -74,10 +98,19 @@ type order struct {
 func newBuilder[T any](meta Meta) *Builder[T] {
 	return &Builder[T]{
 		meta:    meta,
-		dialect: DialectPostgres,
+		dialect: DefaultDialect(),
 		selects: append([]string(nil), meta.Columns...),
 		soft:    meta.SoftDeletes,
 	}
+}
+
+// With eager-loads registered relations after the rows are fetched. Each relation
+// costs a bounded number of extra queries for the whole result set, never one per row.
+//
+//	Users.Where("active", true).With("posts", "profile").Get(ctx, db)
+func (b *Builder[T]) With(relations ...string) *Builder[T] {
+	b.with = append(b.with, relations...)
+	return b
 }
 
 // Dialect sets postgres (default) or mysql placeholders.
@@ -143,8 +176,8 @@ func (b *Builder[T]) validatePred(p pred) error {
 	switch op {
 	case "IS NULL", "IS NOT NULL":
 		return nil
-	case "IN":
-		return b.meta.CheckColumnValue(p.col, Operator{Op: "IN", Value: p.arg})
+	case "IN", "NOT IN":
+		return b.meta.CheckColumnValue(p.col, Operator{Op: op, Value: p.arg})
 	default:
 		return b.meta.CheckColumnValue(p.col, p.arg)
 	}

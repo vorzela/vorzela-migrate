@@ -87,9 +87,14 @@ func (b *Builder[T]) OrWhere(args ...any) *Builder[T] {
 	return b
 }
 
-// WhereIn is Where(col, In(vals...)).
+// WhereIn is Where(col, In(vals...)). An empty set matches no rows.
 func (b *Builder[T]) WhereIn(col string, vals ...any) *Builder[T] {
 	return b.Where(col, In(vals...))
+}
+
+// WhereNotIn is Where(col, NotIn(vals...)). An empty set excludes no rows.
+func (b *Builder[T]) WhereNotIn(col string, vals ...any) *Builder[T] {
+	return b.Where(col, NotIn(vals...))
 }
 
 // WhereNull is Where(col, IsNull()).

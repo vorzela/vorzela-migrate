@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 )
 
@@ -44,7 +45,7 @@ func (b *Builder[T]) CompileSelect() (sql string, args []any, err error) {
 
 	quotedCols := make([]string, len(cols))
 	for i, c := range cols {
-		q, err := QuoteIdent(b.dialect, c)
+		q, err := QuoteIdent(b.dialect, b.qualify(c))
 		if err != nil {
 			return "", nil, err
 		}
@@ -96,7 +97,7 @@ func (b *Builder[T]) CompileSelect() (sql string, args []any, err error) {
 		sb.WriteString(" GROUP BY ")
 		gparts := make([]string, len(b.groupBy))
 		for i, g := range b.groupBy {
-			gparts[i], _ = QuoteIdent(b.dialect, g)
+			gparts[i], _ = QuoteIdent(b.dialect, b.qualify(g))
 		}
 		sb.WriteString(strings.Join(gparts, ", "))
 	}
@@ -115,7 +116,7 @@ func (b *Builder[T]) CompileSelect() (sql string, args []any, err error) {
 		sb.WriteString(" ORDER BY ")
 		parts := make([]string, len(b.orderBy))
 		for i, o := range b.orderBy {
-			qc, _ := QuoteIdent(b.dialect, o.col)
+			qc, _ := QuoteIdent(b.dialect, b.qualify(o.col))
 			parts[i] = qc + " " + o.dir
 		}
 		sb.WriteString(strings.Join(parts, ", "))
@@ -154,16 +155,50 @@ func compileJoinsQuoted(joins []joinClause, dialect Dialect) string {
 	return b.String()
 }
 
-func (b *Builder[T]) compileWhere(argStart int) (string, []any, error) {
-	preds := append([]pred(nil), b.wheres...)
-	if b.meta.SoftDeletes && b.soft {
-		col := "deleted_at"
-		if len(b.joins) > 0 {
-			col = b.meta.Table + ".deleted_at"
-		}
-		preds = append(preds, pred{col: col, op: "IS NULL", arg: nil})
+// qualify prefixes a bare column with the base table once joins are present,
+// so `id` cannot become ambiguous against a joined table's `id`.
+func (b *Builder[T]) qualify(col string) string {
+	if len(b.joins) == 0 || col == "" {
+		return col
 	}
-	return b.compilePreds(preds, argStart, true)
+	if strings.ContainsAny(col, ".( ") {
+		return col
+	}
+	return b.meta.Table + "." + col
+}
+
+func (b *Builder[T]) compileWhere(argStart int) (string, []any, error) {
+	sqlText, args, err := b.compilePreds(b.wheres, argStart, true)
+	if err != nil {
+		return "", nil, err
+	}
+	if !b.meta.SoftDeletes || !b.soft {
+		return sqlText, args, nil
+	}
+	del, err := QuoteIdent(b.dialect, b.qualify("deleted_at"))
+	if err != nil {
+		return "", nil, err
+	}
+	filter := del + " IS NULL"
+	switch {
+	case sqlText == "":
+		return filter, args, nil
+	case predsContainOr(b.wheres):
+		// AND binds tighter than OR, so an unparenthesised OR group would let
+		// soft-deleted rows through the filter.
+		return "(" + sqlText + ") AND " + filter, args, nil
+	default:
+		return sqlText + " AND " + filter, args, nil
+	}
+}
+
+func predsContainOr(preds []pred) bool {
+	for i, p := range preds {
+		if i > 0 && p.or {
+			return true
+		}
+	}
+	return false
 }
 
 func (b *Builder[T]) compilePreds(preds []pred, argStart int, allowOr bool) (string, []any, error) {
@@ -214,7 +249,7 @@ func (b *Builder[T]) compilePreds(preds []pred, argStart int, allowOr bool) (str
 				if err := SafeIdent(p.col); err != nil {
 					return "", nil, err
 				}
-				qc, err := QuoteIdent(b.dialect, p.col)
+				qc, err := QuoteIdent(b.dialect, b.qualify(p.col))
 				if err != nil {
 					return "", nil, err
 				}
@@ -223,20 +258,23 @@ func (b *Builder[T]) compilePreds(preds []pred, argStart int, allowOr bool) (str
 			switch op {
 			case "IS NULL", "IS NOT NULL":
 				clause = fmt.Sprintf("%s %s", p.col, op)
-			case "IN":
+			case "IN", "NOT IN":
 				vals, ok := toAnySlice(p.arg)
 				if !ok {
-					return "", nil, fmt.Errorf("IN expects a slice of values")
+					return "", nil, fmt.Errorf("%s expects a slice of values", op)
 				}
-				if len(vals) == 0 {
-					clause = "1=0"
-				} else {
+				switch {
+				case len(vals) == 0 && op == "IN":
+					clause = "1 = 0" // an empty set matches nothing
+				case len(vals) == 0:
+					clause = "1 = 1" // …and excludes nothing
+				default:
 					holders := make([]string, len(vals))
 					for i, v := range vals {
 						holders[i] = placeholder()
 						args = append(args, v)
 					}
-					clause = fmt.Sprintf("%s IN (%s)", p.col, strings.Join(holders, ", "))
+					clause = fmt.Sprintf("%s %s (%s)", p.col, op, strings.Join(holders, ", "))
 				}
 			default:
 				clause = fmt.Sprintf("%s %s %s", p.col, op, placeholder())
@@ -285,34 +323,54 @@ func (b *Builder[T]) checkWhereErrors() error {
 	return nil
 }
 
-// Get executes SELECT. Requires a RowMapper via WithMapper (or generated code).
+// Get executes SELECT and maps rows into []T. It uses a RowMapper from
+// WithMapper when present (generated code path) and otherwise binds result
+// columns to db-tagged struct fields with a cached plan.
 func (b *Builder[T]) Get(ctx context.Context, db DB) ([]T, error) {
-	sql, args, err := b.CompileSelect()
+	sqlText, args, err := b.CompileSelect()
 	if err != nil {
 		return nil, err
 	}
-	rows, err := db.QueryContext(ctx, sql, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
 
 	mapper := rowMapperFromContext[T](ctx)
 	if mapper == nil {
-		return nil, fmt.Errorf("vorm/query: Get needs WithMapper[T] (or // vorm:query generate) — refusing untyped scans")
-	}
-	var out []T
-	for rows.Next() {
-		row, err := mapper(rows)
+		mapper, err = structScanner[T](b.selects)
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	obs := observe(ctx, "select", b.meta.Table, sqlText, args)
+	rows, err := db.QueryContext(ctx, sqlText, args...)
+	if err != nil {
+		return nil, obs.done(ctx, 0, wrapErr("select", b.meta.Table, sqlText, len(args), err))
+	}
+	defer rows.Close()
+
+	var out []T
+	if b.limit > 0 && b.limit <= 8192 {
+		out = make([]T, 0, b.limit)
+	}
+	for rows.Next() {
+		row, err := mapper(rows)
+		if err != nil {
+			return nil, obs.done(ctx, len(out), wrapErr("scan", b.meta.Table, sqlText, len(args), err))
+		}
 		out = append(out, row)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, obs.done(ctx, len(out), wrapErr("select", b.meta.Table, sqlText, len(args), err))
+	}
+	_ = obs.done(ctx, len(out), nil)
+
+	if err := loadRelations(ctx, db, b.with, out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
-// First returns one row, or (nil, nil) when empty.
+// First returns one row, or (nil, nil) when empty. Use FirstOrFail when absence
+// should be an error.
 func (b *Builder[T]) First(ctx context.Context, db DB) (*T, error) {
 	cp := *b
 	if cp.limit == 0 {
@@ -328,9 +386,65 @@ func (b *Builder[T]) First(ctx context.Context, db DB) (*T, error) {
 	return &rows[0], nil
 }
 
-// Exists returns whether any row matches (SELECT 1 … LIMIT 1) — cheap existence check.
+// FirstOrFail returns ErrNoRows when nothing matches.
+func (b *Builder[T]) FirstOrFail(ctx context.Context, db DB) (*T, error) {
+	row, err := b.First(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	if row == nil {
+		return nil, &Error{Op: "select", Table: b.meta.Table, Kind: KindNoRows, Err: ErrNoRows}
+	}
+	return row, nil
+}
+
+// Each streams rows through fn without buffering the whole result set.
+// Return a non-nil error from fn to stop early. Relations are not eager-loaded
+// here — batching needs the full set.
+func (b *Builder[T]) Each(ctx context.Context, db DB, fn func(T) error) error {
+	sqlText, args, err := b.CompileSelect()
+	if err != nil {
+		return err
+	}
+	mapper := rowMapperFromContext[T](ctx)
+	if mapper == nil {
+		mapper, err = structScanner[T](b.selects)
+		if err != nil {
+			return err
+		}
+	}
+
+	obs := observe(ctx, "select", b.meta.Table, sqlText, args)
+	rows, err := db.QueryContext(ctx, sqlText, args...)
+	if err != nil {
+		return obs.done(ctx, 0, wrapErr("select", b.meta.Table, sqlText, len(args), err))
+	}
+	defer rows.Close()
+
+	n := 0
+	for rows.Next() {
+		row, err := mapper(rows)
+		if err != nil {
+			return obs.done(ctx, n, wrapErr("scan", b.meta.Table, sqlText, len(args), err))
+		}
+		n++
+		if err := fn(row); err != nil {
+			return obs.done(ctx, n, err)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return obs.done(ctx, n, wrapErr("select", b.meta.Table, sqlText, len(args), err))
+	}
+	return obs.done(ctx, n, nil)
+}
+
+// Exists reports whether any row matches (SELECT 1 … LIMIT 1).
 func (b *Builder[T]) Exists(ctx context.Context, db DB) (bool, error) {
 	if err := b.checkWhereErrors(); err != nil {
+		return false, err
+	}
+	tableQ, err := QuoteIdent(b.dialect, b.meta.Table)
+	if err != nil {
 		return false, err
 	}
 	whereSQL, args, err := b.compileWhere(1)
@@ -339,8 +453,8 @@ func (b *Builder[T]) Exists(ctx context.Context, db DB) (bool, error) {
 	}
 	var sb strings.Builder
 	sb.WriteString("SELECT 1 FROM ")
-	sb.WriteString(b.meta.Table)
-	sb.WriteString(compileJoins(b.joins))
+	sb.WriteString(tableQ)
+	sb.WriteString(compileJoinsQuoted(b.joins, b.dialect))
 	if whereSQL != "" {
 		sb.WriteString(" WHERE ")
 		sb.WriteString(whereSQL)
@@ -354,17 +468,29 @@ func (b *Builder[T]) Exists(ctx context.Context, db DB) (bool, error) {
 			sb.WriteString(b.lock)
 		}
 	}
-	row := db.QueryRowContext(ctx, sb.String(), args...)
+	sqlText := sb.String()
+
+	obs := observe(ctx, "exists", b.meta.Table, sqlText, args)
 	var n int
-	if err := row.Scan(&n); err != nil {
-		return false, nil // no rows / scan miss → not exists
+	// An empty result is the answer "false", not a failure; anything else is real.
+	if err := db.QueryRowContext(ctx, sqlText, args...).Scan(&n); err != nil {
+		if Classify(err) == KindNoRows {
+			_ = obs.done(ctx, 0, nil)
+			return false, nil
+		}
+		return false, obs.done(ctx, 0, wrapErr("exists", b.meta.Table, sqlText, len(args), err))
 	}
+	_ = obs.done(ctx, 1, nil)
 	return true, nil
 }
 
 // Count executes COUNT. Uses COUNT(*) or COUNT(DISTINCT col) when Distinct is set.
 func (b *Builder[T]) Count(ctx context.Context, db DB) (int64, error) {
 	if err := b.checkWhereErrors(); err != nil {
+		return 0, err
+	}
+	tableQ, err := QuoteIdent(b.dialect, b.meta.Table)
+	if err != nil {
 		return 0, err
 	}
 	whereSQL, args, err := b.compileWhere(1)
@@ -374,34 +500,53 @@ func (b *Builder[T]) Count(ctx context.Context, db DB) (int64, error) {
 	var sb strings.Builder
 	sb.WriteString("SELECT ")
 	if b.distinct && len(b.selects) == 1 {
+		colQ, err := QuoteIdent(b.dialect, b.selects[0])
+		if err != nil {
+			return 0, err
+		}
 		sb.WriteString("COUNT(DISTINCT ")
-		sb.WriteString(b.selects[0])
+		sb.WriteString(colQ)
 		sb.WriteString(")")
 	} else {
 		sb.WriteString("COUNT(*)")
 	}
 	sb.WriteString(" FROM ")
-	sb.WriteString(b.meta.Table)
-	sb.WriteString(compileJoins(b.joins))
+	sb.WriteString(tableQ)
+	sb.WriteString(compileJoinsQuoted(b.joins, b.dialect))
 	if whereSQL != "" {
 		sb.WriteString(" WHERE ")
 		sb.WriteString(whereSQL)
 	}
-	row := db.QueryRowContext(ctx, sb.String(), args...)
+	sqlText := sb.String()
+
+	obs := observe(ctx, "count", b.meta.Table, sqlText, args)
 	var n int64
-	if err := row.Scan(&n); err != nil {
-		return 0, err
+	if err := db.QueryRowContext(ctx, sqlText, args...).Scan(&n); err != nil {
+		return 0, obs.done(ctx, 0, wrapErr("count", b.meta.Table, sqlText, len(args), err))
 	}
+	_ = obs.done(ctx, 1, nil)
 	return n, nil
 }
 
-// Create inserts an explicit column map.
+// sortedKeys gives map-driven statements a stable column order so the same
+// logical write always produces the same SQL text (prepared-statement friendly).
+func sortedKeys(values map[string]any) []string {
+	keys := make([]string, 0, len(values))
+	for k := range values {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// Create inserts an explicit column map and returns the new primary key.
 func (b *Builder[T]) Create(ctx context.Context, db DB, values map[string]any) (int64, error) {
 	if len(values) == 0 {
-		return 0, fmt.Errorf("vorm/query: Create requires values")
+		return 0, validationErr("insert", b.meta.Table, "Create requires values")
 	}
-	for k, v := range values {
-		if err := b.meta.CheckColumnValue(k, v); err != nil {
+	keys := sortedKeys(values)
+	for _, k := range keys {
+		if err := b.meta.CheckColumnValue(k, values[k]); err != nil {
 			return 0, err
 		}
 	}
@@ -413,49 +558,122 @@ func (b *Builder[T]) Create(ctx context.Context, db DB, values map[string]any) (
 	if err != nil {
 		return 0, err
 	}
-	cols := make([]string, 0, len(values))
-	args := make([]any, 0, len(values))
-	for k, v := range values {
+	cols := make([]string, 0, len(keys))
+	args := make([]any, 0, len(keys))
+	holders := make([]string, 0, len(keys))
+	for i, k := range keys {
 		qc, err := QuoteIdent(b.dialect, k)
 		if err != nil {
 			return 0, err
 		}
 		cols = append(cols, qc)
-		args = append(args, v)
-	}
-	holders := make([]string, len(args))
-	for i := range args {
+		args = append(args, values[k])
 		if b.dialect == DialectMySQL {
-			holders[i] = "?"
+			holders = append(holders, "?")
 		} else {
-			holders[i] = fmt.Sprintf("$%d", i+1)
+			holders = append(holders, fmt.Sprintf("$%d", i+1))
 		}
 	}
-	sql := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)",
+	sqlText := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)",
 		tableQ, strings.Join(cols, ", "), strings.Join(holders, ", "))
+
 	if b.dialect != DialectMySQL {
-		sql += " RETURNING " + pkQ
-		row := db.QueryRowContext(ctx, sql, args...)
+		sqlText += " RETURNING " + pkQ
+		obs := observe(ctx, "insert", b.meta.Table, sqlText, args)
 		var id int64
-		if err := row.Scan(&id); err != nil {
-			return 0, err
+		if err := db.QueryRowContext(ctx, sqlText, args...).Scan(&id); err != nil {
+			return 0, obs.done(ctx, 0, wrapErr("insert", b.meta.Table, sqlText, len(args), err))
 		}
+		_ = obs.done(ctx, 1, nil)
 		return id, nil
 	}
-	res, err := db.ExecContext(ctx, sql, args...)
+
+	obs := observe(ctx, "insert", b.meta.Table, sqlText, args)
+	res, err := db.ExecContext(ctx, sqlText, args...)
+	if err != nil {
+		return 0, obs.done(ctx, 0, wrapErr("insert", b.meta.Table, sqlText, len(args), err))
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return 0, obs.done(ctx, 0, wrapErr("insert", b.meta.Table, sqlText, len(args), err))
+	}
+	_ = obs.done(ctx, 1, nil)
+	return id, nil
+}
+
+// CreateMany inserts several rows in one statement. Every map must carry the
+// same columns; the primary keys are not returned.
+func (b *Builder[T]) CreateMany(ctx context.Context, db DB, rows []map[string]any) (int64, error) {
+	if len(rows) == 0 {
+		return 0, nil
+	}
+	keys := sortedKeys(rows[0])
+	if len(keys) == 0 {
+		return 0, validationErr("insert", b.meta.Table, "CreateMany requires values")
+	}
+	tableQ, err := QuoteIdent(b.dialect, b.meta.Table)
 	if err != nil {
 		return 0, err
 	}
-	return res.LastInsertId()
+	cols := make([]string, len(keys))
+	for i, k := range keys {
+		qc, err := QuoteIdent(b.dialect, k)
+		if err != nil {
+			return 0, err
+		}
+		cols[i] = qc
+	}
+
+	args := make([]any, 0, len(rows)*len(keys))
+	tuples := make([]string, 0, len(rows))
+	n := 1
+	for _, row := range rows {
+		if len(row) != len(keys) {
+			return 0, validationErr("insert", b.meta.Table, "CreateMany rows must all share the same columns")
+		}
+		holders := make([]string, len(keys))
+		for i, k := range keys {
+			v, ok := row[k]
+			if !ok {
+				return 0, validationErr("insert", b.meta.Table, "CreateMany row is missing column %q", k)
+			}
+			if err := b.meta.CheckColumnValue(k, v); err != nil {
+				return 0, err
+			}
+			if b.dialect == DialectMySQL {
+				holders[i] = "?"
+			} else {
+				holders[i] = fmt.Sprintf("$%d", n)
+				n++
+			}
+			args = append(args, v)
+		}
+		tuples = append(tuples, "("+strings.Join(holders, ", ")+")")
+	}
+	sqlText := fmt.Sprintf("INSERT INTO %s (%s) VALUES %s",
+		tableQ, strings.Join(cols, ", "), strings.Join(tuples, ", "))
+
+	obs := observe(ctx, "insert", b.meta.Table, sqlText, args)
+	res, err := db.ExecContext(ctx, sqlText, args...)
+	if err != nil {
+		return 0, obs.done(ctx, 0, wrapErr("insert", b.meta.Table, sqlText, len(args), err))
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return 0, obs.done(ctx, 0, wrapErr("insert", b.meta.Table, sqlText, len(args), err))
+	}
+	_ = obs.done(ctx, int(affected), nil)
+	return affected, nil
 }
 
 // Update sets columns for rows matching WHERE.
 func (b *Builder[T]) Update(ctx context.Context, db DB, values map[string]any) (int64, error) {
 	if len(values) == 0 {
-		return 0, fmt.Errorf("vorm/query: Update requires values")
+		return 0, validationErr("update", b.meta.Table, "Update requires values")
 	}
-	for k, v := range values {
-		if err := b.meta.CheckColumnValue(k, v); err != nil {
+	keys := sortedKeys(values)
+	for _, k := range keys {
+		if err := b.meta.CheckColumnValue(k, values[k]); err != nil {
 			return 0, err
 		}
 	}
@@ -472,30 +690,37 @@ func (b *Builder[T]) Update(ctx context.Context, db DB, values map[string]any) (
 		n++
 		return s
 	}
-	sets := make([]string, 0, len(values))
-	args := make([]any, 0, len(values))
-	for k, v := range values {
+	sets := make([]string, 0, len(keys))
+	args := make([]any, 0, len(keys))
+	for _, k := range keys {
 		qc, err := QuoteIdent(b.dialect, k)
 		if err != nil {
 			return 0, err
 		}
 		sets = append(sets, fmt.Sprintf("%s = %s", qc, ph()))
-		args = append(args, v)
+		args = append(args, values[k])
 	}
 	whereSQL, whereArgs, err := b.compileWhere(n)
 	if err != nil {
 		return 0, err
 	}
-	sql := fmt.Sprintf("UPDATE %s SET %s", tableQ, strings.Join(sets, ", "))
+	sqlText := fmt.Sprintf("UPDATE %s SET %s", tableQ, strings.Join(sets, ", "))
 	if whereSQL != "" {
-		sql += " WHERE " + whereSQL
+		sqlText += " WHERE " + whereSQL
 		args = append(args, whereArgs...)
 	}
-	res, err := db.ExecContext(ctx, sql, args...)
+
+	obs := observe(ctx, "update", b.meta.Table, sqlText, args)
+	res, err := db.ExecContext(ctx, sqlText, args...)
 	if err != nil {
-		return 0, err
+		return 0, obs.done(ctx, 0, wrapErr("update", b.meta.Table, sqlText, len(args), err))
 	}
-	return res.RowsAffected()
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return 0, obs.done(ctx, 0, wrapErr("update", b.meta.Table, sqlText, len(args), err))
+	}
+	_ = obs.done(ctx, int(affected), nil)
+	return affected, nil
 }
 
 // Delete soft-deletes when Meta.SoftDeletes is set; otherwise hard-deletes.
@@ -520,15 +745,11 @@ func (b *Builder[T]) SoftDelete(ctx context.Context, db DB) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	sql := fmt.Sprintf("UPDATE %s SET %s = CURRENT_TIMESTAMP", tableQ, delCol)
+	sqlText := fmt.Sprintf("UPDATE %s SET %s = CURRENT_TIMESTAMP", tableQ, delCol)
 	if whereSQL != "" {
-		sql += " WHERE " + whereSQL
+		sqlText += " WHERE " + whereSQL
 	}
-	res, err := db.ExecContext(ctx, sql, whereArgs...)
-	if err != nil {
-		return 0, err
-	}
-	return res.RowsAffected()
+	return b.execAffected(ctx, db, "soft_delete", sqlText, whereArgs)
 }
 
 // ForceDelete always issues DELETE FROM.
@@ -544,13 +765,49 @@ func (b *Builder[T]) ForceDelete(ctx context.Context, db DB) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	sql := "DELETE FROM " + tableQ
+	sqlText := "DELETE FROM " + tableQ
 	if whereSQL != "" {
-		sql += " WHERE " + whereSQL
+		sqlText += " WHERE " + whereSQL
 	}
-	res, err := db.ExecContext(ctx, sql, args...)
+	return b.execAffected(ctx, db, "delete", sqlText, args)
+}
+
+// Restore clears deleted_at for soft-deleted rows matching WHERE.
+func (b *Builder[T]) Restore(ctx context.Context, db DB) (int64, error) {
+	if !b.meta.SoftDeletes {
+		return 0, validationErr("restore", b.meta.Table, "table has no deleted_at column")
+	}
+	tableQ, err := QuoteIdent(b.dialect, b.meta.Table)
 	if err != nil {
 		return 0, err
 	}
-	return res.RowsAffected()
+	delCol, err := QuoteIdent(b.dialect, "deleted_at")
+	if err != nil {
+		return 0, err
+	}
+	cp := *b
+	cp.soft = false // target the rows that ARE deleted
+	whereSQL, args, err := cp.compileWhere(1)
+	if err != nil {
+		return 0, err
+	}
+	sqlText := fmt.Sprintf("UPDATE %s SET %s = NULL", tableQ, delCol)
+	if whereSQL != "" {
+		sqlText += " WHERE " + whereSQL
+	}
+	return b.execAffected(ctx, db, "restore", sqlText, args)
+}
+
+func (b *Builder[T]) execAffected(ctx context.Context, db DB, op, sqlText string, args []any) (int64, error) {
+	obs := observe(ctx, op, b.meta.Table, sqlText, args)
+	res, err := db.ExecContext(ctx, sqlText, args...)
+	if err != nil {
+		return 0, obs.done(ctx, 0, wrapErr(op, b.meta.Table, sqlText, len(args), err))
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return 0, obs.done(ctx, 0, wrapErr(op, b.meta.Table, sqlText, len(args), err))
+	}
+	_ = obs.done(ctx, int(affected), nil)
+	return affected, nil
 }

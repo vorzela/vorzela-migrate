@@ -142,7 +142,7 @@ func GetUserByEmail(ctx context.Context, db query.DB, email string) (*User, erro
 	if strings.Contains(s, "ErrGeneratePending") && strings.Contains(s, "func ListActiveAdults") {
 		// ListActiveAdults must not be pending
 		idx := strings.Index(s, "func ListActiveAdults")
-		chunk := s[idx:idx+800]
+		chunk := s[idx : idx+800]
 		if strings.Contains(chunk, "ErrGeneratePending") {
 			t.Fatalf("ListActiveAdults still pending:\n%s", chunk)
 		}

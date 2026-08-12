@@ -1,6 +1,7 @@
 package generate
 
 import (
+	"go/format"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,6 +26,16 @@ type Result struct {
 	StubsSeen []string
 	Dialect   string
 	Driver    string
+
+	// Pending lists stubs that stayed on the runtime builder, with the reason.
+	Pending []PendingStub
+}
+
+// PendingStub is one // vorm:query function that could not be lowered to SQL.
+type PendingStub struct {
+	Name   string
+	File   string
+	Reason string
 }
 
 // Run scans // vorm:query stubs, lowers fluent chains to parameterized SQL,
@@ -55,7 +66,7 @@ func Run(opts *Options) (*Result, error) {
 		opts.ModelPackage = "models"
 	}
 	if opts.ModelImport == "" {
-		opts.ModelImport = detectModelImport()
+		opts.ModelImport = detectModelImport(opts.ModelDir)
 	}
 	dialect := strings.ToLower(opts.Dialect)
 	driver := strings.ToLower(opts.Driver)
@@ -79,6 +90,7 @@ func Run(opts *Options) (*Result, error) {
 		StubsSeen: stubNames(stubs),
 		Dialect:   dialect,
 		Driver:    driver,
+		Pending:   pendingStubs(stubs),
 	}
 	if len(stubs) == 0 {
 		return res, nil
@@ -88,16 +100,31 @@ func Run(opts *Options) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	var scanners strings.Builder
-	emitScanners(&scanners, stubs, models, opts.ModelPackage)
-	body += scanners.String()
+
+	src, err := format.Source([]byte(body))
+	if err != nil {
+		// Keep the unformatted source on disk: the compiler error points at the
+		// generator bug far better than a format error does.
+		src = []byte(body)
+	}
 
 	goFile := filepath.Join(opts.OutDir, "queries_gen.go")
-	if err := os.WriteFile(goFile, []byte(body), 0o644); err != nil {
+	if err := os.WriteFile(goFile, src, 0o644); err != nil {
 		return nil, err
 	}
 	res.GoFiles = append(res.GoFiles, goFile)
 	return res, nil
+}
+
+func pendingStubs(stubs []StubFunc) []PendingStub {
+	var out []PendingStub
+	for _, s := range stubs {
+		if !s.Pending && s.Action != "" {
+			continue
+		}
+		out = append(out, PendingStub{Name: s.Name, File: s.File, Reason: pendingReason(s)})
+	}
+	return out
 }
 
 func stubNames(stubs []StubFunc) []string {

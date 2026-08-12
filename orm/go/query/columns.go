@@ -113,7 +113,7 @@ func checkAssignable(want reflect.Type, value any, col string) error {
 		if op.Value == nil && (op.Op == "IS NULL" || op.Op == "IS NOT NULL") {
 			return nil
 		}
-		if op.Op == "IN" {
+		if op.Op == "IN" || op.Op == "NOT IN" {
 			return checkInValues(want, op.Value, col)
 		}
 		return checkAssignable(want, op.Value, col)

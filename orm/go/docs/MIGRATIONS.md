@@ -1,97 +1,129 @@
-# Migrations with vorm (via `vm`)
+# Migrations
 
-vorm does **not** reimplement migrations. The CLI shells out to **Vorzela Migrate (`vm`)**, which already handles locking, checksums, drift, rollbacks, and PostgreSQL extras (extensions, enums, functions).
-
-## Install
-
-```bash
-go install github.com/vorzela/vorm/cmd/vorm@latest
-# vm is auto-installed on first migrate if missing
-vorm ensure-vm
-```
-
-Configure `DATABASE_URL` in `.vm` or the environment (same as `vm`).
-
-## Laravel-like workflow
-
-**Author in Go** (primary):
-
-```go
-vorm.Schema.Create("users", func(t *schema.Blueprint) {
-    t.ID()
-    t.String("email").Unique()
-    t.Timestamps()
-})
-// → migrations/*.sql + vm migrate automatically
-```
-
-Scaffold a stub: `vorm make migration create_users_table`
-
-Then use `vm` via vorm for status/rollback:
+vorm applies migrations itself, in the process that calls it. The file format,
+the `migrations` tracking table, checksums, batch numbers and locks match the
+Vorzela Migrate (`vm`) CLI, so the same directory works with either tool.
 
 ```bash
-vorm lint
-vorm migrate --enhanced --detect-drift
-vorm status
-vorm rollback
+export DATABASE_URL=postgres://user:pass@localhost:5432/app?sslmode=disable
+vorm migrate
 ```
 
-### Editing schema (thin history)
+Set `RUNNER=vm` in `.vorm` to shell out to the `vm` binary instead
+(`vorm ensure-vm` installs it). Nothing else in vorm depends on it.
 
-Prefer **editing the original create migration** and fixing drift when the migration has not been widely applied — same guidance as Vorzela Migrate / `LLM.md`.
+## File format
+
+One file per migration, named `<unix_timestamp>_<snake_case>.sql`, holding both
+directions:
+
+```sql
+-- ⬆ Up (Run when migrating forward)
+CREATE TABLE posts (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deleted_at TIMESTAMPTZ
+);
+
+-- ⬇ Down (Run when rolling back)
+DROP TABLE IF EXISTS posts;
+```
+
+Files without a numeric prefix are ignored by the sequence, which is what keeps
+`extensions.sql`, `enums.sql` and `functions.sql` out of it.
+
+Scaffold one with `vorm make migration posts`; it also writes a matching model
+placeholder and query stub.
+
+## Commands
 
 ```bash
-vorm migrate --detect-drift
-# or generate an alter:
-# (Go) schema.Facade.Table("users", func(t *schema.Blueprint) { t.String("phone"); })
+vorm migrate [--steps=N] [--dry-run] [--verbose] [--no-lint]
+vorm status                       # applied, pending, changed-since-applied
+vorm rollback [--steps=1]         # by batch, newest first
+vorm rollback --steps=all
+vorm rollback --migration=create_posts
+vorm fresh --force                # roll everything back, then re-apply
 ```
 
-Avoid long `add_*` / `alter_*` chains when a create-file edit + drift repair is enough.
+`--dry-run` reports what would run without touching the database.
+`--skip-lock` is available for environments where advisory locks are
+unavailable, and should otherwise be left alone.
 
-### Fresh / refresh
+## Safety
+
+**Locking.** PostgreSQL advisory locks and MySQL named locks mean two deploys
+cannot apply at the same time. On a lock error: wait for the other process,
+check for a stuck session, then rerun `vorm status` and `vorm migrate`.
+
+**Transactions.** Each migration runs in a transaction when the dialect allows
+it, so a failing statement leaves nothing half-applied. MySQL DDL is implicitly
+committed; that is a database limitation, not a vorm one.
+
+**Checksums.** The SHA-256 of each applied file is stored. `vorm status` reports
+`CHANGED SINCE APPLIED` when a file was edited afterwards. Prefer restoring the
+file; `--force` exists but should be a deliberate choice.
+
+**Linting.** `vorm migrate` lints the directory first and refuses to run on
+errors. `vorm lint` runs it alone; `--no-lint` skips the gate.
+
+## Editing schema
+
+Prefer editing the original create migration while it is still local or
+unreleased, then rebuilding with `vorm fresh --force`. Long `add_*` / `alter_*`
+chains are worth it only once the migration has been applied somewhere you
+cannot reset.
+
+Once a table exists in an environment you cannot drop, write the alter:
+
+```sql
+-- ⬆ Up (Run when migrating forward)
+ALTER TABLE users ADD COLUMN phone VARCHAR(32);
+
+-- ⬇ Down (Run when rolling back)
+ALTER TABLE users DROP COLUMN phone;
+```
+
+Then `vorm generate` to pick the column up in the models.
+
+## PostgreSQL prerequisites
+
+`extensions.sql`, `enums.sql` and `functions.sql` live next to the migrations and
+are declarative: an uncommented `CREATE` line is enabled, a commented one is
+disabled. They are applied before the migrations, and only when their contents
+changed since the last run (tracked in `.vm_*_hash` sidecars).
 
 ```bash
-vorm fresh      # destructive — confirm
-vorm refresh    # down all + up all
+vorm extensions             # sync migrations/extensions.sql
+vorm enums                  # create types and add new values
+vorm functions              # CREATE OR REPLACE every function
+vorm enums status           # file versus database
+vorm enums --drop-disabled  # remove commented-out types too
+vorm enums --dry-run        # print the SQL instead of running it
 ```
 
-## PostgreSQL: extensions, enums, functions
+Enum syncing is re-runnable: each type becomes a block that creates it when
+missing and otherwise issues `ALTER TYPE … ADD VALUE IF NOT EXISTS`. PostgreSQL
+cannot remove an enum value, so deleting one from the file is not synced.
+Dropping a disabled type is guarded — it is kept while any column still uses it.
 
-| Concern | vorm | notes |
-|---------|------|--------|
-| Extension | `vorm make extension uuid-ossp` or `vorm extensions migrate` | Up: `CREATE EXTENSION IF NOT EXISTS`; Down: `DROP … CASCADE` |
-| Enum type | `vorm make enum …` or Blueprint `t.Enum("status", …)` | Down drops type with `CASCADE` after table/indexes |
-| Functions | `vorm functions migrate` or `Facade.CreateFunction` / `t.Raw` | Down: `DROP FUNCTION IF EXISTS … CASCADE` |
-| Indexes | Blueprint `Index` / `Unique` | Down drops indexes then `DROP TABLE … CASCADE` then enum types |
+For a change that must be versioned alongside a table, use a migration instead:
+`vorm make enum order_status pending,paid,shipped` or
+`vorm make extension pgcrypto` write ordinary migration files.
 
-Blueprint `Enum` on Postgres emits `CREATE TYPE table_column AS ENUM (…)`. Rollback drops indexes → table CASCADE → types CASCADE.
+| Concern | Declarative | Versioned |
+|---------|-------------|-----------|
+| Extension | `extensions.sql` + `vorm extensions` | `vorm make extension <name>` |
+| Enum type | `enums.sql` + `vorm enums` | `vorm make enum <type> a,b,c` |
+| Function / trigger helper | `functions.sql` + `vorm functions` | `Facade.CreateFunction` |
 
-## Race conditions & errors
-
-`vm migrate` uses **advisory locks** (Postgres) or **named locks** (MySQL) so two migrators cannot apply at once.
-
-If vorm/vm exits with a lock-related error:
-
-1. Wait for the other process
-2. Check for a stuck session holding the lock
-3. Re-run `vorm status` then `vorm migrate`
-
-Checksum mismatch: someone edited an already-applied file. Prefer restoring the file, or `--force` only when you understand the risk.
-
-vorm wraps non-zero exits in `vmtool.ExitError` with hints (lock / checksum / drift / connection).
-
-## Drift
+## After migrating
 
 ```bash
-vorm migrate --enhanced --detect-drift
+vorm generate    # models from the live schema, then typed queries
 ```
 
-Configure drift mode in `.vm` (`auto` / `prompt` / `reject`) per Vorzela Migrate docs.
-
-## Queries after schema
-
-```bash
-vorm generate   # // vorm:query → vorm/gen/ (no sqlc)
-```
-
-Pagination (offset vs cursor), search, and `ForceDelete` are documented in [`../README.md`](../README.md) and [`../examples/`](../examples/).
+Models are regenerated from the database, so a migration is only fully applied
+once `vorm generate` has run.

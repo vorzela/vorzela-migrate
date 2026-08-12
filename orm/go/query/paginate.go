@@ -32,12 +32,22 @@ type PageResult[T any] struct {
 	Data       []T    `json:"data"`
 	Style      string `json:"style"`
 	PerPage    int    `json:"per_page"`
-	Page       int    `json:"page,omitempty"`         // offset only — current 1-based page
-	Pages      int    `json:"pages,omitempty"`        // offset only — total number of pages
-	LastPage   int    `json:"last_page,omitempty"`    // same as Pages (Laravel-style alias)
-	Total      *int64 `json:"total,omitempty"`        // offset only — total matching rows
-	NextCursor string `json:"next_cursor,omitempty"`  // cursor only
+	Page       int    `json:"page,omitempty"`        // offset only — current 1-based page
+	Pages      int    `json:"pages,omitempty"`       // offset only — total number of pages
+	LastPage   int    `json:"last_page,omitempty"`   // same as Pages (Laravel-style alias)
+	Total      *int64 `json:"total,omitempty"`       // offset only — total matching rows
+	NextCursor string `json:"next_cursor,omitempty"` // cursor only
 	HasMore    bool   `json:"has_more"`
+}
+
+// TotalCount returns the total row count, or -1 for a cursor page where no
+// count was run. It saves callers from dereferencing Total by hand — printing
+// the pointer instead of the value is an easy mistake to make.
+func (p *PageResult[T]) TotalCount() int64 {
+	if p == nil || p.Total == nil {
+		return -1
+	}
+	return *p.Total
 }
 
 type cursorPayload struct {

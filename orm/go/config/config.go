@@ -14,14 +14,31 @@ const (
 	// DefaultFile is the project config filename.
 	DefaultFile = ".vorm"
 
-	DefaultPackage     = "gen"
-	DefaultOutDir      = "./vorm/gen"
-	DefaultQueryDir    = "./queries"
-	DefaultModelDir    = "./models"
-	DefaultSchemaDir   = "./schema/migrations"
-	DefaultModelPkg    = "models"
-	DefaultDriver      = "pgx"
-	DefaultDialect     = "postgres"
+	DefaultPackage       = "gen"
+	DefaultOutDir        = "./vorm/gen"
+	DefaultQueryDir      = "./queries"
+	DefaultModelDir      = "./models"
+	DefaultSchemaDir     = "./schema/migrations"
+	DefaultModelPkg      = "models"
+	DefaultDriver        = "pgx"
+	DefaultDialect       = "postgres"
+	DefaultMigrationPath = "./migrations"
+	DefaultRunner        = RunnerNative
+	DefaultSchemaName    = "public"
+)
+
+// Migration runners. Native needs no external binary; VM shells out to the
+// `vm` CLI for projects that already standardise on it.
+const (
+	RunnerNative = "native"
+	RunnerVM     = "vm"
+)
+
+// Model sources. DB introspects the live database (full fidelity: nullability,
+// enums, indexes, foreign keys); Blueprint parses schema/migrations Go files.
+const (
+	SourceDB        = "db"
+	SourceBlueprint = "blueprint"
 )
 
 // Config is vorm project configuration.
@@ -42,23 +59,78 @@ type Config struct {
 	Driver  string // pgx | pq
 	Dialect string // postgres | mysql | mariadb
 
+	// DatabaseURL is the connection string used by the native migration runner
+	// and by database introspection. Leave it out of .vorm and set DATABASE_URL
+	// in the environment for anything that is not a local dev database.
+	DatabaseURL string
+
+	// MigrationPath holds the .sql migrations (shared format with the vm CLI).
+	MigrationPath string
+
+	// Runner selects native (no external binary) or vm.
+	Runner string
+
+	// ModelSource selects db introspection or Blueprint parsing.
+	ModelSource string
+
+	// SchemaName scopes introspection (Postgres schema / MySQL database).
+	SchemaName string
+
+	EmitRelations bool
+	EmitFunctions bool
+	IncludeViews  bool
+
 	Path string // path config was loaded from (empty if defaults only)
 
-	outDirSet bool // true if OUT_DIR was explicitly set in file / Set
+	outDirSet      bool // true if OUT_DIR was explicitly set in file / Set
+	modelSourceSet bool
 }
 
 // Default returns built-in defaults.
 func Default() *Config {
 	return &Config{
-		Package:      DefaultPackage,
-		OutDir:       DefaultOutDir,
-		QueryDir:     DefaultQueryDir,
-		ModelDir:     DefaultModelDir,
-		SchemaDir:    DefaultSchemaDir,
-		ModelPackage: DefaultModelPkg,
-		Driver:       DefaultDriver,
-		Dialect:      DefaultDialect,
+		Package:       DefaultPackage,
+		OutDir:        DefaultOutDir,
+		QueryDir:      DefaultQueryDir,
+		ModelDir:      DefaultModelDir,
+		SchemaDir:     DefaultSchemaDir,
+		ModelPackage:  DefaultModelPkg,
+		Driver:        DefaultDriver,
+		Dialect:       DefaultDialect,
+		MigrationPath: DefaultMigrationPath,
+		Runner:        DefaultRunner,
+		SchemaName:    DefaultSchemaName,
+		ModelSource:   SourceDB,
+		EmitRelations: true,
+		EmitFunctions: true,
 	}
+}
+
+// ResolveDatabaseURL prefers the environment over the config file so secrets
+// stay out of version control.
+func (c *Config) ResolveDatabaseURL() string {
+	if v := strings.TrimSpace(os.Getenv("DATABASE_URL")); v != "" {
+		return v
+	}
+	return strings.TrimSpace(c.DatabaseURL)
+}
+
+// UseNativeRunner reports whether migrations run in-process (no vm binary).
+func (c *Config) UseNativeRunner() bool {
+	return !strings.EqualFold(c.Runner, RunnerVM)
+}
+
+// IntrospectModels reports whether models are generated from the live database.
+// It falls back to Blueprint parsing when no connection string is available and
+// the source was not pinned explicitly.
+func (c *Config) IntrospectModels() bool {
+	if strings.EqualFold(c.ModelSource, SourceBlueprint) {
+		return false
+	}
+	if c.ResolveDatabaseURL() == "" {
+		return c.modelSourceSet && strings.EqualFold(c.ModelSource, SourceDB)
+	}
+	return true
 }
 
 // Load reads `.vorm` from dir (or cwd). Missing file → defaults (no error).
@@ -138,10 +210,50 @@ func (c *Config) set(key, val string) error {
 		c.Driver = strings.ToLower(val)
 	case "DIALECT":
 		c.Dialect = strings.ToLower(val)
+	case "DATABASE_URL", "DSN":
+		c.DatabaseURL = val
+	case "MIGRATION_PATH", "MIGRATIONS_DIR":
+		c.MigrationPath = val
+	case "RUNNER":
+		c.Runner = strings.ToLower(val)
+	case "MODEL_SOURCE", "SOURCE":
+		c.ModelSource = strings.ToLower(val)
+		c.modelSourceSet = true
+	case "SCHEMA_NAME":
+		c.SchemaName = val
+	case "EMIT_RELATIONS":
+		b, err := parseBool(val)
+		if err != nil {
+			return fmt.Errorf("EMIT_RELATIONS: %w", err)
+		}
+		c.EmitRelations = b
+	case "EMIT_FUNCTIONS":
+		b, err := parseBool(val)
+		if err != nil {
+			return fmt.Errorf("EMIT_FUNCTIONS: %w", err)
+		}
+		c.EmitFunctions = b
+	case "INCLUDE_VIEWS":
+		b, err := parseBool(val)
+		if err != nil {
+			return fmt.Errorf("INCLUDE_VIEWS: %w", err)
+		}
+		c.IncludeViews = b
 	default:
 		return fmt.Errorf("unknown key %q", key)
 	}
 	return nil
+}
+
+func parseBool(v string) (bool, error) {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "1", "true", "yes", "on":
+		return true, nil
+	case "0", "false", "no", "off":
+		return false, nil
+	default:
+		return false, fmt.Errorf("want true or false, got %q", v)
+	}
 }
 
 func (c *Config) applyDerived() {
@@ -169,6 +281,18 @@ func (c *Config) applyDerived() {
 	if c.ModelPackage == "" {
 		c.ModelPackage = DefaultModelPkg
 	}
+	if c.MigrationPath == "" {
+		c.MigrationPath = DefaultMigrationPath
+	}
+	if c.Runner == "" {
+		c.Runner = DefaultRunner
+	}
+	if c.ModelSource == "" {
+		c.ModelSource = SourceDB
+	}
+	if c.SchemaName == "" && !strings.HasPrefix(c.Dialect, "my") && c.Dialect != "mariadb" {
+		c.SchemaName = DefaultSchemaName
+	}
 }
 
 // Validate checks package names and known enums.
@@ -189,6 +313,16 @@ func (c *Config) Validate() error {
 	case "postgres", "postgresql", "mysql", "mariadb":
 	default:
 		return fmt.Errorf("DIALECT: want postgres|mysql|mariadb, got %q", c.Dialect)
+	}
+	switch c.Runner {
+	case RunnerNative, RunnerVM:
+	default:
+		return fmt.Errorf("RUNNER: want native or vm, got %q", c.Runner)
+	}
+	switch c.ModelSource {
+	case SourceDB, SourceBlueprint:
+	default:
+		return fmt.Errorf("MODEL_SOURCE: want db or blueprint, got %q", c.ModelSource)
 	}
 	return nil
 }
@@ -244,6 +378,26 @@ func Format(c *Config) string {
 	fmt.Fprintf(&b, "DRIVER=%s\n\n", c.Driver)
 	b.WriteString("# SQL dialect: postgres | mysql | mariadb\n")
 	fmt.Fprintf(&b, "DIALECT=%s\n\n", c.Dialect)
+
+	b.WriteString("# Migration runner: native (in-process, no vm binary) | vm\n")
+	fmt.Fprintf(&b, "RUNNER=%s\n", c.Runner)
+	fmt.Fprintf(&b, "MIGRATION_PATH=%s\n\n", c.MigrationPath)
+
+	b.WriteString("# Connection string. Prefer the DATABASE_URL environment variable —\n")
+	b.WriteString("# it overrides this value and keeps credentials out of version control.\n")
+	if c.DatabaseURL != "" {
+		fmt.Fprintf(&b, "DATABASE_URL=%s\n\n", c.DatabaseURL)
+	} else {
+		b.WriteString("# DATABASE_URL=postgres://user:pass@localhost:5432/app?sslmode=disable\n\n")
+	}
+
+	b.WriteString("# Model source: db (introspect the live database) | blueprint (parse SCHEMA_DIR)\n")
+	fmt.Fprintf(&b, "MODEL_SOURCE=%s\n", c.ModelSource)
+	fmt.Fprintf(&b, "SCHEMA_NAME=%s\n", c.SchemaName)
+	fmt.Fprintf(&b, "EMIT_RELATIONS=%s\n", boolString(c.EmitRelations))
+	fmt.Fprintf(&b, "EMIT_FUNCTIONS=%s\n", boolString(c.EmitFunctions))
+	fmt.Fprintf(&b, "INCLUDE_VIEWS=%s\n\n", boolString(c.IncludeViews))
+
 	fmt.Fprintf(&b, "QUERY_DIR=%s\n", c.QueryDir)
 	fmt.Fprintf(&b, "MODEL_DIR=%s\n", c.ModelDir)
 	fmt.Fprintf(&b, "SCHEMA_DIR=%s\n", c.SchemaDir)
@@ -298,9 +452,32 @@ func (c *Config) Get(key string) (string, error) {
 		return c.Driver, nil
 	case "DIALECT":
 		return c.Dialect, nil
+	case "DATABASE_URL", "DSN":
+		return c.DatabaseURL, nil
+	case "MIGRATION_PATH", "MIGRATIONS_DIR":
+		return c.MigrationPath, nil
+	case "RUNNER":
+		return c.Runner, nil
+	case "MODEL_SOURCE", "SOURCE":
+		return c.ModelSource, nil
+	case "SCHEMA_NAME":
+		return c.SchemaName, nil
+	case "EMIT_RELATIONS":
+		return boolString(c.EmitRelations), nil
+	case "EMIT_FUNCTIONS":
+		return boolString(c.EmitFunctions), nil
+	case "INCLUDE_VIEWS":
+		return boolString(c.IncludeViews), nil
 	default:
 		return "", fmt.Errorf("unknown key %q", key)
 	}
+}
+
+func boolString(b bool) string {
+	if b {
+		return "true"
+	}
+	return "false"
 }
 
 // Keys lists configurable keys.
@@ -308,5 +485,7 @@ func Keys() []string {
 	return []string{
 		"PACKAGE", "OUT_DIR", "DRIVER", "DIALECT",
 		"QUERY_DIR", "MODEL_DIR", "SCHEMA_DIR", "MODEL_PACKAGE", "MODEL_IMPORT",
+		"DATABASE_URL", "MIGRATION_PATH", "RUNNER", "MODEL_SOURCE", "SCHEMA_NAME",
+		"EMIT_RELATIONS", "EMIT_FUNCTIONS", "INCLUDE_VIEWS",
 	}
 }
