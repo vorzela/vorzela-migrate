@@ -13,7 +13,7 @@ import (
 )
 
 var (
-	// CurrentVersion is injected at build time via -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=vX.Y.Z'"
+	// CurrentVersion is injected at build time via -ldflags "-X 'github.com/vorzela/vorzela-migrate/v2/internal/version.CurrentVersion=vX.Y.Z'"
 	// Default to "dev" when not provided.
 	CurrentVersion = "dev"
 	GitHubAPI      = "https://api.github.com/repos/vorzela/vorzela-migrate/releases/latest"

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vorzela/vorzela-migrate/internal/db"
+	"github.com/vorzela/vorzela-migrate/v2/internal/db"
 
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"

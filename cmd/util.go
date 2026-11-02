@@ -5,8 +5,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/vorzela/vorzela-migrate/internal/db"
-	"github.com/vorzela/vorzela-migrate/internal/migration"
+	"github.com/vorzela/vorzela-migrate/v2/internal/db"
+	"github.com/vorzela/vorzela-migrate/v2/internal/migration"
 )
 
 // envTruthy reports whether an environment variable is set to a truthy value.

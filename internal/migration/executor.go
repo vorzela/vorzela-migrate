@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vorzela/vorzela-migrate/internal/db"
-	"github.com/vorzela/vorzela-migrate/internal/output"
+	"github.com/vorzela/vorzela-migrate/v2/internal/db"
+	"github.com/vorzela/vorzela-migrate/v2/internal/output"
 )
 
 // InitMigrationTable creates the migrations table if it doesn't exist and

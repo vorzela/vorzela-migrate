@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/urfave/cli/v2"
-	"github.com/vorzela/vorzela-migrate/internal/output"
+	"github.com/vorzela/vorzela-migrate/v2/internal/output"
 )
 
 // InitCommand creates a .vm config file. It never overwrites an existing file

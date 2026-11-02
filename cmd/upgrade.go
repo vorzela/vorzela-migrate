@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/urfave/cli/v2"
-	"github.com/vorzela/vorzela-migrate/internal/output"
-	"github.com/vorzela/vorzela-migrate/internal/version"
+	"github.com/vorzela/vorzela-migrate/v2/internal/output"
+	"github.com/vorzela/vorzela-migrate/v2/internal/version"
 )
 
 var UpgradeCommand = &cli.Command{
@@ -39,7 +39,7 @@ var UpgradeCommand = &cli.Command{
 			output.Error("Could not check for updates: %v", err)
 			output.Info("Your installed version is %s", version.CurrentVersion)
 			output.Info("If a newer release exists, install with:")
-			output.Info("  curl -fsSL https://github.com/vorzela/vorzela-migrate/raw/main/install.sh | bash")
+			output.Info("  curl -fsSL https://github.com/vorzela/vorzela-migrate/v2/raw/main/install.sh | bash")
 			return fmt.Errorf("update check failed: %w", err)
 		}
 
@@ -77,7 +77,7 @@ var UpgradeCommand = &cli.Command{
 			return nil
 		}
 
-		url := fmt.Sprintf("https://github.com/vorzela/vorzela-migrate/releases/download/%s/%s", target, asset)
+		url := fmt.Sprintf("https://github.com/vorzela/vorzela-migrate/v2/releases/download/%s/%s", target, asset)
 		exe, err := os.Executable()
 		if err != nil {
 			return fmt.Errorf("could not locate the running vm binary: %w", err)
@@ -206,11 +206,11 @@ func runInstallScript(target string) error {
 		args []string
 	)
 	if runtime.GOOS == "windows" {
-		url = "https://github.com/vorzela/vorzela-migrate/raw/main/install.ps1"
+		url = "https://github.com/vorzela/vorzela-migrate/v2/raw/main/install.ps1"
 		ext = ".ps1"
 		args = []string{"-ExecutionPolicy", "Bypass", "-File"}
 	} else {
-		url = "https://github.com/vorzela/vorzela-migrate/raw/main/install.sh"
+		url = "https://github.com/vorzela/vorzela-migrate/v2/raw/main/install.sh"
 		ext = ".sh"
 		args = nil
 	}

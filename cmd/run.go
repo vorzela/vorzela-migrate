@@ -3,11 +3,11 @@ package cmd
 import (
 	"time"
 
-	"github.com/vorzela/vorzela-migrate/internal/config"
-	"github.com/vorzela/vorzela-migrate/internal/database"
-	"github.com/vorzela/vorzela-migrate/internal/db"
-	"github.com/vorzela/vorzela-migrate/internal/migration"
-	"github.com/vorzela/vorzela-migrate/internal/output"
+	"github.com/vorzela/vorzela-migrate/v2/internal/config"
+	"github.com/vorzela/vorzela-migrate/v2/internal/database"
+	"github.com/vorzela/vorzela-migrate/v2/internal/db"
+	"github.com/vorzela/vorzela-migrate/v2/internal/migration"
+	"github.com/vorzela/vorzela-migrate/v2/internal/output"
 )
 
 // rollbackAllMigrationsEnhanced rolls back every executed migration using the

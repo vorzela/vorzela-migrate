@@ -150,7 +150,7 @@ build_from_source() {
         BUILD_VERSION="dev"
     fi
 
-    LDFLAGS="-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=${BUILD_VERSION}'"
+    LDFLAGS="-X 'github.com/vorzela/vorzela-migrate/v2/internal/version.CurrentVersion=${BUILD_VERSION}'"
 
     if go mod tidy >/dev/null 2>&1 && go build -ldflags "$LDFLAGS" -o vm ./cmd/vm >/dev/null 2>&1; then
         mkdir -p "$(dirname "$BINARY_PATH")"
@@ -292,7 +292,7 @@ main() {
             print_status "  3) Or build manually:"
             print_status "     git clone https://github.com/${GITHUB_REPO}.git"
             print_status "     cd vorzela-migrate"
-            print_status "     go build -ldflags \"-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=vX.Y.Z'\" -o vm ./cmd/vm"
+            print_status "     go build -ldflags \"-X 'github.com/vorzela/vorzela-migrate/v2/internal/version.CurrentVersion=vX.Y.Z'\" -o vm ./cmd/vm"
             print_status "     mv vm ${INSTALL_DIR}/vm"
             exit 1
         fi

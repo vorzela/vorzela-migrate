@@ -1,6 +1,6 @@
 // Command vm is the `go install`-friendly entry point:
 //
-//	go install github.com/vorzela/vorzela-migrate/cmd/vm@v2.3.1
+//	go install github.com/vorzela/vorzela-migrate/v2/cmd/vm@v2.3.2
 //
 // It installs a binary named "vm" into GOBIN (or GOPATH/bin) with no root.
 package main
@@ -8,7 +8,7 @@ package main
 import (
 	"log"
 
-	"github.com/vorzela/vorzela-migrate/internal/app"
+	"github.com/vorzela/vorzela-migrate/v2/internal/app"
 )
 
 func main() {

@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/vorzela/vorzela-migrate/internal/db"
-	"github.com/vorzela/vorzela-migrate/internal/output"
+	"github.com/vorzela/vorzela-migrate/v2/internal/db"
+	"github.com/vorzela/vorzela-migrate/v2/internal/output"
 )
 
 // StatusEntry describes one migration file (or an executed migration whose file

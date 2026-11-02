@@ -7,9 +7,9 @@ import (
 	"os"
 
 	"github.com/urfave/cli/v2"
-	"github.com/vorzela/vorzela-migrate/cmd"
-	"github.com/vorzela/vorzela-migrate/internal/output"
-	"github.com/vorzela/vorzela-migrate/internal/version"
+	"github.com/vorzela/vorzela-migrate/v2/cmd"
+	"github.com/vorzela/vorzela-migrate/v2/internal/output"
+	"github.com/vorzela/vorzela-migrate/v2/internal/version"
 )
 
 // New returns the fully configured CLI application.

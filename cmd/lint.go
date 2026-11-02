@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 
 	"github.com/urfave/cli/v2"
-	"github.com/vorzela/vorzela-migrate/internal/config"
-	"github.com/vorzela/vorzela-migrate/internal/output"
+	"github.com/vorzela/vorzela-migrate/v2/internal/config"
+	"github.com/vorzela/vorzela-migrate/v2/internal/output"
 )
 
 var LintCommand = &cli.Command{

@@ -12,7 +12,7 @@ VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "dev")
 echo "Version: $VERSION"
 
 # Build the binary with version
-go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=$VERSION'" -o vm ./cmd/vm
+go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/v2/internal/version.CurrentVersion=$VERSION'" -o vm ./cmd/vm
 
 # Verify the build
 if [ ! -f ./vm ]; then

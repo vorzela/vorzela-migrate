@@ -2,6 +2,14 @@
 
 All notable changes to Vorzela Migration Tool are documented in this file.
 
+## [2.3.2] - 2026-11-02
+
+### Fixed
+
+- **Go module path is now `/v2`** — `GOBIN="$HOME/.local/bin" go install
+  github.com/vorzela/vorzela-migrate/v2/cmd/vm@v2.3.2` works with Go's semantic
+  import versioning. The previous v2 tags could not be installed via `go install`.
+
 ## [2.3.1] - 2026-11-02
 
 ### Changed
@@ -9,7 +17,7 @@ All notable changes to Vorzela Migration Tool are documented in this file.
 - **Per-user install, no root** — `vm` now has one canonical location:
   `~/.local/bin/vm` (Linux/macOS) or `%LOCALAPPDATA%\Programs\vm\bin\vm.exe`
   (Windows). Install scripts, `vm upgrade`, and `vm uninstall` use it.
-- **`go install` entry point** — `github.com/vorzela/vorzela-migrate/cmd/vm`
+- **`go install` entry point** — `github.com/vorzela/vorzela-migrate/v2/cmd/vm`
   installs a binary named `vm` (`GOBIN="$HOME/.local/bin" go install ...`).
   The root `main.go` and `cmd/vm` share `internal/app`.
 - Install scripts no longer target system directories or require Administrator

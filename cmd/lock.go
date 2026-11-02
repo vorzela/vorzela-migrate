@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/vorzela/vorzela-migrate/internal/config"
-	"github.com/vorzela/vorzela-migrate/internal/database"
-	"github.com/vorzela/vorzela-migrate/internal/migration"
-	"github.com/vorzela/vorzela-migrate/internal/output"
+	"github.com/vorzela/vorzela-migrate/v2/internal/config"
+	"github.com/vorzela/vorzela-migrate/v2/internal/database"
+	"github.com/vorzela/vorzela-migrate/v2/internal/migration"
+	"github.com/vorzela/vorzela-migrate/v2/internal/output"
 )
 
 // acquireMigrationLock pins a dedicated connection and takes the migration
