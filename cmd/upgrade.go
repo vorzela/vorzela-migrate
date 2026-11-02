@@ -101,15 +101,20 @@ var UpgradeCommand = &cli.Command{
 			return nil
 		}
 
+		verifyPath := exe
 		if err := replaceBinaryFromURL(url, exe); err != nil {
-			output.Warning("Direct download failed (%v); falling back to the install script", err)
+			output.Warning("Direct download failed (%v); falling back to the per-user install script", err)
 			if err := runInstallScript(target); err != nil {
 				output.Error("Failed to upgrade: %v", err)
 				return err
 			}
+			verifyPath = canonicalVMPath()
+			if verifyPath != exe {
+				output.Info("Installed per-user at %s; the old system copy at %s was left untouched.", verifyPath, exe)
+			}
 		}
 
-		installed, err := binaryVersion(exe)
+		installed, err := binaryVersion(verifyPath)
 		if err != nil {
 			output.Warning("Could not verify the new binary: %v", err)
 			output.Success("Upgrade downloaded. Run 'vm --version' to verify")
@@ -261,6 +266,23 @@ func binaryVersion(path string) (string, error) {
 		return "", fmt.Errorf("empty --version output")
 	}
 	return fields[len(fields)-1], nil
+}
+
+// canonicalVMPath is the one per-user location used by the installers.
+func canonicalVMPath() string {
+	if dir := os.Getenv("VM_INSTALL_DIR"); dir != "" {
+		if runtime.GOOS == "windows" {
+			return filepath.Join(dir, "vm.exe")
+		}
+		return filepath.Join(dir, "vm")
+	}
+	if runtime.GOOS == "windows" {
+		if local := os.Getenv("LOCALAPPDATA"); local != "" {
+			return filepath.Join(local, "Programs", "vm", "bin", "vm.exe")
+		}
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".local", "bin", "vm")
 }
 
 func sameVersion(a, b string) bool {

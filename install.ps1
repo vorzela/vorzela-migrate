@@ -39,7 +39,8 @@ function Install-Vorzela {
 
     # Determine binary name
     $BinaryName = "vm-windows-$Arch.exe"
-    $InstallDir = "C:\Program Files\vorzela"
+    # Per-user install (no Administrator required). Override with VM_INSTALL_DIR.
+    $InstallDir = if ($env:VM_INSTALL_DIR) { $env:VM_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA "Programs\vm\bin" }
     $GitHubRepo = "vorzela/vorzela-migrate"
     $ReleaseUrl = "https://github.com/$GitHubRepo/releases/download"
 
@@ -51,8 +52,8 @@ function Install-Vorzela {
             Write-Success "Installation directory created"
         }
         catch {
-            Write-Error "Failed to create directory. You may need admin rights."
-            Write-Error "Try running PowerShell as Administrator"
+            Write-Error "Failed to create $InstallDir"
+            Write-Error "Set VM_INSTALL_DIR to a directory you can write to and retry."
             exit 1
         }
     }
@@ -145,8 +146,9 @@ function Install-Vorzela {
             Write-Status "  git clone https://github.com/$GitHubRepo.git"
             Write-Status "  cd vorzela-migrate"
             if ($LatestRelease) { Write-Status "  git checkout $LatestRelease" }
-            Write-Status "  go build -o vm.exe main.go"
-            Write-Status "  Move-Item vm.exe 'C:\Program Files\vorzela\vm.exe'"
+            Write-Status "  GOBIN=\"$InstallDir\" go install github.com/$GitHubRepo/cmd/vm@latest"
+            Write-Status "  # or: go build -o vm.exe ./cmd/vm"
+            Write-Status "  Move-Item vm.exe \"$InstallDir\vm.exe\""
             exit 1
         }
     }
@@ -154,8 +156,9 @@ function Install-Vorzela {
         Write-Warning "No release tag detected. Try building from source:"
         Write-Status "  git clone https://github.com/$GitHubRepo.git"
         Write-Status "  cd vorzela-migrate"
-        Write-Status "  go build -o vm.exe main.go"
-        Write-Status "  Move-Item vm.exe 'C:\Program Files\vorzela\vm.exe'"
+        Write-Status "  GOBIN=\"$InstallDir\" go install github.com/$GitHubRepo/cmd/vm@latest"
+        Write-Status "  # or: go build -o vm.exe ./cmd/vm"
+        Write-Status "  Move-Item vm.exe \"$InstallDir\vm.exe\""
         exit 1
     }
 

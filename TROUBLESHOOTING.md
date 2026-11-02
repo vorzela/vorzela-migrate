@@ -20,7 +20,7 @@ go version
 **Solution**:
 ```bash
 go mod tidy
-go build -o vm main.go
+go build -o vm ./cmd/vm
 ```
 
 #### "cannot find module"
@@ -30,7 +30,7 @@ go build -o vm main.go
 ```bash
 go mod download
 go mod verify
-go build -o vm main.go
+go build -o vm ./cmd/vm
 ```
 
 ---

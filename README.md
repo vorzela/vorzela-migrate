@@ -8,9 +8,10 @@
 - [Features](#-features)
 - [Requirements](#requirements)
 - [Installation](#installation)
-  - [Quick Install Script](#method-1-quick-install-script-recommended)
-  - [Pre-built Binary](#method-2-download-pre-built-binary)
-  - [Build from Source](#method-3-build-from-source)
+  - [go install (recommended, no root)](#method-1-go-install-recommended-no-root)
+  - [Quick Install Script](#method-2-quick-install-script-no-root)
+  - [Pre-built Binary](#method-3-download-pre-built-binary)
+  - [Build from Source](#method-4-build-from-source)
 - [Supported Databases](#supported-databases)
 - [Usage](#usage)
   - [Environment-Based Auto Config](#-super-quick-start-environment-based-auto-config)
@@ -78,9 +79,37 @@
 
 ## Installation
 
-### Method 1: Quick Install Script (Recommended)
+vm installs **per-user** — no `sudo`, no root, and no scattered system copies.
+The canonical locations are:
 
-The easiest way to install is using our installation scripts. They download the latest release, install it globally, and add it to your PATH.
+- **Linux/macOS:** `~/.local/bin/vm`
+- **Windows:** `%LOCALAPPDATA%\Programs\vm\bin\vm.exe`
+
+Every installer and `vm upgrade` writes to that location (override with
+`VM_INSTALL_DIR`). If an older copy exists in `/usr/bin`, `/usr/local/bin`, or a
+project checkout, remove it with your package manager or `rm`; `vm uninstall`
+only manages the per-user install.
+
+### Method 1: `go install` (recommended, no root)
+
+This is the closest workflow to Go itself. It builds and installs a binary named
+`vm` without root:
+
+```bash
+GOBIN="$HOME/.local/bin" go install github.com/vorzela/vorzela-migrate/cmd/vm@v2.3.1
+vm --version
+```
+
+If `$(go env GOPATH)/bin` is already on your `PATH`, omit `GOBIN`:
+
+```bash
+go install github.com/vorzela/vorzela-migrate/cmd/vm@latest
+```
+
+### Method 2: Quick Install Script (no root)
+
+The scripts download the latest release into the same per-user location and add
+it to your user PATH. **Do not run them with `sudo`.**
 
 **Linux/macOS:**
 
@@ -88,7 +117,7 @@ The easiest way to install is using our installation scripts. They download the 
 curl -fsSL https://raw.githubusercontent.com/vorzela/vorzela-migrate/main/install.sh | bash
 ```
 
-**Windows PowerShell (Run as Administrator):**
+**Windows PowerShell:**
 
 ```powershell
 iex (New-Object Net.WebClient).DownloadString('https://raw.githubusercontent.com/vorzela/vorzela-migrate/main/install.ps1')
@@ -96,8 +125,8 @@ iex (New-Object Net.WebClient).DownloadString('https://raw.githubusercontent.com
 
 **What the installers do:**
 - Download the latest binary for your platform
-- Install to `/usr/local/bin` (Linux/macOS) or `%USERPROFILE%\bin` (Windows)
-- Add the install directory to your PATH
+- Install to `~/.local/bin` (Linux/macOS) or `%LOCALAPPDATA%\Programs\vm\bin` (Windows)
+- Add that user directory to your PATH
 - Make the binary executable
 
 **Post-installation:**
@@ -105,7 +134,7 @@ iex (New-Object Net.WebClient).DownloadString('https://raw.githubusercontent.com
 - **Windows**: Restart PowerShell/Command Prompt
 - Verify installation: `vm --version`
 
-### Method 2: Download Pre-built Binary
+### Method 3: Download Pre-built Binary
 
 Download the appropriate binary for your platform from the [releases page](https://github.com/vorzela/vorzela-migrate/releases/latest).
 
@@ -124,11 +153,12 @@ Download the appropriate binary for your platform from the [releases page](https
 # Download (replace URL with your platform)
 wget https://github.com/vorzela/vorzela-migrate/releases/latest/download/vm-linux-amd64
 
-# Rename and make executable
+# Install per-user (no sudo)
+mkdir -p "$HOME/.local/bin"
 chmod +x vm-linux-amd64
-sudo mv vm-linux-amd64 /usr/local/bin/vm
+mv vm-linux-amd64 "$HOME/.local/bin/vm"
 
-# Verify
+# Ensure ~/.local/bin is on PATH, then verify
 vm --version
 ```
 
@@ -137,20 +167,21 @@ vm --version
 # Download the .exe file from releases page
 # Move to a directory in your PATH, or:
 
-# Create a bin directory
-New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\bin"
+# Create the per-user install directory
+$dir = Join-Path $env:LOCALAPPDATA "Programs\vm\bin"
+New-Item -ItemType Directory -Force -Path $dir | Out-Null
 
 # Move the downloaded file
-Move-Item vm-windows-amd64.exe "$env:USERPROFILE\bin\vm.exe"
+Move-Item vm-windows-amd64.exe "$dir\vm.exe"
 
 # Add to PATH (if not already)
-[Environment]::SetEnvironmentVariable("Path", $env:Path + ";$env:USERPROFILE\bin", "User")
+[Environment]::SetEnvironmentVariable("Path", $env:Path + ";$dir", "User")
 
 # Restart terminal and verify
 vm --version
 ```
 
-### Method 3: Build from Source
+### Method 4: Build from Source
 
 If you have Go installed and want the latest development version:
 
@@ -163,7 +194,7 @@ cd vorzela-migrate
 go mod download
 
 # Build
-go build -o vm main.go
+go build -o vm ./cmd/vm
 
 # Install globally (optional)
 sudo mv vm /usr/local/bin/  # Linux/macOS
@@ -172,7 +203,7 @@ sudo mv vm /usr/local/bin/  # Linux/macOS
 
 **Build with version info:**
 ```bash
-go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=v2.3.0'" -o vm main.go
+go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=v2.3.1'" -o vm ./cmd/vm
 ```
 
 ### Verify Installation
@@ -181,7 +212,7 @@ After installation, verify it works:
 
 ```bash
 vm --version
-# Should output: vm version v2.3.0
+# Should output: vm version v2.3.1
 
 vm --help
 # Shows all available commands
@@ -378,19 +409,19 @@ vm rollback --steps 3
 vm refresh --dsn "postgres://user:pass@localhost:5432/db"
 ```
 
-## Global Installation
+## Per-user Installation
 
-To make `vm` available globally:
+vm is designed to live in one per-user directory, not `/usr/local/bin`:
 
 ```bash
-# Build the binary
-go build -o vm main.go
+# Preferred: Go installs it into ~/.local/bin
+GOBIN="$HOME/.local/bin" go install github.com/vorzela/vorzela-migrate/cmd/vm@v2.3.1
 
-# Copy to a location in your PATH
-sudo cp vm /usr/local/bin/vm
-chmod +x /usr/local/bin/vm
+# Or build and move it yourself (no sudo)
+go build -o vm ./cmd/vm
+mkdir -p "$HOME/.local/bin" && mv vm "$HOME/.local/bin/vm"
 
-# Now you can use from anywhere
+# Available from anywhere for your user
 vm make migration create_table_name_table
 vm migrate --dsn "postgres://user:pass@localhost:5432/db"
 ```
@@ -869,7 +900,7 @@ vm migrate
 sqlc generate
 
 # 5. Use in your application
-go run main.go
+go run ./cmd/vm
 ```
 
 ### Best Practices

@@ -3,6 +3,18 @@
 This file is the short contract for AI agents and automation. Deep reference:
 [`LLM.md`](LLM.md). Architecture: [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
+## Install location (no root)
+
+Use the user-local binary, never `sudo` or `/usr/local/bin`:
+
+```bash
+GOBIN="$HOME/.local/bin" go install github.com/vorzela/vorzela-migrate/cmd/vm@v2.3.1
+```
+
+Canonical paths: `~/.local/bin/vm` (Linux/macOS) and
+`%LOCALAPPDATA%\Programs\vm\bin\vm.exe` (Windows). The install scripts and
+`vm upgrade` write there. `vm uninstall` only manages that per-user copy.
+
 ## Golden rules
 
 1. **Use `vm` commands, do not hand-write migration SQL** unless the user explicitly asks.

@@ -112,11 +112,11 @@ jobs:
 
       - name: Build binary (Linux/macOS)
         if: matrix.os != 'windows-latest'
-        run: go build -v -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=v2.0.0-test'" -o vm main.go
+        run: go build -v -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=v2.0.0-test'" -o vm ./cmd/vm
 
       - name: Build binary (Windows)
         if: matrix.os == 'windows-latest'
-        run: go build -v -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=v2.0.0-test'" -o vm.exe main.go
+        run: go build -v -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=v2.0.0-test'" -o vm.exe ./cmd/vm
 
       - name: Smoke test - version (Linux/macOS)
         if: matrix.os != 'windows-latest'

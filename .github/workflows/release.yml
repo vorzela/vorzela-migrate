@@ -28,27 +28,27 @@ jobs:
 
       - name: Build linux/amd64
         run: |
-          GOOS=linux GOARCH=amd64 go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=${{ github.ref_name }}'" -o dist/vm-linux-amd64 main.go
+          GOOS=linux GOARCH=amd64 go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=${{ github.ref_name }}'" -o dist/vm-linux-amd64 ./cmd/vm
 
       - name: Build linux/arm64
         run: |
-          GOOS=linux GOARCH=arm64 go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=${{ github.ref_name }}'" -o dist/vm-linux-arm64 main.go
+          GOOS=linux GOARCH=arm64 go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=${{ github.ref_name }}'" -o dist/vm-linux-arm64 ./cmd/vm
 
       - name: Build darwin/amd64 (optional)
         run: |
-          GOOS=darwin GOARCH=amd64 go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=${{ github.ref_name }}'" -o dist/vm-macos-amd64 main.go || echo "darwin/amd64 build skipped"
+          GOOS=darwin GOARCH=amd64 go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=${{ github.ref_name }}'" -o dist/vm-macos-amd64 ./cmd/vm || echo "darwin/amd64 build skipped"
 
       - name: Build darwin/arm64 (optional)
         run: |
-          GOOS=darwin GOARCH=arm64 go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=${{ github.ref_name }}'" -o dist/vm-macos-arm64 main.go || echo "darwin/arm64 build skipped"
+          GOOS=darwin GOARCH=arm64 go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=${{ github.ref_name }}'" -o dist/vm-macos-arm64 ./cmd/vm || echo "darwin/arm64 build skipped"
 
       - name: Build windows/amd64
         run: |
-          GOOS=windows GOARCH=amd64 go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=${{ github.ref_name }}'" -o dist/vm-windows-amd64.exe main.go
+          GOOS=windows GOARCH=amd64 go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=${{ github.ref_name }}'" -o dist/vm-windows-amd64.exe ./cmd/vm
 
       - name: Build windows/386
         run: |
-          GOOS=windows GOARCH=386 go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=${{ github.ref_name }}'" -o dist/vm-windows-386.exe main.go
+          GOOS=windows GOARCH=386 go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=${{ github.ref_name }}'" -o dist/vm-windows-386.exe ./cmd/vm
 
       - name: Generate release notes
         id: notes

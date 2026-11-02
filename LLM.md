@@ -99,6 +99,18 @@ Detection logic (source of truth: `internal/migration/dialect.go` + `internal/da
 
 ---
 
+## Install location (no root)
+
+Use the user-local binary, never `sudo` or `/usr/local/bin`:
+
+```bash
+GOBIN="$HOME/.local/bin" go install github.com/vorzela/vorzela-migrate/cmd/vm@v2.3.1
+```
+
+Canonical paths: `~/.local/bin/vm` (Linux/macOS) and
+`%LOCALAPPDATA%\Programs\vm\bin\vm.exe` (Windows). The install scripts and
+`vm upgrade` write there. `vm uninstall` only manages that per-user copy.
+
 ## 0.1 Agent Contract (read this first)
 
 Agents should be able to complete a normal migration task without guessing. Use these commands and exit codes:

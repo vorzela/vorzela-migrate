@@ -14,7 +14,7 @@ import (
 
 var UninstallCommand = &cli.Command{
 	Name:  "uninstall",
-	Usage: "Remove vm from your system",
+	Usage: "Remove the per-user vm binary and PATH entry",
 	Flags: []cli.Flag{
 		&cli.BoolFlag{
 			Name:    "yes",
@@ -73,7 +73,7 @@ var UninstallCommand = &cli.Command{
 		} else {
 			if err := os.Remove(binaryPath); err != nil {
 				if os.IsPermission(err) {
-					return fmt.Errorf("failed to remove binary (try sudo): %w", err)
+					return fmt.Errorf("failed to remove binary %s: %w\nvm is normally per-user; if this is a packaged system copy, remove it with your package manager or run with --binary <path>", binaryPath, err)
 				}
 				return fmt.Errorf("failed to remove binary: %w", err)
 			}
@@ -133,17 +133,14 @@ func findVMBinary(explicit string) (string, error) {
 
 	home, _ := os.UserHomeDir()
 	candidates := []string{
+		canonicalVMPath(),
 		filepath.Join(home, ".local", "bin", "vm"),
-		"/usr/local/bin/vm",
-		"/usr/bin/vm",
+		filepath.Join(home, "go", "bin", "vm"),
 		filepath.Join(home, "bin", "vm.exe"),
 		filepath.Join(home, ".local", "bin", "vm.exe"),
 	}
 	if localAppData := os.Getenv("LOCALAPPDATA"); localAppData != "" {
-		candidates = append(candidates, filepath.Join(localAppData, "vorzela", "vm.exe"))
-	}
-	if programFiles := os.Getenv("ProgramFiles"); programFiles != "" {
-		candidates = append(candidates, filepath.Join(programFiles, "vorzela", "vm.exe"))
+		candidates = append(candidates, filepath.Join(localAppData, "Programs", "vm", "bin", "vm.exe"))
 	}
 	for _, p := range candidates {
 		if p == "" {

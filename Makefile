@@ -23,7 +23,7 @@ help:
 build:
 	@echo "Building vm binary (version: $(VERSION))..."
 	@go mod tidy
-	@go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=$(VERSION)'" -o vm main.go
+	@go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=$(VERSION)'" -o vm ./cmd/vm
 	@echo "✓ Build successful! Binary: ./vm"
 
 install: build
@@ -46,11 +46,11 @@ dist: clean
 	@echo "Creating $(DIST_DIR) and building prebuilt binaries (VERSION=$(VERSION))"
 	@rm -rf $(DIST_DIR) && mkdir -p $(DIST_DIR)
 	@echo "Building linux/amd64..."
-	GOOS=linux GOARCH=amd64 go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=$(VERSION)'" -o $(DIST_DIR)/vm-linux-amd64 main.go || { echo "linux build failed"; exit 1; }
+	GOOS=linux GOARCH=amd64 go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=$(VERSION)'" -o $(DIST_DIR)/vm-linux-amd64 ./cmd/vm || { echo "linux build failed"; exit 1; }
 	@echo "Building darwin/amd64 (may fail on non-macos hosts)..."
-	GOOS=darwin GOARCH=amd64 go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=$(VERSION)'" -o $(DIST_DIR)/vm-macos-amd64 main.go || echo "darwin/amd64 build skipped"
+	GOOS=darwin GOARCH=amd64 go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=$(VERSION)'" -o $(DIST_DIR)/vm-macos-amd64 ./cmd/vm || echo "darwin/amd64 build skipped"
 	@echo "Building darwin/arm64 (may fail on non-macos hosts)..."
-	GOOS=darwin GOARCH=arm64 go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=$(VERSION)'" -o $(DIST_DIR)/vm-macos-arm64 main.go || echo "darwin/arm64 build skipped"
+	GOOS=darwin GOARCH=arm64 go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=$(VERSION)'" -o $(DIST_DIR)/vm-macos-arm64 ./cmd/vm || echo "darwin/arm64 build skipped"
 	@echo "✓ Dist build complete. Files in $(DIST_DIR):" && ls -lh $(DIST_DIR)
 
 migration: build

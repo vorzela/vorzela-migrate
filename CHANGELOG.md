@@ -2,6 +2,19 @@
 
 All notable changes to Vorzela Migration Tool are documented in this file.
 
+## [2.3.1] - 2026-11-02
+
+### Changed
+
+- **Per-user install, no root** — `vm` now has one canonical location:
+  `~/.local/bin/vm` (Linux/macOS) or `%LOCALAPPDATA%\Programs\vm\bin\vm.exe`
+  (Windows). Install scripts, `vm upgrade`, and `vm uninstall` use it.
+- **`go install` entry point** — `github.com/vorzela/vorzela-migrate/cmd/vm`
+  installs a binary named `vm` (`GOBIN="$HOME/.local/bin" go install ...`).
+  The root `main.go` and `cmd/vm` share `internal/app`.
+- Install scripts no longer target system directories or require Administrator
+  on Windows; `VM_INSTALL_DIR` overrides the per-user location.
+
 ## [2.3.0] - 2026-11-02
 
 ### Changed

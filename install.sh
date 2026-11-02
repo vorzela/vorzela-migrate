@@ -152,7 +152,7 @@ build_from_source() {
 
     LDFLAGS="-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=${BUILD_VERSION}'"
 
-    if go mod tidy >/dev/null 2>&1 && go build -ldflags "$LDFLAGS" -o vm main.go >/dev/null 2>&1; then
+    if go mod tidy >/dev/null 2>&1 && go build -ldflags "$LDFLAGS" -o vm ./cmd/vm >/dev/null 2>&1; then
         mkdir -p "$(dirname "$BINARY_PATH")"
 
         # Backup existing binary if present
@@ -208,8 +208,15 @@ main() {
         BINARY_NAME="vm-linux-${ARCH}"
     fi
 
-    INSTALL_DIR="${HOME}/.local/bin"
+    # One canonical, per-user location. No sudo, ever. Set VM_INSTALL_DIR to
+    # override (for example ${HOME}/go/bin if you prefer Go's bin directory).
+    INSTALL_DIR="${VM_INSTALL_DIR:-${HOME}/.local/bin}"
     GITHUB_REPO="vorzela/vorzela-migrate"
+
+    if [ "$(id -u)" -eq 0 ] && [ -z "${VM_INSTALL_DIR:-}" ] && [ -z "${SUDO_USER:-}" ]; then
+        print_warning "Running as root will install into /root/.local/bin."
+        print_warning "vm is a per-user tool; prefer running this script as your normal user."
+    fi
     RELEASE_URL="https://github.com/${GITHUB_REPO}/releases/download"
 
     # Get latest release version (VM_VERSION pins a specific tag for `vm upgrade`)
@@ -280,11 +287,13 @@ main() {
             fi
             print_status "Fallback instructions:"
             print_status "  1) Install Go (https://go.dev/dl/) and re-run this script"
-            print_status "  2) Or build manually:"
+            print_status "  2) Or use Go directly (no root):"
+            print_status "     GOBIN=\"${INSTALL_DIR}\" go install github.com/${GITHUB_REPO}/cmd/vm@latest"
+            print_status "  3) Or build manually:"
             print_status "     git clone https://github.com/${GITHUB_REPO}.git"
             print_status "     cd vorzela-migrate"
-            print_status "     go build -ldflags \"-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=vX.Y.Z'\" -o vm main.go"
-            print_status "     mv vm ${INSTALL_DIR}/vm # or /usr/local/bin"
+            print_status "     go build -ldflags \"-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=vX.Y.Z'\" -o vm ./cmd/vm"
+            print_status "     mv vm ${INSTALL_DIR}/vm"
             exit 1
         fi
     fi
@@ -315,16 +324,16 @@ main() {
 
             if [ ! -f "$PROFILE" ]; then
                 print_status "Creating $PROFILE and adding ${INSTALL_DIR} to PATH"
-                echo "export PATH=\"\$HOME/.local/bin:\$PATH\"" >> "$PROFILE"
-            elif ! grep -qs '\.local/bin' "$PROFILE"; then
+                echo "export PATH=\"${INSTALL_DIR}:\$PATH\"" >> "$PROFILE"
+            elif ! grep -qsF "$INSTALL_DIR" "$PROFILE"; then
                 print_status "Adding ${INSTALL_DIR} to PATH in $PROFILE"
                 echo "" >> "$PROFILE"
-                echo "export PATH=\"\$HOME/.local/bin:\$PATH\"" >> "$PROFILE"
+                echo "export PATH=\"${INSTALL_DIR}:\$PATH\"" >> "$PROFILE"
             else
                 print_status "${INSTALL_DIR} already referenced in $PROFILE"
             fi
 
-            export PATH="$HOME/.local/bin:$PATH"
+            export PATH="$INSTALL_DIR:$PATH"
             print_success "Added ${INSTALL_DIR} to PATH"
             print_status "Restart your shell or run: source $PROFILE"
         fi
@@ -333,6 +342,7 @@ main() {
     fi
 
     echo ""
+    print_status "Binary location: ${BINARY_PATH} (per-user; no root required)"
     print_status "Verifying installation..."
     # Verify installation and check version
     if "$BINARY_PATH" --version > /dev/null 2>&1; then
