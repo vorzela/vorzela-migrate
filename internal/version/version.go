@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -22,6 +23,28 @@ var (
 	// HTTPClient is overridable in tests.
 	HTTPClient = http.DefaultClient
 )
+
+func init() {
+	// `go install .../v2/cmd/vm@v2.3.x` does not run our release ldflags.
+	// Read the module version from Go's build info so --version is accurate.
+	if CurrentVersion == "" || CurrentVersion == "dev" {
+		if v := moduleVersion(); v != "" {
+			CurrentVersion = v
+		}
+	}
+}
+
+func moduleVersion() string {
+	bi, ok := debug.ReadBuildInfo()
+	if !ok || bi == nil {
+		return ""
+	}
+	v := bi.Main.Version
+	if v == "" || v == "(devel)" {
+		return ""
+	}
+	return v
+}
 
 // LatestRelease represents a GitHub release.
 type LatestRelease struct {

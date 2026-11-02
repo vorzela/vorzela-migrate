@@ -2,6 +2,14 @@
 
 All notable changes to Vorzela Migration Tool are documented in this file.
 
+## [2.3.3] - 2026-11-02
+
+### Fixed
+
+- `go install .../v2/cmd/vm@v2.3.3` now reports the real module version
+  (`vm version v2.3.3`) via `debug.ReadBuildInfo`, instead of `dev`, because
+  `go install` does not apply release `-ldflags`.
+
 ## [2.3.2] - 2026-11-02
 
 ### Fixed
