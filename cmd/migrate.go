@@ -48,7 +48,7 @@ var MigrateCommand = &cli.Command{
 		},
 		&cli.BoolFlag{
 			Name:  "online",
-			Usage: "use zero-downtime migration strategies where possible",
+			Usage: "use non-blocking strategies for SQL vm generates (drift repair)",
 			Value: false,
 		},
 		&cli.BoolFlag{
@@ -66,6 +66,26 @@ var MigrateCommand = &cli.Command{
 			Name:  "force",
 			Usage: "force migration even with checksum mismatches",
 			Value: false,
+		},
+		&cli.BoolFlag{
+			Name:  "strict",
+			Usage: "fail on safety warnings (destructive SQL, missing Down section, transaction-hostile statements)",
+			Value: false,
+		},
+		&cli.BoolFlag{
+			Name:  "allow-destructive",
+			Usage: "acknowledge destructive SQL/warnings when --strict is used",
+			Value: false,
+		},
+		&cli.BoolFlag{
+			Name:    "yes",
+			Aliases: []string{"y"},
+			Usage:   "assume yes for safe prompts (never for destructive actions); also VM_NON_INTERACTIVE=1",
+			Value:   false,
+		},
+		&cli.StringFlag{
+			Name:  "drift-handling",
+			Usage: "override DRIFT_HANDLING: auto, prompt, or reject",
 		},
 		&cli.IntFlag{
 			Name:    "step",
@@ -97,6 +117,50 @@ var MigrateCommand = &cli.Command{
 			return err
 		}
 
+		// Non-interactive/agent mode: never block on a prompt. Safe auto-run
+		// operations default to yes; destructive actions still require flags.
+		nonInteractive := c.Bool("yes") || !output.IsInteractive() || envTruthy("VM_NON_INTERACTIVE")
+		if nonInteractive {
+			output.SetNonInteractive(true)
+		}
+
+		// Static safety check. Hard errors always block. Warnings (destructive
+		// SQL, missing Down, transaction-hostile statements) only block with
+		// --strict or STRICT=true.
+		dryRun := c.Bool("dry-run")
+		strict := c.Bool("strict") || cfg.Strict
+		allowDestructive := c.Bool("allow-destructive")
+		safety := migration.CheckMigrationFiles(cfg.MigrationPath)
+		if len(safety.Issues) > 0 {
+			output.Info("Running migration safety check...")
+			for _, issue := range safety.Issues {
+				if issue.Severity == migration.SafetyInfo {
+					continue
+				}
+				loc := issue.File
+				if issue.Section != "" {
+					loc += " [" + issue.Section + "]"
+				}
+				if issue.Severity == migration.SafetyError {
+					output.Error("%s: %s", loc, issue.Message)
+				} else {
+					output.Warning("%s: %s", loc, issue.Message)
+				}
+			}
+		}
+		if safety.HasErrors() {
+			return fmt.Errorf("migration safety check failed: %d error(s); run 'vm check' for details", safety.Errors())
+		}
+		if strict {
+			failures := safety.Warnings()
+			if allowDestructive {
+				failures -= safety.DestructiveCount()
+			}
+			if failures > 0 {
+				return fmt.Errorf("strict safety check failed: %d warning(s); run 'vm check --strict' for details", failures)
+			}
+		}
+
 		// Connect to database
 		db, err := database.Connect(cfg.DatabaseURL)
 		if err != nil {
@@ -105,32 +169,24 @@ var MigrateCommand = &cli.Command{
 		}
 		defer func() { db.Close() }()
 
+		// Hold the migration lock across auto-run prerequisites and the actual
+		// migration run. The executor is told SkipLock=true so it does not try
+		// to acquire the same advisory/named lock on a second connection.
+		if !dryRun {
+			releaseLock, lockErr := acquireMigrationLock(cfg)
+			if lockErr != nil {
+				output.Error("Failed to acquire migration lock: %v", lockErr)
+				return lockErr
+			}
+			defer releaseLock()
+		}
+
 		// Auto-run extensions, functions and enums if enabled (default: true).
 		// These are PostgreSQL-only — skip silently on MySQL/MariaDB.
 		// On failure: do NOT continue to the next step; offer retry after the user fixes the issue.
-		dialect := migration.DetectDialect(cfg.DatabaseURL)
-		isPostgres := dialect == migration.PostgreSQL
-
-		if cfg.AutoRunExtensions {
-			if !isPostgres {
-				output.Info("Skipping auto-run extensions (PostgreSQL only)")
-			} else if err := runAutoPrerequisite(c, "extensions", "AUTO_RUN_EXTENSIONS", &cfg, &db, runExtensionsIfNeeded); err != nil {
-				return err
-			}
-		}
-
-		if cfg.AutoRunFunctions {
-			if !isPostgres {
-				output.Info("Skipping auto-run functions (PostgreSQL only)")
-			} else if err := runAutoPrerequisite(c, "functions", "AUTO_RUN_FUNCTIONS", &cfg, &db, runFunctionsIfNeeded); err != nil {
-				return err
-			}
-		}
-
-		if cfg.AutoRunEnums {
-			if !isPostgres {
-				output.Info("Skipping auto-run enums (PostgreSQL only)")
-			} else if err := runAutoPrerequisite(c, "enums", "AUTO_RUN_ENUMS", &cfg, &db, runEnumsIfNeeded); err != nil {
+		// Dry runs must not mutate the database.
+		if !dryRun {
+			if err := runAutoPrerequisites(c, &cfg, &db); err != nil {
 				return err
 			}
 		}
@@ -141,39 +197,26 @@ var MigrateCommand = &cli.Command{
 			return fmt.Errorf("failed to initialize migration table: %w", err)
 		}
 
-		// Validate migration files before running them
-		output.Info("Validating migration files...")
-		validationErrors := migration.ValidateAllMigrations(cfg.MigrationPath)
-		if len(validationErrors) > 0 {
-			output.Error("❌ Migration validation failed:")
-			output.Error("")
-			for _, err := range validationErrors {
-				output.Error("  %s", err.Error())
-			}
-			output.Error("")
-			output.Error("📚 Migration File Rules:")
-			output.Error("  • Extensions must be in extensions.sql - Run 'vm extensions migrate' first")
-			output.Error("  • Functions must be in functions.sql - Run 'vm functions migrate' first")
-			output.Error("  • Migrations should only contain schema changes (CREATE TABLE, ALTER TABLE, etc.)")
-			output.Error("")
-			output.Error("⚡ Correct execution order:")
-			output.Error("  1. vm extensions migrate   (if using PostgreSQL extensions)")
-			output.Error("  2. vm functions migrate    (if using trigger functions)")
-			output.Error("  3. vm migrate              (schema migrations)")
-			output.Error("")
-			return fmt.Errorf("migration validation failed: %d error(s) found", len(validationErrors))
-		}
-		output.Success("✓ All migration files validated")
-
 		// Merge CLI flags with config settings (CLI flags take precedence)
 		enhanced := c.Bool("enhanced") || cfg.Enhanced
 		online := c.Bool("online") || cfg.Online
 		verifyChecksums := c.Bool("verify-checksums") || cfg.VerifyChecksums
 		detectDrift := c.Bool("detect-drift") || cfg.DetectDrift
 		verbose := c.Bool("verbose") || cfg.Verbose
-		dryRun := c.Bool("dry-run")
 		force := c.Bool("force")
 		step := c.Int("step")
+		if step < 0 {
+			return fmt.Errorf("--step cannot be negative")
+		}
+		driftHandling := c.String("drift-handling")
+		if driftHandling == "" {
+			driftHandling = cfg.DriftHandling
+		}
+		switch driftHandling {
+		case "auto", "prompt", "reject":
+		default:
+			return fmt.Errorf("invalid --drift-handling %q (expected auto, prompt, or reject)", driftHandling)
+		}
 
 		// Check if enhanced features are requested
 		useEnhanced := enhanced || verifyChecksums || detectDrift || online || dryRun
@@ -185,7 +228,7 @@ var MigrateCommand = &cli.Command{
 				if cfg.IsProduction() {
 					envColor = "\033[33m" // Yellow for production
 				}
-				fmt.Printf("%s[%s]%s Running in %s mode\n", envColor, cfg.Environment, "\033[0m", cfg.Environment)
+				fmt.Fprintf(os.Stderr, "%s[%s]%s Running in %s mode\n", envColor, cfg.Environment, "\033[0m", cfg.Environment)
 			}
 
 			// Use enhanced executor
@@ -197,15 +240,18 @@ var MigrateCommand = &cli.Command{
 			defer sqlDB.Close()
 
 			opts := migration.MigrationOptions{
-				DryRun:          dryRun,
-				Force:           force,
-				Online:          online,
-				VerifyChecksums: verifyChecksums,
-				DetectDrift:     detectDrift,
-				Verbose:         verbose,
-				SkipLock:        false,
-				DriftHandling:   cfg.DriftHandling,
-				Step:            step,
+				DryRun:           dryRun,
+				Force:            force,
+				Online:           online,
+				VerifyChecksums:  verifyChecksums,
+				DetectDrift:      detectDrift,
+				Verbose:          verbose,
+				SkipLock:         true, // acquired above for the whole command
+				DriftHandling:    driftHandling,
+				Step:             step,
+				Strict:           strict,
+				AllowDestructive: allowDestructive,
+				NonInteractive:   nonInteractive,
 			}
 
 			executor, err := migration.NewEnhancedExecutor(db, sqlDB, cfg.DatabaseURL, cfg.MigrationPath, opts)
@@ -268,7 +314,7 @@ func runAutoPrerequisite(
 		output.Info("Fix the issue (e.g. DATABASE_URL / password in .vm or env), then retry.")
 		output.Info("To skip this step, set %s=false in .vm and re-run `vm migrate`", skipFlag)
 
-		if !output.Confirm(fmt.Sprintf("Retry %s?", name)) {
+		if !output.ConfirmDefault(fmt.Sprintf("Retry %s?", name), false) {
 			return fmt.Errorf("%s failed: %w", name, err)
 		}
 
@@ -292,9 +338,39 @@ func runAutoPrerequisite(
 	}
 }
 
+// runAutoPrerequisites runs the configured PostgreSQL prerequisites in order:
+// extensions → functions → enums. It is shared by migrate/fresh/refresh so a
+// rebuild cannot fail because triggers reference missing functions.
+func runAutoPrerequisites(c *cli.Context, cfg **config.Config, dbp *db.DB) error {
+	dialect := migration.DetectDialect((*cfg).DatabaseURL)
+	if dialect != migration.PostgreSQL {
+		if (*cfg).AutoRunExtensions || (*cfg).AutoRunFunctions || (*cfg).AutoRunEnums {
+			output.Info("Skipping auto-run extensions/functions/enums (PostgreSQL only)")
+		}
+		return nil
+	}
+
+	if (*cfg).AutoRunExtensions {
+		if err := runAutoPrerequisite(c, "extensions", "AUTO_RUN_EXTENSIONS", cfg, dbp, runExtensionsIfNeeded); err != nil {
+			return err
+		}
+	}
+	if (*cfg).AutoRunFunctions {
+		if err := runAutoPrerequisite(c, "functions", "AUTO_RUN_FUNCTIONS", cfg, dbp, runFunctionsIfNeeded); err != nil {
+			return err
+		}
+	}
+	if (*cfg).AutoRunEnums {
+		if err := runAutoPrerequisite(c, "enums", "AUTO_RUN_ENUMS", cfg, dbp, runEnumsIfNeeded); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // enumOp describes a single pending enum change for display before prompting.
 type enumOp struct {
-	kind string // "create" | "add-values" | "drop"
+	kind string // "create" | "add-values"
 	name string
 	vals []string
 }
@@ -302,7 +378,7 @@ type enumOp struct {
 // runEnumsIfNeeded syncs enum types from enums.sql:
 //   - Creates each enabled enum if it does not exist yet.
 //   - Adds missing values to existing enums.
-//   - Drops enums that appear in the file as comments (disabled / removed).
+//   - Never drops types based on commented template entries; use `vm enums drop`.
 //   - Prompts the user before applying any changes.
 func runEnumsIfNeeded(conn db.DB, cfg *config.Config) error {
 	enumsPath := filepath.Join(cfg.MigrationPath, "enums.sql")
@@ -317,7 +393,7 @@ func runEnumsIfNeeded(conn db.DB, cfg *config.Config) error {
 	}
 
 	content := string(sqlContent)
-	enabled, disabled := migration.ParseAllEnumNames(content)
+	enabled, _ := migration.ParseAllEnumNames(content)
 	ctx := context.Background()
 
 	// ── Pre-flight: determine what actually needs changing ──────────────────
@@ -369,21 +445,6 @@ func runEnumsIfNeeded(conn db.DB, cfg *config.Config) error {
 		}
 	}
 
-	for _, name := range disabled {
-		rows, err := conn.Query(ctx,
-			`SELECT 1 FROM pg_type t
-			  JOIN pg_namespace n ON n.oid = t.typnamespace
-			 WHERE t.typname = $1 AND n.nspname = 'public' AND t.typtype = 'e'`, name)
-		if err != nil {
-			continue
-		}
-		exists := rows.Next()
-		rows.Close()
-		if exists {
-			ops = append(ops, enumOp{"drop", name, nil})
-		}
-	}
-
 	if len(ops) == 0 {
 		return nil // Nothing to do
 	}
@@ -396,18 +457,19 @@ func runEnumsIfNeeded(conn db.DB, cfg *config.Config) error {
 			output.Println("  + create type %s (%d values)", op.name, len(op.vals))
 		case "add-values":
 			output.Println("  ~ update type %s: add values %v", op.name, op.vals)
-		case "drop":
-			output.Warning("  - drop type %s if unused", op.name)
 		}
 	}
 
-	if !output.Confirm("Apply enum sync?") {
+	if !output.ConfirmDefault("Apply enum sync?", true) {
 		output.Info("Skipping enum sync")
 		return nil
 	}
 
 	// ── Execute ─────────────────────────────────────────────────────────────
-	createCount, updateCount, dropCount := 0, 0, 0
+	// Only additive changes are applied automatically. Commented-out example
+	// entries in the template are NOT treated as "drop this type" — use
+	// `vm enums drop` explicitly for removals.
+	createCount, updateCount := 0, 0
 
 	for _, name := range enabled {
 		stmt := migration.ExtractEnumStatement(content, name)
@@ -419,7 +481,7 @@ func runEnumsIfNeeded(conn db.DB, cfg *config.Config) error {
 		if syncSQL == "" {
 			continue
 		}
-		if err := conn.Exec(ctx, syncSQL); err != nil {
+		if err := execSQLScript(ctx, conn, syncSQL); err != nil {
 			return fmt.Errorf("failed to sync enum '%s': %w", name, err)
 		}
 	}
@@ -429,35 +491,17 @@ func runEnumsIfNeeded(conn db.DB, cfg *config.Config) error {
 			createCount++
 		case "add-values":
 			updateCount++
-		case "drop":
-			dropCount++
 		}
 	}
 
-	for _, name := range disabled {
-		rows, err := conn.Query(ctx,
-			`SELECT 1 FROM pg_type t
-			  JOIN pg_namespace n ON n.oid = t.typnamespace
-			 WHERE t.typname = $1 AND n.nspname = 'public' AND t.typtype = 'e'`, name)
-		if err != nil {
-			continue
-		}
-		exists := rows.Next()
-		rows.Close()
-		if !exists {
-			continue
-		}
-		conn.Exec(ctx, migration.GenerateDropEnumIfUnusedSQL(name)) //nolint:errcheck
-	}
-
-	output.Success("✓ Enum types synced (created: %d, updated: %d, dropped: %d)", createCount, updateCount, dropCount)
+	output.Success("Enum types synced (created: %d, updated: %d)", createCount, updateCount)
 	return nil
 }
 
 // runExtensionsIfNeeded syncs extensions from extensions.sql:
 //   - Installs enabled extensions that are not yet present in pg_extension.
-//   - Drops extensions that are commented out or removed from the file.
-//   - Prompts the user before applying any changes.
+//   - Never drops anything automatically; use `vm extensions drop` explicitly.
+//   - Prompts the user before applying additive changes.
 func runExtensionsIfNeeded(conn db.DB, cfg *config.Config) error {
 	extensionsPath := filepath.Join(cfg.MigrationPath, "extensions.sql")
 
@@ -471,12 +515,12 @@ func runExtensionsIfNeeded(conn db.DB, cfg *config.Config) error {
 	}
 
 	content := string(sqlContent)
-	enabled, disabled := migration.ParseAllExtensionNames(content)
+	enabled, _ := migration.ParseAllExtensionNames(content)
 	ctx := context.Background()
 
 	// ── Pre-flight ──────────────────────────────────────────────────────────
 	type extOp struct {
-		kind string // "install" | "drop"
+		kind string // "install"
 		name string
 	}
 	var ops []extOp
@@ -495,19 +539,6 @@ func runExtensionsIfNeeded(conn db.DB, cfg *config.Config) error {
 		}
 	}
 
-	for _, ext := range disabled {
-		rows, err := conn.Query(ctx,
-			`SELECT 1 FROM pg_extension WHERE extname = $1`, ext)
-		if err != nil {
-			continue
-		}
-		found := rows.Next()
-		rows.Close()
-		if found {
-			ops = append(ops, extOp{"drop", ext})
-		}
-	}
-
 	if len(ops) == 0 {
 		return nil // Nothing to do
 	}
@@ -515,49 +546,37 @@ func runExtensionsIfNeeded(conn db.DB, cfg *config.Config) error {
 	// ── Display plan ────────────────────────────────────────────────────────
 	output.Info("Extension sync plan:")
 	for _, op := range ops {
-		switch op.kind {
-		case "install":
-			output.Println("  + install extension %s", op.name)
-		case "drop":
-			output.Warning("  - drop extension %s CASCADE", op.name)
-		}
+		output.Println("  + install extension %s", op.name)
 	}
 
-	if !output.Confirm("Apply extension sync?") {
+	if !output.ConfirmDefault("Apply extension sync?", true) {
 		output.Info("Skipping extension sync")
 		return nil
 	}
 
 	// ── Execute ─────────────────────────────────────────────────────────────
-	installCount, dropCount := 0, 0
-
-	// Install all enabled extensions (file uses CREATE EXTENSION IF NOT EXISTS — idempotent)
-	if len(enabled) > 0 {
-		if err := conn.Exec(ctx, content); err != nil {
+	// The file uses CREATE EXTENSION IF NOT EXISTS, so applying it is idempotent.
+	// Splitting keeps behaviour predictable on both drivers and avoids sending
+	// comments/disabled example lines to the server.
+	statements, err := migration.SplitSQLStatements(content)
+	if err != nil {
+		return fmt.Errorf("failed to parse extensions.sql: %w", err)
+	}
+	for _, stmt := range statements {
+		if err := conn.Exec(ctx, stmt); err != nil {
 			return fmt.Errorf("failed to install extensions: %w", err)
 		}
 	}
-	for _, op := range ops {
-		if op.kind == "install" {
-			installCount++
-		}
-	}
 
-	for _, ext := range disabled {
-		if err := conn.Exec(ctx, fmt.Sprintf("DROP EXTENSION IF EXISTS %s CASCADE;", ext)); err == nil {
-			dropCount++
-		}
-	}
-
-	output.Success("✓ PostgreSQL extensions synced (installed: %d, dropped: %d)", installCount, dropCount)
+	output.Success("PostgreSQL extensions synced (installed: %d)", len(ops))
 	return nil
 }
 
 // runFunctionsIfNeeded syncs functions from functions.sql during auto-run:
 //   - Creates functions that don't yet exist in the DB.
-//   - Drops functions that are commented out or removed from the file.
-//   - Skips silently when all functions already exist and none need to be dropped.
-//   - Body-change updates are intentionally NOT applied here — run `vm functions migrate` explicitly.
+//   - Never drops anything automatically; use `vm functions drop` explicitly.
+//   - When at least one function is missing, the full file is applied
+//     (CREATE OR REPLACE), so body edits in the file are picked up too.
 func runFunctionsIfNeeded(conn db.DB, cfg *config.Config) error {
 	functionsPath := filepath.Join(cfg.MigrationPath, "functions.sql")
 
@@ -571,12 +590,12 @@ func runFunctionsIfNeeded(conn db.DB, cfg *config.Config) error {
 	}
 
 	content := string(sqlContent)
-	enabled, disabled := migration.ParseAllFunctionNames(content)
+	enabled, _ := migration.ParseAllFunctionNames(content)
 	ctx := context.Background()
 
-	// ── Pre-flight: only care about truly new or removed functions ──────────
+	// ── Pre-flight: only care about truly new functions ─────────────────────
 	type fnOp struct {
-		kind string // "create" | "drop"
+		kind string // "create"
 		name string
 	}
 	var ops []fnOp
@@ -599,60 +618,34 @@ func runFunctionsIfNeeded(conn db.DB, cfg *config.Config) error {
 		// To update function bodies, run `vm functions migrate` explicitly.
 	}
 
-	for _, fn := range disabled {
-		rows, err := conn.Query(ctx,
-			`SELECT 1 FROM pg_proc p
-			  JOIN pg_namespace n ON n.oid = p.pronamespace
-			 WHERE p.proname = $1 AND n.nspname = 'public'`, fn)
-		if err != nil {
-			continue
-		}
-		found := rows.Next()
-		rows.Close()
-		if found {
-			ops = append(ops, fnOp{"drop", fn})
-		}
-	}
-
 	if len(ops) == 0 {
-		return nil // Nothing to do — all functions already installed, none removed
+		return nil // Nothing to do — all functions already installed
 	}
 
 	// ── Display plan and prompt ─────────────────────────────────────────────
 	output.Info("Function sync plan:")
 	for _, op := range ops {
-		switch op.kind {
-		case "create":
-			output.Println("  + create function %s", op.name)
-		case "drop":
-			output.Warning("  - drop function %s CASCADE", op.name)
-		}
+		output.Println("  + create function %s", op.name)
 	}
 
-	if !output.Confirm("Apply function sync?") {
+	if !output.ConfirmDefault("Apply function sync?", true) {
 		output.Info("Skipping function sync")
 		return nil
 	}
 
 	// ── Execute ─────────────────────────────────────────────────────────────
-	createCount, dropCount := 0, 0
-
-	// Install new functions by running the full file (CREATE OR REPLACE is safe)
-	if err := conn.Exec(ctx, content); err != nil {
-		return fmt.Errorf("failed to install functions: %w", err)
+	// CREATE OR REPLACE makes applying the file idempotent, and the splitter
+	// preserves dollar-quoted function bodies.
+	statements, err := migration.SplitSQLStatements(content)
+	if err != nil {
+		return fmt.Errorf("failed to parse functions.sql: %w", err)
 	}
-	for _, op := range ops {
-		if op.kind == "create" {
-			createCount++
+	for _, stmt := range statements {
+		if err := conn.Exec(ctx, stmt); err != nil {
+			return fmt.Errorf("failed to install functions: %w", err)
 		}
 	}
 
-	for _, fn := range disabled {
-		if err := conn.Exec(ctx, fmt.Sprintf("DROP FUNCTION IF EXISTS %s() CASCADE;", fn)); err == nil {
-			dropCount++
-		}
-	}
-
-	output.Success("✓ Database functions synced (created: %d, dropped: %d)", createCount, dropCount)
+	output.Success("Database functions synced (created: %d)", len(ops))
 	return nil
 }

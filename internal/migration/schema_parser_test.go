@@ -619,3 +619,37 @@ func writeFile(t *testing.T, dir, name, content string) {
 		t.Fatalf("writeFile: %v", err)
 	}
 }
+
+func TestBuildExpectedTriggersHandlesDropThenCreate(t *testing.T) {
+	dir := t.TempDir()
+	content := `-- Up
+DROP TRIGGER IF EXISTS trigger_users_auto_update ON users;
+CREATE TRIGGER trigger_users_auto_update BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION auto_update_timestamp();
+-- Down
+DROP TRIGGER IF EXISTS trigger_users_auto_update ON users;
+`
+	if err := os.WriteFile(filepath.Join(dir, "001_create_users.sql"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := buildExpectedTriggersFromFiles(dir, []string{"001_create_users.sql"})
+	if len(got["users"]) != 1 {
+		t.Fatalf("expected trigger to remain after DROP/CREATE, got %#v", got)
+	}
+}
+
+func TestBuildExpectedIndexesHandlesDrop(t *testing.T) {
+	dir := t.TempDir()
+	content := `-- Up
+CREATE INDEX idx_users_email ON users(email);
+DROP INDEX idx_users_email;
+-- Down
+CREATE INDEX idx_users_email ON users(email);
+`
+	if err := os.WriteFile(filepath.Join(dir, "001_create_users.sql"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := buildExpectedIndexesFromFiles(dir, []string{"001_create_users.sql"})
+	if len(got["users"]) != 0 {
+		t.Fatalf("expected index to be removed by later DROP INDEX, got %#v", got)
+	}
+}

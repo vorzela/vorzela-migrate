@@ -87,7 +87,8 @@ func ParseEnabledExtensions(content string) []string {
 
 // ParseAllExtensionNames returns (enabled, disabled) extension names.
 // enabled  = names on active CREATE EXTENSION lines.
-// disabled = names found on commented-out CREATE EXTENSION lines.
+// disabled = names found on commented-out CREATE EXTENSION lines (informational).
+// They are not dropped automatically; use `vm extensions drop` explicitly.
 func ParseAllExtensionNames(content string) (enabled, disabled []string) {
 	for _, line := range strings.Split(content, "\n") {
 		trimmed := strings.TrimSpace(line)
@@ -105,5 +106,5 @@ func ParseAllExtensionNames(content string) (enabled, disabled []string) {
 			}
 		}
 	}
-	return
+	return uniqueStrings(enabled), uniqueStrings(disabled)
 }

@@ -57,14 +57,13 @@ norm_ver() {
 get_latest_version() {
     GITHUB_REPO="$1"
 
-    # 1) git ls-remote (no API quota; version-sorted — more reliable than
-    #    /releases/latest while a new release is still publishing assets)
+    # 1) git ls-remote (no API quota; git's version sort is portable and
+    #    avoids GNU-only `sort -V` on macOS)
     if command -v git >/dev/null 2>&1; then
-        ver=$(git ls-remote --refs --tags "https://github.com/${GITHUB_REPO}.git" 'v*' 2>/dev/null \
+        ver=$(git ls-remote --refs --tags --sort=-v:refname "https://github.com/${GITHUB_REPO}.git" 'v*' 2>/dev/null \
             | awk -F/ '{print $NF}' \
             | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
-            | sort -V \
-            | tail -1 || true)
+            | head -1 || true)
         if [ -n "$ver" ]; then
             echo "$ver"
             return 0
@@ -91,7 +90,7 @@ get_latest_version() {
     # 3) GitHub API (may fail with 403 rate limit)
     ver=$(curl -fsSL --connect-timeout 10 --max-time 20 -A "vorzela-migrate-install" \
         "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" 2>/dev/null \
-        | grep -oP '"tag_name": "\K[^"]+' | head -1 || true)
+        | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1 || true)
     if [ -n "$ver" ]; then
         echo "$ver"
         return 0
@@ -213,14 +212,18 @@ main() {
     GITHUB_REPO="vorzela/vorzela-migrate"
     RELEASE_URL="https://github.com/${GITHUB_REPO}/releases/download"
 
-    # Get latest release version
-    print_status "Fetching latest release..."
-    LATEST_VERSION=$(get_latest_version "${GITHUB_REPO}" || true)
-
-    if [ -z "$LATEST_VERSION" ]; then
-        print_warning "Could not fetch latest version from GitHub"
+    # Get latest release version (VM_VERSION pins a specific tag for `vm upgrade`)
+    if [ -n "${VM_VERSION:-}" ]; then
+        LATEST_VERSION="${VM_VERSION}"
+        print_status "Using pinned version: $LATEST_VERSION"
     else
-        print_success "Latest version: $LATEST_VERSION"
+        print_status "Fetching latest release..."
+        LATEST_VERSION=$(get_latest_version "${GITHUB_REPO}" || true)
+        if [ -z "$LATEST_VERSION" ]; then
+            print_warning "Could not fetch latest version from GitHub"
+        else
+            print_success "Target version: $LATEST_VERSION"
+        fi
     fi
 
     # Create install directory if it doesn't exist
@@ -353,10 +356,10 @@ main() {
     echo "    vm --help"
     echo ""
     print_status "Next steps:"
-    echo "    1. Read INSTALL.md for platform-specific setup"
+    echo "    1. Read README.md for setup instructions"
     echo "    2. Create a .vm config in your project (vm init)"
-    echo "    3. Create your first migration: vm make migration create_users_table"
-    echo "    4. Read QUICK_REFERENCE.md for examples"
+    echo "    3. Create your first migration: vm make migration users"
+    echo "    4. Validate migrations: vm check"
     echo ""
 }
 

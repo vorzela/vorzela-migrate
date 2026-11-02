@@ -134,25 +134,11 @@ func ValidateAllMigrations(migrationPath string) []error {
 
 // containsFunctionDefinition checks if content contains CREATE FUNCTION statements
 func containsFunctionDefinition(content string) bool {
-	// Match CREATE FUNCTION or CREATE OR REPLACE FUNCTION
-	// Case-insensitive, ignoring comments
-	pattern := `(?i)CREATE\s+(OR\s+REPLACE\s+)?FUNCTION\s+\w+`
+	// Match CREATE FUNCTION or CREATE OR REPLACE FUNCTION.
+	// Case-insensitive, ignoring SQL comments (including block comments).
+	pattern := "(?i)CREATE\\s+(OR\\s+REPLACE\\s+)?FUNCTION\\s+[`\"\\w]+"
 	re := regexp.MustCompile(pattern)
-
-	// Filter out commented lines
-	lines := strings.Split(content, "\n")
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		// Skip comment lines
-		if strings.HasPrefix(trimmed, "--") || strings.HasPrefix(trimmed, "/*") {
-			continue
-		}
-		if re.MatchString(line) {
-			return true
-		}
-	}
-
-	return false
+	return re.MatchString(stripSQLLineComments(content))
 }
 
 // containsExtensionCreation checks if content contains CREATE EXTENSION statements
@@ -160,21 +146,7 @@ func containsExtensionCreation(content string) bool {
 	// Match CREATE EXTENSION (case-insensitive)
 	pattern := `(?i)CREATE\s+EXTENSION`
 	re := regexp.MustCompile(pattern)
-
-	// Filter out commented lines
-	lines := strings.Split(content, "\n")
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		// Skip comment lines
-		if strings.HasPrefix(trimmed, "--") || strings.HasPrefix(trimmed, "/*") {
-			continue
-		}
-		if re.MatchString(line) {
-			return true
-		}
-	}
-
-	return false
+	return re.MatchString(stripSQLLineComments(content))
 }
 
 // extractMatchingLine extracts the first line matching a pattern
@@ -196,12 +168,4 @@ func extractMatchingLine(content, pattern string) string {
 	}
 
 	return ""
-}
-
-// CheckDependenciesInstalled verifies that required dependencies are installed
-func CheckDependenciesInstalled(db interface{}, dsn string) error {
-	// Note: This would require database-specific queries
-	// For now, we'll return nil and enhance in future
-	// This is a placeholder for checking if extensions and functions are installed
-	return nil
 }

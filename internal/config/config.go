@@ -10,7 +10,7 @@ import (
 	"github.com/vorzela/vorzela-migrate/internal/output"
 )
 
-// Config holds application configuration
+// Config holds application configuration.
 type Config struct {
 	DatabaseURL   string
 	MigrationPath string
@@ -23,6 +23,7 @@ type Config struct {
 	VerifyChecksums bool
 	DetectDrift     bool
 	Verbose         bool
+	Strict          bool // Treat safety warnings as failures
 
 	// Auto-run dependencies before migrations
 	AutoRunExtensions bool // Run 'vm extensions migrate' before 'vm migrate'
@@ -35,14 +36,26 @@ type Config struct {
 	// Internal: track which fields were explicitly set in the .vm file
 	explicitVerbose           bool
 	explicitEnhanced          bool
+	explicitOnline            bool
 	explicitDetectDrift       bool
 	explicitVerifyChecksums   bool
 	explicitAutoRunExtensions bool
 	explicitAutoRunFunctions  bool
 	explicitAutoRunEnums      bool
+	migrationPathFromVM       bool
+
+	// configDir is the directory containing the .vm file that was loaded.
+	configDir string
 }
 
-// LoadConfig loads configuration with optional DSN and path overrides
+// LoadConfig loads configuration with optional DSN and path overrides.
+//
+// Precedence (highest first):
+//  1. CLI flags
+//  2. Real process environment variables (DATABASE_URL, MIGRATION_PATH)
+//  3. .vm config file (current directory or any parent)
+//  4. .env file (current directory only)
+//  5. Built-in defaults
 func LoadConfig(dsnOverride, pathOverride string) (*Config, error) {
 	cfg := &Config{
 		MigrationPath: "./migrations",
@@ -50,47 +63,72 @@ func LoadConfig(dsnOverride, pathOverride string) (*Config, error) {
 		DriftHandling: "prompt",      // default to interactive prompt
 	}
 
-	// Load .env file if it exists (doesn't error if file doesn't exist)
-	_ = godotenv.Load()
+	// .env has the lowest file precedence. Read it instead of loading it into
+	// the process environment: godotenv.Load would make .env override .vm,
+	// which is the opposite of what the docs promise.
+	if envValues, err := godotenv.Read(".env"); err == nil {
+		for key, value := range envValues {
+			if _, known := knownKeys[key]; known {
+				applyConfigValue(cfg, key, value)
+			}
+		}
+		// .env MIGRATION_PATH is relative to cwd, not to a .vm file.
+		cfg.migrationPathFromVM = false
+	}
 
-	// Load .vm config file if it exists
+	// .vm overrides .env.
 	if err := loadVorzelaConfig(cfg); err != nil {
 		return nil, err
 	}
 
-	// Override with environment variables
-	if databaseURL := os.Getenv("DATABASE_URL"); databaseURL != "" {
-		cfg.DatabaseURL = databaseURL
+	// Real environment variables override file config.
+	if v := os.Getenv("DATABASE_URL"); v != "" {
+		cfg.DatabaseURL = v
+	}
+	if v := os.Getenv("MIGRATION_PATH"); v != "" {
+		cfg.MigrationPath = v
+		cfg.migrationPathFromVM = false
 	}
 
-	// Apply CLI overrides
+	// CLI overrides win over everything.
 	if dsnOverride != "" {
 		cfg.DatabaseURL = dsnOverride
 	}
 	if pathOverride != "" && pathOverride != "./migrations" {
 		cfg.MigrationPath = pathOverride
+		cfg.migrationPathFromVM = false
 	}
 
-	// Apply environment-based defaults
-	cfg.ApplyEnvironmentDefaults()
+	// A MIGRATION_PATH in a parent .vm is relative to that .vm file, not to
+	// the directory the agent happened to run from.
+	if cfg.migrationPathFromVM && cfg.configDir != "" && !filepath.IsAbs(cfg.MigrationPath) {
+		cwd, cwdErr := os.Getwd()
+		if cwdErr == nil {
+			cfgDirAbs, _ := filepath.Abs(cfg.configDir)
+			cwdAbs, _ := filepath.Abs(cwd)
+			if cfgDirAbs != "" && cfgDirAbs != cwdAbs {
+				cfg.MigrationPath = filepath.Clean(filepath.Join(cfg.configDir, cfg.MigrationPath))
+			}
+		}
+	}
 
+	cfg.ApplyEnvironmentDefaults()
 	return cfg, nil
 }
 
-// LoadConfigWithOverrides is deprecated, use LoadConfig instead
+// LoadConfigWithOverrides is deprecated, use LoadConfig instead.
 func LoadConfigWithOverrides(dsnOverride, envOverride, pathOverride string) (*Config, error) {
-	// Ignore envOverride, just delegate to LoadConfig
+	// Ignore envOverride, just delegate to LoadConfig.
 	return LoadConfig(dsnOverride, pathOverride)
 }
 
-// loadVorzelaConfig loads configuration from .vm file
+// loadVorzelaConfig loads configuration from .vm, searching the current
+// directory and then parents.
 func loadVorzelaConfig(cfg *Config) error {
-	// Check current directory
 	if err := loadVorzelaFile(".vm", cfg); err == nil {
 		return nil
 	}
 
-	// Check parent directories
 	currentDir, err := os.Getwd()
 	if err != nil {
 		return nil // Don't fail if we can't read cwd
@@ -101,26 +139,25 @@ func loadVorzelaConfig(cfg *Config) error {
 		if dir == currentDir {
 			break // Reached root
 		}
-
 		if err := loadVorzelaFile(filepath.Join(dir, ".vm"), cfg); err == nil {
 			return nil
 		}
-
 		currentDir = dir
 	}
 
 	return nil // Config file is optional
 }
 
-// loadVorzelaFile loads a specific .vm file
-func loadVorzelaFile(filepath string, cfg *Config) error {
-	content, err := os.ReadFile(filepath)
+// loadVorzelaFile loads a specific .vm file.
+func loadVorzelaFile(path string, cfg *Config) error {
+	content, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return err
 		}
 		return fmt.Errorf("failed to read config file: %w", err)
 	}
+	cfg.configDir = filepath.Dir(path)
 
 	lines := strings.Split(string(content), "\n")
 	for lineNum, line := range lines {
@@ -143,136 +180,145 @@ func loadVorzelaFile(filepath string, cfg *Config) error {
 		}
 		value := strings.TrimSpace(rawValue)
 
-		parseBool := func(v string) bool {
-			return strings.ToLower(v) == "true" || v == "1"
-		}
-
-		// Warn about unknown keys so users catch typos without running vm lint.
 		if _, known := knownKeys[key]; !known {
 			output.Warning(".vm line %d: unknown key '%s' — run 'vm lint' for details", lineNum, key)
 			continue
 		}
-
-		switch key {
-		case "DATABASE_URL":
-			cfg.DatabaseURL = value
-		case "MIGRATION_PATH":
-			cfg.MigrationPath = value
-		case "SQLC_SUPPORT":
-			cfg.SqlcSupport = parseBool(value)
-		case "ENVIRONMENT", "ENV":
-			cfg.Environment = strings.ToLower(value)
-		case "ENHANCED":
-			cfg.Enhanced = parseBool(value)
-			cfg.explicitEnhanced = true
-		case "ONLINE":
-			cfg.Online = parseBool(value)
-		case "VERIFY_CHECKSUMS":
-			cfg.VerifyChecksums = parseBool(value)
-			cfg.explicitVerifyChecksums = true
-		case "DETECT_DRIFT":
-			cfg.DetectDrift = parseBool(value)
-			cfg.explicitDetectDrift = true
-		case "VERBOSE":
-			cfg.Verbose = parseBool(value)
-			cfg.explicitVerbose = true
-		case "AUTO_RUN_EXTENSIONS":
-			cfg.AutoRunExtensions = parseBool(value)
-			cfg.explicitAutoRunExtensions = true
-		case "AUTO_RUN_FUNCTIONS":
-			cfg.AutoRunFunctions = parseBool(value)
-			cfg.explicitAutoRunFunctions = true
-		case "AUTO_RUN_ENUMS":
-			cfg.AutoRunEnums = parseBool(value)
-			cfg.explicitAutoRunEnums = true
-		case "DRIFT_HANDLING":
-			val := strings.ToLower(value)
-			if val == "auto" || val == "reject" || val == "prompt" {
-				cfg.DriftHandling = val
-			}
-		}
+		applyConfigValue(cfg, key, value)
 	}
 
 	return nil
 }
 
-// Validate validates the configuration
+// applyConfigValue applies one KEY=VALUE pair from .vm/.env. Unknown keys are
+// ignored by callers that have already validated them.
+func applyConfigValue(cfg *Config, key, value string) {
+	parseBool := func(v string) bool {
+		return strings.EqualFold(strings.TrimSpace(v), "true") || strings.TrimSpace(v) == "1"
+	}
+
+	switch key {
+	case "DATABASE_URL":
+		cfg.DatabaseURL = value
+	case "MIGRATION_PATH":
+		cfg.MigrationPath = value
+		cfg.migrationPathFromVM = true
+	case "SQLC_SUPPORT":
+		cfg.SqlcSupport = parseBool(value)
+	case "ENVIRONMENT", "ENV":
+		cfg.Environment = strings.ToLower(value)
+	case "ENHANCED":
+		cfg.Enhanced = parseBool(value)
+		cfg.explicitEnhanced = true
+	case "ONLINE":
+		cfg.Online = parseBool(value)
+		cfg.explicitOnline = true
+	case "VERIFY_CHECKSUMS":
+		cfg.VerifyChecksums = parseBool(value)
+		cfg.explicitVerifyChecksums = true
+	case "DETECT_DRIFT":
+		cfg.DetectDrift = parseBool(value)
+		cfg.explicitDetectDrift = true
+	case "VERBOSE":
+		cfg.Verbose = parseBool(value)
+		cfg.explicitVerbose = true
+	case "STRICT":
+		cfg.Strict = parseBool(value)
+	case "AUTO_RUN_EXTENSIONS":
+		cfg.AutoRunExtensions = parseBool(value)
+		cfg.explicitAutoRunExtensions = true
+	case "AUTO_RUN_FUNCTIONS":
+		cfg.AutoRunFunctions = parseBool(value)
+		cfg.explicitAutoRunFunctions = true
+	case "AUTO_RUN_ENUMS":
+		cfg.AutoRunEnums = parseBool(value)
+		cfg.explicitAutoRunEnums = true
+	case "DRIFT_HANDLING":
+		val := strings.ToLower(strings.TrimSpace(value))
+		if val == "auto" || val == "reject" || val == "prompt" {
+			cfg.DriftHandling = val
+		}
+	}
+}
+
+// Validate validates the configuration.
 func (c *Config) Validate() error {
 	if c.DatabaseURL == "" {
 		return fmt.Errorf("database URL is required. Set DATABASE_URL env var, create .vm config file, or use --dsn flag")
 	}
+	if strings.TrimSpace(c.MigrationPath) == "" {
+		return fmt.Errorf("MIGRATION_PATH is empty")
+	}
+	switch c.DriftHandling {
+	case "", "auto", "prompt", "reject":
+	default:
+		return fmt.Errorf("invalid DRIFT_HANDLING %q (expected auto, prompt, or reject)", c.DriftHandling)
+	}
 
-	// Normalize environment
 	c.NormalizeEnvironment()
-
 	return nil
 }
 
-// NormalizeEnvironment normalizes environment names
+// NormalizeEnvironment normalizes environment names.
 func (c *Config) NormalizeEnvironment() {
 	env := strings.ToLower(c.Environment)
 
-	// Normalize dev/development
 	if env == "dev" || env == "develop" || env == "development" {
 		c.Environment = "development"
 		return
 	}
-
-	// Normalize prod/production
 	if env == "prod" || env == "production" {
 		c.Environment = "production"
 		return
 	}
-
-	// Default to development if unknown
 	c.Environment = "development"
 }
 
-// IsProduction returns true if running in production environment
-func (c *Config) IsProduction() bool {
-	return c.Environment == "production"
-}
+// IsProduction returns true if running in production environment.
+func (c *Config) IsProduction() bool { return c.Environment == "production" }
 
-// IsDevelopment returns true if running in development environment
-func (c *Config) IsDevelopment() bool {
-	return c.Environment == "development"
-}
+// IsDevelopment returns true if running in development environment.
+func (c *Config) IsDevelopment() bool { return c.Environment == "development" }
 
-// ApplyEnvironmentDefaults applies default settings based on environment
+// ApplyEnvironmentDefaults applies defaults based on environment. Explicit
+// .vm values always win; this fixes the previous behaviour where ONLINE=true
+// in development was silently overwritten by the development default.
 func (c *Config) ApplyEnvironmentDefaults() {
 	c.NormalizeEnvironment()
 
-	// If no explicit settings provided, use environment-based defaults
+	var (
+		defEnhanced bool
+		defOnline   bool
+		defVerify   bool
+		defDrift    bool
+		defVerbose  bool
+	)
 	if c.IsProduction() {
-		// Production defaults: all safety features enabled
-		if !c.hasExplicitSettings() {
-			c.Enhanced = true
-			c.Online = true
-			c.VerifyChecksums = true
-			c.DetectDrift = true
-			c.Verbose = false // Less verbose in production
-			if c.DriftHandling == "" {
-				c.DriftHandling = "prompt"
-			}
-		}
+		defEnhanced, defOnline, defVerify, defDrift, defVerbose = true, true, true, true, false
 	} else {
-		// Development defaults: enhanced features with verbose logging
-		if !c.hasExplicitSettings() {
-			c.Enhanced = true
-			c.Online = false // No need for online migrations in dev
-			c.VerifyChecksums = true
-			c.DetectDrift = true
-			// Only set Verbose to true if not explicitly set by user
-			if !c.explicitVerbose {
-				c.Verbose = true
-			}
-			if c.DriftHandling == "" {
-				c.DriftHandling = "prompt"
-			}
-		}
+		defEnhanced, defOnline, defVerify, defDrift, defVerbose = true, false, true, true, true
 	}
 
-	// Set auto-run defaults (both environments) — only when not explicitly set by user.
+	if !c.explicitEnhanced {
+		c.Enhanced = defEnhanced
+	}
+	if !c.explicitOnline {
+		c.Online = defOnline
+	}
+	if !c.explicitVerifyChecksums {
+		c.VerifyChecksums = defVerify
+	}
+	if !c.explicitDetectDrift {
+		c.DetectDrift = defDrift
+	}
+	if !c.explicitVerbose {
+		c.Verbose = defVerbose
+	}
+	if c.DriftHandling == "" {
+		c.DriftHandling = "prompt"
+	}
+
+	// Auto-run defaults (both environments) — only when not explicitly set.
 	if !c.explicitAutoRunExtensions {
 		c.AutoRunExtensions = true
 	}
@@ -282,18 +328,4 @@ func (c *Config) ApplyEnvironmentDefaults() {
 	if !c.explicitAutoRunEnums {
 		c.AutoRunEnums = true
 	}
-}
-
-// hasExplicitAutoRunSettings returns true if the user explicitly configured any
-// AUTO_RUN_* key in their .vm file so that ApplyEnvironmentDefaults doesn't
-// overwrite the user's intent.
-func (c *Config) hasExplicitAutoRunSettings() bool {
-	return c.explicitAutoRunExtensions || c.explicitAutoRunFunctions || c.explicitAutoRunEnums
-}
-
-// hasExplicitSettings returns true if the user explicitly set any migration
-// strategy key (ENHANCED, DETECT_DRIFT, VERIFY_CHECKSUMS) in their .vm file.
-// When true, ApplyEnvironmentDefaults will not override those values.
-func (c *Config) hasExplicitSettings() bool {
-	return c.explicitEnhanced || c.explicitDetectDrift || c.explicitVerifyChecksums
 }

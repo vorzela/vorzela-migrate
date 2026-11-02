@@ -43,7 +43,7 @@ var LintCommand = &cli.Command{
 		}
 
 		if len(issues) == 0 {
-			output.Success("✓ No issues found")
+			output.Success("No issues found")
 			return nil
 		}
 

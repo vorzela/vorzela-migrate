@@ -1,100 +1,46 @@
-# Vorzela Migration Tool Configuration
-# This file is optional. You can also use environment variables or CLI flags.
-# Priority: CLI flags > Environment variables > .vorzela file > .env file
-
-# Database Configuration
-# =============================================================================
-# PostgreSQL (Default):
-#   DATABASE_URL=postgres://user:password@localhost:5432/myapp
+# Vorzela Migration Tool Configuration (.vm)
+# Optional: you can also use environment variables or CLI flags.
+# Precedence: CLI flags > real env vars > .vm > .env > defaults
 #
-# MySQL/MariaDB (URL style):
-#   DATABASE_URL=mysql://user:password@localhost:3306/myapp
-#
-# MySQL/MariaDB (DSN style):
-#   DATABASE_URL=user:password@tcp(localhost:3306)/myapp
-#
-# Vorzela auto-detects the database type from the DSN.
-# =============================================================================
+# Create/validate:
+#   vm init        # writes a .vm + migrations directory
+#   vm lint        # validates this file
 
-DATABASE_URL=postgres://localhost:5432/myapp
-
-# For MySQL example, uncomment the line below instead:
+# Database connection (required)
+# PostgreSQL (default):
+DATABASE_URL=postgres://user:password@localhost:5432/myapp
+# MySQL:
 # DATABASE_URL=mysql://user:password@localhost:3306/myapp
+# MySQL DSN style:
+# DATABASE_URL=user:password@tcp(localhost:3306)/myapp
+# MariaDB: use mysql:// and include "mariadb" in the host or database name.
 
-# Migration files path (optional)
-# Default: ./migrations
+# Migration files path (default: ./migrations)
 # MIGRATION_PATH=./migrations
-# =============================================================================
-# COMMAND USAGE EXAMPLES
-# =============================================================================
 
-# 1. CREATE NEW MIGRATION (with strong naming conventions!)
-#    
-#    Pattern: action_details_target
-#    
-#    Table Operations:
-#    $ vm make migration create_users_table
-#    $ vm make migration create_posts_table
-#    $ vm make migration drop_legacy_data_table
-#    
-#    Column Operations (STRONG NAMING):
-#    $ vm make migration add_email_to_users
-#    $ vm make migration add_phone_to_customers
-#    $ vm make migration remove_deprecated_field_from_products
-#    $ vm make migration rename_user_name_to_full_name
-#    
-#    Indexes & Constraints:
-#    $ vm make migration create_index_on_users_email
-#    $ vm make migration add_foreign_key_author_id_to_posts
-#    
-#    Generated file: migrations/1707129045_create_users_table.sql
-#    Includes: Timestamp, CREATE/DROP templates, default columns (id, created_at, updated_at)
+# Environment defaults: development | production
+ENVIRONMENT=development
 
-# 2. RUN MIGRATIONS (execute pending migrations)
-#    $ vm migrate
+# Schema drift handling: auto | prompt | reject
+DRIFT_HANDLING=prompt
 
-# 3. ROLLBACK (with flexible options)
-#    $ vm rollback              # Rollback last 1 migration batch
-#    $ vm rollback --steps=2    # Rollback last 2 migration batches
-#    $ vm rollback --steps=all  # Rollback ALL migrations
+# Optional overrides
+# ENHANCED=true
+# ONLINE=false
+# VERIFY_CHECKSUMS=true
+# DETECT_DRIFT=true
+# VERBOSE=true
+# STRICT=false          # fail on safety warnings (destructive SQL, missing Down)
+# SQLC_SUPPORT=false    # add goose Up/Down markers
 
-# 4. FRESH (Rollback ALL + Re-run with confirmation warning)
-#    $ ./vm fresh                 # Shows warning, asks for confirmation
-#    $ ./vm fresh --force         # Skip confirmation (use with caution!)
+# Auto-run additive prerequisites before migrate (PostgreSQL only)
+AUTO_RUN_EXTENSIONS=true
+AUTO_RUN_FUNCTIONS=true
+AUTO_RUN_ENUMS=true
 
-# 5. REFRESH (Rollback ALL + Re-run without confirmation)
-#    $ ./vm refresh
-
-# 6. STATUS (show which migrations have been executed)
-#    $ ./vm status
-
-# =============================================================================
-# GENERATED MIGRATION FILE EXAMPLE (timestamps & create/drop templates)
-# =============================================================================
-#
-# File: 1707129045_create_users_table.sql
-#
-# -- Migration: CREATE_USERS_TABLE
-# -- Created at: 2026-02-05 10:30:45
-# -- Environment: dev/server
-#
-# -- ⬆ Up (Run when migrating forward)
-# BEGIN;
-#
-# CREATE TABLE IF NOT EXISTS create_users_table (
-#     id SERIAL PRIMARY KEY,
-#     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-#     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-# );
-#
-# -- DROP TABLE Example (Uncomment if needed)
-# -- DROP TABLE IF EXISTS create_users_table CASCADE;
-#
-# COMMIT;
-#
-# -- ⬇ Down (Run when rolling back)
-# BEGIN;
-#
-# DROP TABLE IF EXISTS create_users_table CASCADE;
-#
-# COMMIT;
+# Common commands
+#   vm check --json
+#   vm make migration users
+#   vm migrate --yes
+#   vm rollback --dry-run
+#   vm status --json

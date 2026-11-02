@@ -43,13 +43,14 @@ When the user asks to change an existing table (add column, index, soft-delete, 
 ## Setup checklist (new table / new project)
 
 ```
-- [ ] Write .vm with DATABASE_URL (+ ENVIRONMENT if needed)
+- [ ] vm init (or write .vm with DATABASE_URL)
 - [ ] vm lint
 - [ ] PostgreSQL only: vm extensions migrate → edit → migrate again
 - [ ] PostgreSQL only: vm functions migrate (needed for --triggers)
 - [ ] PostgreSQL only: vm enums migrate → edit types
 - [ ] vm make migration <name> [flags]   # new tables only
 - [ ] Edit generated SQL if needed
+- [ ] vm check --json
 - [ ] vm migrate
 ```
 
@@ -57,7 +58,9 @@ When the user asks to change an existing table (add column, index, soft-delete, 
 
 | Goal | Command |
 |------|---------|
+| Create config | `vm init` |
 | Validate config | `vm lint` |
+| Safety check | `vm check --json` / `vm check --db --strict` |
 | New table | `vm make migration <name>` |
 | Soft delete / triggers on **new** table | put flags on the create make |
 | Change existing table | edit create → `vm migrate --force --detect-drift` → yes (or fresh) |

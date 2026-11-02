@@ -2,7 +2,7 @@
 
 All notable changes to Vorzela Migration Tool are documented in this file.
 
-## [Unreleased]
+## [2.3.0] - 2026-11-02
 
 ### Changed
 
@@ -12,7 +12,53 @@ All notable changes to Vorzela Migration Tool are documented in this file.
   - `vm` never depended on it, so nothing changes for migration users. vorm keeps
     reading and writing the same migration files, tracking table and locks.
 
----
+### Features
+
+- **`vm check` migration safety checker** 🛡️
+  - Static checks: missing/empty Up or Down, `CREATE EXTENSION`/`FUNCTION`
+    in migrations, unterminated SQL, unbalanced parentheses, duplicate/missing
+    timestamps, destructive SQL, transaction-hostile statements.
+  - `--db` verifies executed checksums and missing files; `--json` is a stable
+    machine contract; `--strict` turns warnings into errors.
+  - `vm migrate` runs the same checks (hard errors always block; warnings block
+    with `--strict` / `STRICT=true`).
+- **`vm init`** creates `.vm` and the migrations directory without overwriting.
+- **Agent/CI mode**: `--non-interactive` / `VM_NON_INTERACTIVE=1`, `vm migrate
+  --yes`, `vm status --json`, and JSON output that suppresses the version notice.
+- **`-- vm:no-transaction`** migration marker for `CREATE INDEX CONCURRENTLY`
+  and other statements that cannot run inside a transaction.
+
+### Bug Fixes
+
+- **MySQL/MariaDB**: translated `$1` placeholders to `?`, normalised `mysql://`
+  URLs for `GetSQLDB`, pinged connections eagerly, and removed `IF NOT EXISTS`
+  from generated MySQL indexes/drift DDL.
+- **Locks**: advisory/named locks now use a pinned `*sql.Conn`, so acquisition
+  and release happen on the same session (no leaked PG/MySQL locks).
+- **SQL execution**: quote/dollar-aware statement splitter; PostgreSQL
+  migrations run in one transaction; MySQL reports partial application honestly.
+- **Drift**: missing `created_at`/`updated_at` columns are now detected; MySQL
+  drift DDL is portable; destructive auto-drift fixes require
+  `--allow-destructive`; `--online` is no longer silently ignored.
+- **Updater**: semver comparison (no downgrades), direct release-asset download
+  on Linux/macOS, version verification, `--check`/`--force`/`--dry-run`, and
+  `VM_VERSION` pinning in the install scripts.
+- **Uninstaller**: Windows path/binary support, `--binary`/`--dry-run`, proper
+  confirmation, mode-preserving profile cleanup, and backup cleanup for
+  `vm.exe.bak.*`/`.vm-upgrade-*`.
+- **Safety**: commented-out template entries in `extensions.sql`/`enums.sql`
+  are no longer treated as “drop this object” instructions. Auto-run is additive
+  only; removal requires the explicit drop commands.
+- **`add_` migrations** now generate an `ALTER TABLE … ADD COLUMN` scaffold
+  (no bogus `_table` suffix or `CREATE TABLE`); `trigger_` names generate a
+  trigger-only template; timestamp prefixes are unique.
+- **Status**: initializes a missing migrations table, counts executed/pending
+  correctly, and reports executed files missing from disk.
+- **Config**: `.vm` now beats `.env` as documented; explicit `ONLINE=true`
+  survives development defaults; parent-`.vm` migration paths resolve relative
+  to the config file; invalid `DRIFT_HANDLING` is rejected.
+- **Migration table** auto-adds `checksum`/`execution_time_ms` columns for
+  upgrades from older versions.
 
 ## [2.2.9] - 2026-08-09
 

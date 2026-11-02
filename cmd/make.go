@@ -65,25 +65,42 @@ var MakeCommand = &cli.Command{
 				softDelete := c.Bool("soft-delete")
 				triggers := c.Bool("triggers")
 
-				// Manually parse flags from remaining args
+				// Manually parse flags from remaining args.
 				// This handles the common case: vm make migration posts --belongs-to users
-				// where urfave/cli treats flags after args as positional
+				// where urfave/cli treats flags after args as positional.
+				pathOverrideFlag := ""
 				args := c.Args().Slice()
 				for i := 1; i < len(args); i++ {
 					arg := args[i]
-					switch arg {
+					flag, inlineValue, hasInline := splitFlagValue(arg)
+					switch flag {
+					case "--path", "-p":
+						if hasInline {
+							pathOverrideFlag = inlineValue
+						} else if i+1 < len(args) {
+							i++
+							pathOverrideFlag = args[i]
+						}
 					case "--belongs-to", "-bt", "--bt":
-						if i+1 < len(args) {
+						if hasInline {
+							belongsToTables = append(belongsToTables, inlineValue)
+						} else if i+1 < len(args) {
 							i++
 							belongsToTables = append(belongsToTables, args[i])
 						}
 					case "--one-to-one", "-oto", "--oto":
-						if i+1 < len(args) {
+						if hasInline {
+							oneToOneTables = append(oneToOneTables, inlineValue)
+						} else if i+1 < len(args) {
 							i++
 							oneToOneTables = append(oneToOneTables, args[i])
 						}
 					case "--many-to-many", "-mm", "--mm", "--pivot", "-pivot":
-						if i+1 < len(args) {
+						if hasInline {
+							if manyToManyTable == "" {
+								manyToManyTable = inlineValue
+							}
+						} else if i+1 < len(args) {
 							i++
 							if manyToManyTable == "" {
 								manyToManyTable = args[i]
@@ -128,10 +145,16 @@ var MakeCommand = &cli.Command{
 					isPivot = true
 					pivotTables = [2]string{rawName, manyToManyTable}
 				} else {
-					// Standard migration name normalization
+					// Standard migration name normalization.
 					migrationName = rawName
-					if !strings.HasPrefix(migrationName, "trigger_") {
-						if !strings.HasPrefix(migrationName, "create_") && !strings.HasPrefix(migrationName, "add_") {
+					if strings.HasPrefix(migrationName, "trigger_") {
+						// Trigger-only migrations keep their exact name.
+					} else if strings.HasPrefix(migrationName, "add_") || strings.HasPrefix(migrationName, "alter_") {
+						// Alterations are not CREATE TABLE migrations. Do not
+						// append _table (that used to produce names such as
+						// add_email_to_users_table and a bogus CREATE TABLE).
+					} else {
+						if !strings.HasPrefix(migrationName, "create_") {
 							migrationName = "create_" + migrationName
 						}
 						if !strings.HasSuffix(migrationName, "_table") {
@@ -144,6 +167,9 @@ var MakeCommand = &cli.Command{
 				var pathOverride string
 				if c.IsSet("path") {
 					pathOverride = c.String("path")
+				}
+				if pathOverrideFlag != "" {
+					pathOverride = pathOverrideFlag
 				}
 
 				// Load config to get MIGRATION_PATH from .vm if not specified via flag
@@ -196,4 +222,17 @@ var MakeCommand = &cli.Command{
 			},
 		},
 	},
+}
+
+// splitFlagValue splits "--flag=value" into ("--flag", "value", true) and
+// leaves plain flags/args untouched.
+func splitFlagValue(arg string) (flag, value string, ok bool) {
+	if !strings.HasPrefix(arg, "-") {
+		return arg, "", false
+	}
+	idx := strings.IndexByte(arg, '=')
+	if idx < 0 {
+		return arg, "", false
+	}
+	return arg[:idx], arg[idx+1:], true
 }

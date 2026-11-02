@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -64,19 +63,8 @@ var EnumsCommand = &cli.Command{
 					return err
 				}
 
-				// ── Hash-based change detection ─────────────────────────────────
-				hashFile := filepath.Join(cfg.MigrationPath, ".vm_enums_hash")
-				currentHash := fmt.Sprintf("%x", sha256.Sum256(sqlContent))
-
-				if existing, readErr := os.ReadFile(hashFile); readErr == nil {
-					if string(existing) == currentHash {
-						output.Info("Enums already up to date (no changes since last sync)")
-						return nil
-					}
-				}
-
 				content := string(sqlContent)
-				enabled, disabled := migration.ParseAllEnumNames(content)
+				enabled, _ := migration.ParseAllEnumNames(content)
 
 				db, err := database.Connect(cfg.DatabaseURL)
 				if err != nil {
@@ -101,49 +89,22 @@ var EnumsCommand = &cli.Command{
 					if syncSQL == "" {
 						continue
 					}
-					if err := db.Exec(ctx, syncSQL); err != nil {
+					if err := execSQLScript(ctx, db, syncSQL); err != nil {
 						output.Error("Failed to sync enum '%s': %v", name, err)
 						return err
 					}
-					output.Success("✓ %s", name)
+					output.Success("%s", name)
 				}
 
-				// ── Drop disabled / commented-out enums ────────────────────────────
-				// Only drop types that appear somewhere in the file (managed by vm).
-				for _, name := range disabled {
-					// Check if it actually exists in the DB before trying to drop.
-					rows, err := db.Query(ctx,
-						`SELECT 1 FROM pg_type t
-						  JOIN pg_namespace n ON n.oid = t.typnamespace
-						 WHERE t.typname = $1 AND n.nspname = 'public' AND t.typtype = 'e'`,
-						name)
-					if err != nil {
-						output.Warning("Could not check enum '%s': %v", name, err)
-						continue
-					}
-					exists := rows.Next()
-					rows.Close()
-					if !exists {
-						continue
-					}
-					dropSQL := migration.GenerateDropEnumIfUnusedSQL(name)
-					if err := db.Exec(ctx, dropSQL); err != nil {
-						output.Warning("Failed to drop enum '%s': %v", name, err)
-						continue
-					}
-					output.Info("↓ Removed disabled enum if unused: %s", name)
-				}
-
-				if len(enabled) == 0 && len(disabled) == 0 {
-					output.Warning("No enum types found in enums.sql")
+				// Commented-out template entries are examples, not removal
+				// instructions. Use `vm enums drop` explicitly to remove types.
+				if len(enabled) == 0 {
+					output.Warning("No enabled enum types found in enums.sql")
 					output.Info("Uncomment the types you need in migrations/enums.sql")
 					return nil
 				}
 
-				// Persist hash so next run detects no-change
-				_ = os.WriteFile(hashFile, []byte(currentHash), 0644)
-
-				output.Success("Enum sync complete (enabled: %d, removed: %d)", len(enabled), len(disabled))
+				output.Success("Enum sync complete (enabled: %d)", len(enabled))
 				return nil
 			},
 		},
@@ -179,6 +140,9 @@ var EnumsCommand = &cli.Command{
 					output.Error(err.Error())
 					return err
 				}
+				if d := migration.DetectDialect(cfg.DatabaseURL); d != migration.PostgreSQL {
+					return fmt.Errorf("vm enums is not supported on %s — CREATE TYPE AS ENUM is a PostgreSQL-only feature", d)
+				}
 
 				enumsPath := filepath.Join(cfg.MigrationPath, "enums.sql")
 				sqlContent, err := os.ReadFile(enumsPath)
@@ -207,10 +171,7 @@ var EnumsCommand = &cli.Command{
 				if stepMode {
 					output.Info("Dropping enum types one by one...")
 					for _, name := range enabled {
-						fmt.Printf("Drop type %s? [y/N]: ", name)
-						var resp string
-						fmt.Scanln(&resp)
-						if resp != "y" && resp != "Y" {
+						if !output.Confirm(fmt.Sprintf("Drop type %s?", name)) {
 							output.Info("Skipped: %s", name)
 							continue
 						}
@@ -225,11 +186,8 @@ var EnumsCommand = &cli.Command{
 				}
 
 				if !c.Bool("force") {
-					output.Warning("⚠️  This will attempt to drop %d enum type(s) only when unused.", len(enabled))
-					fmt.Print("Are you sure? [y/N]: ")
-					var resp string
-					fmt.Scanln(&resp)
-					if resp != "y" && resp != "Y" {
+					output.Warning("This will attempt to drop %d enum type(s) only when unused.", len(enabled))
+					if !output.Confirm("Are you sure?") {
 						output.Info("Cancelled")
 						return nil
 					}
@@ -269,6 +227,9 @@ var EnumsCommand = &cli.Command{
 				if err != nil {
 					output.Error(err.Error())
 					return err
+				}
+				if d := migration.DetectDialect(cfg.DatabaseURL); d != migration.PostgreSQL {
+					return fmt.Errorf("vm enums is not supported on %s — CREATE TYPE AS ENUM is a PostgreSQL-only feature", d)
 				}
 
 				enumsPath := filepath.Join(cfg.MigrationPath, "enums.sql")

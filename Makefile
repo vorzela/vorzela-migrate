@@ -1,4 +1,4 @@
-.PHONY: build clean install help test dist
+.PHONY: build clean install help test dist migration
 
 # Detect version from git tags, fallback to "dev"
 VERSION ?= $(shell git describe --tags --abbrev=0 2>/dev/null || echo dev)
@@ -13,8 +13,7 @@ help:
 	@echo "  make clean       - Remove built binary"
 	@echo ""
 	@echo "Development:"
-	@echo "  make dev-migration - Create a dev migration (usage: make dev-migration NAME=create_my_table)"
-	@echo "  make server-migration - Create a server migration (usage: make server-migration NAME=create_my_table)"
+	@echo "  make migration   - Create a migration (usage: make migration NAME=create_my_table)"
 	@echo ""
 	@echo "Testing:"
 	@echo "  make fmt         - Format code"
@@ -54,13 +53,9 @@ dist: clean
 	GOOS=darwin GOARCH=arm64 go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=$(VERSION)'" -o $(DIST_DIR)/vm-macos-arm64 main.go || echo "darwin/arm64 build skipped"
 	@echo "✓ Dist build complete. Files in $(DIST_DIR):" && ls -lh $(DIST_DIR)
 
-dev-migration:
-	@if [ -z "$(NAME)" ]; then echo "Error: NAME is required. Usage: make dev-migration NAME=create_my_table"; exit 1; fi
-	@./vm make migration $(NAME) -e dev
-
-server-migration:
-	@if [ -z "$(NAME)" ]; then echo "Error: NAME is required. Usage: make server-migration NAME=create_my_table"; exit 1; fi
-	@./vm make migration $(NAME) -e server
+migration: build
+	@if [ -z "$(NAME)" ]; then echo "Error: NAME is required. Usage: make migration NAME=create_my_table"; exit 1; fi
+	@./vm make migration $(NAME)
 
 fmt:
 	@echo "Formatting code..."

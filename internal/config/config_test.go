@@ -7,6 +7,10 @@ import (
 )
 
 func TestLoadConfig(t *testing.T) {
+	// Isolate from the repository's own .vm (tests otherwise resolve a parent
+	// config file and a different MIGRATION_PATH).
+	t.Chdir(t.TempDir())
+
 	tests := []struct {
 		name         string
 		dsnOverride  string
@@ -544,5 +548,35 @@ func BenchmarkApplyEnvironmentDefaults(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		cfg.ApplyEnvironmentDefaults()
+	}
+}
+
+func TestExplicitOnlineSurvivesDevelopmentDefaults(t *testing.T) {
+	cfg := &Config{Environment: "development", Online: true, explicitOnline: true}
+	cfg.ApplyEnvironmentDefaults()
+	if !cfg.Online {
+		t.Fatal("explicit ONLINE=true must not be overwritten by development defaults")
+	}
+}
+
+func TestDotEnvDoesNotOverrideVM(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	t.Setenv("DATABASE_URL", "")
+	t.Setenv("MIGRATION_PATH", "")
+
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("DATABASE_URL=postgres://from-env-file/db\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".vm"), []byte("DATABASE_URL=postgres://from-vm/db\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadConfig("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DatabaseURL != "postgres://from-vm/db" {
+		t.Fatalf("DatabaseURL=%q, want .vm value to beat .env", cfg.DatabaseURL)
 	}
 }

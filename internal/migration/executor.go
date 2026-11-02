@@ -13,8 +13,9 @@ import (
 	"github.com/vorzela/vorzela-migrate/internal/output"
 )
 
-// InitMigrationTable creates the migrations table if it doesn't exist
-// It auto-detects the database type from the DSN to use the correct SQL dialect
+// InitMigrationTable creates the migrations table if it doesn't exist and
+// upgrades pre-existing tables created by older vm versions with the columns
+// the enhanced executor needs (checksum, execution_time_ms).
 func InitMigrationTable(conn db.DB, dsn string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -26,7 +27,63 @@ func InitMigrationTable(conn db.DB, dsn string) error {
 		return fmt.Errorf("failed to create migrations table: %w", err)
 	}
 
+	// CREATE TABLE IF NOT EXISTS does not add columns to an existing table.
+	// Keep old installations working without asking users to drop history.
+	if err := ensureMigrationColumns(conn, dialect); err != nil {
+		return fmt.Errorf("failed to upgrade migrations table: %w", err)
+	}
+
 	return nil
+}
+
+// ensureMigrationColumns adds columns introduced after the original schema.
+func ensureMigrationColumns(conn db.DB, dialect Dialect) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	columns := []struct {
+		name string
+		typ  string
+	}{
+		{"checksum", "VARCHAR(64)"},
+		{"execution_time_ms", "INTEGER DEFAULT 0"},
+	}
+
+	for _, col := range columns {
+		if IsMySQLFamily(dialect) {
+			exists, err := mysqlColumnExists(ctx, conn, "migrations", col.name)
+			if err != nil {
+				return err
+			}
+			if exists {
+				continue
+			}
+			if err := conn.Exec(ctx, fmt.Sprintf("ALTER TABLE migrations ADD COLUMN %s %s", col.name, col.typ)); err != nil {
+				return fmt.Errorf("add column %s: %w", col.name, err)
+			}
+			continue
+		}
+
+		// PostgreSQL (and other dialects) support IF NOT EXISTS for ADD COLUMN.
+		stmt := fmt.Sprintf("ALTER TABLE migrations ADD COLUMN IF NOT EXISTS %s %s", col.name, col.typ)
+		if err := conn.Exec(ctx, stmt); err != nil {
+			return fmt.Errorf("add column %s: %w", col.name, err)
+		}
+	}
+
+	return nil
+}
+
+func mysqlColumnExists(ctx context.Context, conn db.DB, table, column string) (bool, error) {
+	rows, err := conn.Query(ctx,
+		`SELECT 1 FROM information_schema.COLUMNS
+		 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = $1 AND COLUMN_NAME = $2`,
+		table, column)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	return rows.Next(), rows.Err()
 }
 
 // formatDuration returns a compact human-readable duration.
@@ -42,15 +99,25 @@ func formatDuration(d time.Duration) string {
 func RunMigrations(conn db.DB, migrationPath string, dsn string) (int, time.Duration, error) {
 	totalStart := time.Now()
 
+	// Hard safety errors must never reach the database, even on the legacy
+	// path used by fresh/refresh.
+	if report := CheckMigrationFiles(migrationPath); report.HasErrors() {
+		return 0, 0, fmt.Errorf("migration safety check failed: %d error(s); run 'vm check' for details", report.Errors())
+	}
+
 	// Get all migration files
 	files, err := getMigrationFiles(migrationPath)
 	if err != nil {
 		return 0, 0, fmt.Errorf("failed to read migration files: %w", err)
 	}
 
-	// Sort by timestamp
+	// Sort by timestamp, then filename for deterministic ordering when two
+	// migrations share a timestamp.
 	sort.Slice(files, func(i, j int) bool {
-		return files[i].Timestamp < files[j].Timestamp
+		if files[i].Timestamp != files[j].Timestamp {
+			return files[i].Timestamp < files[j].Timestamp
+		}
+		return files[i].Filename < files[j].Filename
 	})
 
 	// Get executed migrations
@@ -88,14 +155,17 @@ func RunMigrations(conn db.DB, migrationPath string, dsn string) (int, time.Dura
 		// Extract UP part
 		upSQL := extractSection(string(content), "Up")
 		if upSQL == "" {
-			output.Warning("No UP section found in migration %s, skipping", file.Filename)
-			continue
+			return count, time.Since(totalStart), fmt.Errorf("no executable UP section found in migration %s", file.Filename)
 		}
 
 		// Execute migration with better error handling
 		itemStart := time.Now()
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		err = conn.Exec(ctx, upSQL)
+		checksum, checksumErr := CalculateChecksum(filepath.Join(migrationPath, file.Filename))
+		if checksumErr != nil {
+			return count, time.Since(totalStart), fmt.Errorf("failed to calculate checksum for %s: %w", file.Filename, checksumErr)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		err = executeSQLScript(ctx, conn, upSQL)
 		cancel()
 
 		if err != nil {
@@ -106,7 +176,7 @@ func RunMigrations(conn db.DB, migrationPath string, dsn string) (int, time.Dura
 		}
 
 		// Record migration
-		err = recordMigration(conn, file.Filename, batch)
+		err = recordMigration(conn, file.Filename, batch, checksum, time.Since(itemStart).Milliseconds())
 		if err != nil {
 			return count, time.Since(totalStart), fmt.Errorf("failed to record migration %s: %w", file.Filename, err)
 		}
@@ -169,14 +239,13 @@ func RollbackMigrations(conn db.DB, migrationPath string, steps int, dsn string)
 		// Extract DOWN part
 		downSQL := extractSection(string(content), "Down")
 		if downSQL == "" {
-			output.Warning("No DOWN section found in migration %s, skipping", mig.Migration)
-			continue
+			return count, time.Since(totalStart), fmt.Errorf("no DOWN section found in migration %s; refusing to skip a rollback", mig.Migration)
 		}
 
 		// Execute rollback
 		itemStart := time.Now()
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		err = conn.Exec(ctx, downSQL)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		err = executeSQLScript(ctx, conn, downSQL)
 		cancel()
 
 		if err != nil {
@@ -238,13 +307,12 @@ func RollbackAllMigrations(conn db.DB, migrationPath string, dsn string, label s
 
 		downSQL := extractSection(string(content), "Down")
 		if downSQL == "" {
-			output.Warning("No DOWN section found in migration %s, skipping", mig.Migration)
-			continue
+			return count, time.Since(totalStart), fmt.Errorf("no DOWN section found in migration %s; refusing to skip a rollback", mig.Migration)
 		}
 
 		itemStart := time.Now()
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		err = conn.Exec(ctx, downSQL)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		err = executeSQLScript(ctx, conn, downSQL)
 		cancel()
 
 		if err != nil {
@@ -269,38 +337,18 @@ func RollbackAllMigrations(conn db.DB, migrationPath string, dsn string, label s
 func RollbackMigrationByName(conn db.DB, migrationPath string, name string, dsn string) (time.Duration, error) {
 	start := time.Now()
 
-	executed, err := getExecutedMigrations(conn)
+	found, content, err := findExecutedMigrationByName(conn, migrationPath, name)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get executed migrations: %w", err)
+		return 0, err
 	}
 
-	lower := strings.ToLower(name)
-	var found *Migration
-	for i := range executed {
-		if strings.Contains(strings.ToLower(executed[i].Migration), lower) {
-			copy := executed[i]
-			found = &copy
-			break
-		}
-	}
-
-	if found == nil {
-		return 0, fmt.Errorf("no executed migration matching %q was found", name)
-	}
-
-	filePath := filepath.Join(migrationPath, found.Migration)
-	content, err := os.ReadFile(filePath)
-	if err != nil {
-		return 0, fmt.Errorf("failed to read migration file %s: %w", found.Migration, err)
-	}
-
-	downSQL := extractSection(string(content), "Down")
+	downSQL := extractSection(content, "Down")
 	if downSQL == "" {
 		return 0, fmt.Errorf("no DOWN section found in migration %s", found.Migration)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	err = conn.Exec(ctx, downSQL)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	err = executeSQLScript(ctx, conn, downSQL)
 	cancel()
 
 	if err != nil {
@@ -313,6 +361,46 @@ func RollbackMigrationByName(conn db.DB, migrationPath string, name string, dsn 
 
 	fmt.Printf("✓ Rolled back: %s (%s)\n", found.Migration, formatDuration(time.Since(start)))
 	return time.Since(start), nil
+}
+
+// PreviewRollbackByName returns the filename and Down SQL for a specific
+// executed migration without executing it. Used by `vm rollback --dry-run`.
+func PreviewRollbackByName(conn db.DB, migrationPath string, name string) (string, string, error) {
+	found, content, err := findExecutedMigrationByName(conn, migrationPath, name)
+	if err != nil {
+		return "", "", err
+	}
+	downSQL := extractSection(content, "Down")
+	if downSQL == "" {
+		return found.Migration, "", fmt.Errorf("no DOWN section found in migration %s", found.Migration)
+	}
+	return found.Migration, downSQL, nil
+}
+
+func findExecutedMigrationByName(conn db.DB, migrationPath string, name string) (*Migration, string, error) {
+	executed, err := getExecutedMigrations(conn)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to get executed migrations: %w", err)
+	}
+
+	lower := strings.ToLower(name)
+	var found *Migration
+	for i := range executed {
+		if strings.Contains(strings.ToLower(executed[i].Migration), lower) {
+			copy := executed[i]
+			found = &copy
+			break
+		}
+	}
+	if found == nil {
+		return nil, "", fmt.Errorf("no executed migration matching %q was found", name)
+	}
+
+	content, err := os.ReadFile(filepath.Join(migrationPath, found.Migration))
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to read migration file %s: %w", found.Migration, err)
+	}
+	return found, string(content), nil
 }
 
 // Helper functions
@@ -337,6 +425,13 @@ func getMigrationFiles(basePath string) ([]MigrationFile, error) {
 			continue
 		}
 
+		// Require the same <timestamp>_<name>.sql shape the safety checker
+		// documents; otherwise files like "001foo.sql" were included but
+		// "no_timestamp.sql" was silently ignored.
+		if !timestampPrefixRe.MatchString(file.Name()) {
+			continue
+		}
+
 		var timestamp int64
 		_, err := fmt.Sscanf(file.Name(), "%d", &timestamp)
 		if err != nil {
@@ -358,9 +453,11 @@ func getExecutedMigrations(conn db.DB) ([]Migration, error) {
 
 	rows, err := conn.Query(ctx, "SELECT id, migration, batch, COALESCE(checksum, ''), COALESCE(execution_time_ms, 0) FROM migrations ORDER BY batch, id")
 	if err != nil {
-		// Check if the error is about the migrations table not existing
-		errMsg := err.Error()
-		if strings.Contains(errMsg, "does not exist") || strings.Contains(errMsg, "doesn't exist") {
+		// Only translate a missing *table* into the friendly message. A
+		// missing column (old schema) must surface as itself.
+		errMsg := strings.ToLower(err.Error())
+		if strings.Contains(errMsg, "migrations") &&
+			(strings.Contains(errMsg, "does not exist") || strings.Contains(errMsg, "doesn't exist") || strings.Contains(errMsg, "no such table")) {
 			return nil, fmt.Errorf("migrations table does not exist. Please run your first migration with: vm migrate")
 		}
 		return nil, err
@@ -380,12 +477,31 @@ func getExecutedMigrations(conn db.DB) ([]Migration, error) {
 	return migrations, rows.Err()
 }
 
-func recordMigration(conn db.DB, filename string, batch int) error {
+func recordMigration(conn db.DB, filename string, batch int, checksum string, executionTimeMs int64) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	query := "INSERT INTO migrations (migration, batch) VALUES ($1, $2)"
-	return conn.Exec(ctx, query, filename, batch)
+	query := "INSERT INTO migrations (migration, batch, checksum, execution_time_ms) VALUES ($1, $2, $3, $4)"
+	return conn.Exec(ctx, query, filename, batch, checksum, executionTimeMs)
+}
+
+// executeSQLScript splits a script with the shared quote-aware splitter and
+// executes each statement. This avoids driver-specific multi-statement quirks
+// and gives predictable errors on MySQL.
+func executeSQLScript(ctx context.Context, conn db.DB, sqlContent string) error {
+	statements, err := SplitSQLStatements(sqlContent)
+	if err != nil {
+		return fmt.Errorf("failed to parse SQL: %w", err)
+	}
+	for i, stmt := range statements {
+		if strings.TrimSpace(stmt) == "" {
+			continue
+		}
+		if err := conn.Exec(ctx, stmt); err != nil {
+			return fmt.Errorf("statement %d failed: %w\nStatement: %s", i+1, err, shortenStatement(stmt))
+		}
+	}
+	return nil
 }
 
 func removeMigrationRecord(conn db.DB, mig Migration) error {

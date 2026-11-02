@@ -85,9 +85,9 @@ func ParseEnabledEnums(content string) []string {
 
 // ParseAllEnumNames returns (enabled, disabled) enum type names.
 // enabled  = names on active (non-commented) CREATE TYPE lines.
-// disabled = names found on commented-out CREATE TYPE lines.
-// Only enum names that appear in the file at all are managed; anything that
-// exists in the DB but never appeared in the file is left untouched.
+// disabled = names found on commented-out CREATE TYPE lines (informational).
+// Commented template examples are NOT removal instructions; use `vm enums drop`
+// explicitly. Anything in the DB that never appeared in the file is untouched.
 func ParseAllEnumNames(content string) (enabled, disabled []string) {
 	for _, line := range strings.Split(content, "\n") {
 		trimmed := strings.TrimSpace(line)
@@ -106,7 +106,7 @@ func ParseAllEnumNames(content string) (enabled, disabled []string) {
 			}
 		}
 	}
-	return
+	return uniqueStrings(enabled), uniqueStrings(disabled)
 }
 
 // ExtractEnumStatement finds the full CREATE TYPE ... AS ENUM (...); statement
@@ -125,8 +125,8 @@ func ExtractEnumStatement(content, name string) string {
 
 		upper := strings.ToUpper(trimmed)
 		if !capturing {
-			if strings.Contains(upper, "CREATE") && strings.Contains(upper, "TYPE") &&
-				strings.Contains(strings.ToLower(trimmed), strings.ToLower(name)) &&
+			if m := createTypeRe.FindStringSubmatch(trimmed); len(m) > 1 &&
+				strings.EqualFold(strings.Trim(m[1], `"`), name) &&
 				strings.Contains(upper, "ENUM") {
 				capturing = true
 				buf.Reset()
@@ -201,10 +201,12 @@ func GenerateEnumSyncSQL(name string, wantValues []string) string {
 	createList := strings.Join(escaped, ", ")
 
 	// Build ALTER TYPE ... ADD VALUE IF NOT EXISTS statements for each value.
+	// These run as separate statements outside the DO block: PostgreSQL 10/11
+	// reject ALTER TYPE ... ADD VALUE inside a transaction/PL-pgSQL block.
 	var alterStmts []string
 	for _, e := range escaped {
 		alterStmts = append(alterStmts,
-			fmt.Sprintf("    ALTER TYPE %s ADD VALUE IF NOT EXISTS %s;", name, e))
+			fmt.Sprintf("ALTER TYPE %s ADD VALUE IF NOT EXISTS %s;", name, e))
 	}
 	alterBlock := strings.Join(alterStmts, "\n")
 
@@ -218,10 +220,10 @@ BEGIN
     WHERE t.typname = '%s' AND n.nspname = 'public' AND t.typtype = 'e'
   ) THEN
     CREATE TYPE %s AS ENUM (%s);
-  ELSE
-%s
   END IF;
-END $$;`, safeName, name, createList, alterBlock)
+END $$;
+
+%s`, safeName, name, createList, alterBlock)
 }
 
 // GenerateDropEnumIfUnusedSQL returns a guarded PostgreSQL DO block that

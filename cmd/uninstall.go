@@ -1,13 +1,15 @@
 package cmd
 
 import (
-	"bufio"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/urfave/cli/v2"
+	"github.com/vorzela/vorzela-migrate/internal/output"
 )
 
 var UninstallCommand = &cli.Command{
@@ -22,97 +24,169 @@ var UninstallCommand = &cli.Command{
 		},
 		&cli.BoolFlag{
 			Name:  "keep-path",
-			Usage: "do not remove the PATH export from shell profile files",
+			Usage: "do not remove the PATH export from shell profile / Windows user PATH",
 			Value: false,
+		},
+		&cli.BoolFlag{
+			Name:  "dry-run",
+			Usage: "show what would be removed without deleting anything",
+			Value: false,
+		},
+		&cli.StringFlag{
+			Name:  "binary",
+			Usage: "explicit path to the vm binary (for custom installs)",
 		},
 	},
 	Action: func(c *cli.Context) error {
-		// Locate the binary — prefer the one that is actually running, then
-		// fall back to the standard install locations written by install.sh.
-		binaryPath, err := findVMBinary()
+		binaryPath, err := findVMBinary(c.String("binary"))
 		if err != nil {
 			return fmt.Errorf("could not locate vm binary: %w", err)
 		}
 
 		fmt.Printf("Found vm at: %s\n", binaryPath)
 
-		if !c.Bool("yes") {
-			fmt.Print("Are you sure you want to uninstall vm? [yes/no]: ")
-			reader := bufio.NewReader(os.Stdin)
-			answer, _ := reader.ReadString('\n')
-			answer = strings.TrimSpace(strings.ToLower(answer))
-			if answer != "yes" && answer != "y" {
+		if !c.Bool("yes") && !c.Bool("dry-run") {
+			if !output.Confirm("Are you sure you want to uninstall vm?") {
 				fmt.Println("Uninstall cancelled.")
 				return nil
 			}
 		}
 
-		// Remove the binary
-		if err := os.Remove(binaryPath); err != nil {
-			return fmt.Errorf("failed to remove binary: %w", err)
-		}
-		fmt.Printf("Removed %s\n", binaryPath)
-
-		// Clean up any .bak files from upgrade in the same directory
 		installDir := filepath.Dir(binaryPath)
-		if entries, err := os.ReadDir(installDir); err == nil {
-			for _, e := range entries {
-				if strings.HasPrefix(e.Name(), "vm.bak.") {
-					bakPath := filepath.Join(installDir, e.Name())
-					if rmErr := os.Remove(bakPath); rmErr == nil {
-						fmt.Printf("Removed backup: %s\n", bakPath)
-					}
+
+		if c.Bool("dry-run") {
+			output.Info("DRY RUN - would remove %s", binaryPath)
+			output.Info("DRY RUN - would remove vm backup/upgrade files in %s", installDir)
+			if !c.Bool("keep-path") {
+				output.Info("DRY RUN - would remove PATH entries pointing at %s", installDir)
+			}
+			return nil
+		}
+
+		// Remove the binary. On Windows a running executable cannot be deleted
+		// directly; schedule deletion after this process exits.
+		if runtime.GOOS == "windows" {
+			if err := scheduleWindowsDelete(binaryPath); err != nil {
+				return fmt.Errorf("failed to schedule binary removal: %w", err)
+			}
+			fmt.Printf("Scheduled removal of %s (takes effect after vm exits)\n", binaryPath)
+		} else {
+			if err := os.Remove(binaryPath); err != nil {
+				if os.IsPermission(err) {
+					return fmt.Errorf("failed to remove binary (try sudo): %w", err)
 				}
+				return fmt.Errorf("failed to remove binary: %w", err)
+			}
+			fmt.Printf("Removed %s\n", binaryPath)
+		}
+
+		// Clean up backup and partial upgrade files from the same directory.
+		removeInstallArtifacts(installDir)
+
+		// Optionally remove PATH entries from shell profiles / Windows registry.
+		if !c.Bool("keep-path") {
+			if runtime.GOOS == "windows" {
+				cleanWindowsUserPath(installDir)
+			} else {
+				cleanPathFromProfiles(installDir)
 			}
 		}
 
-		// Optionally remove PATH entries from shell profiles
-		if !c.Bool("keep-path") {
-			cleanPathFromProfiles(installDir)
-		}
-
 		fmt.Println("\nvm has been uninstalled successfully.")
+		if runtime.GOOS == "windows" {
+			fmt.Println("The binary will be removed when this terminal exits.")
+		}
 		fmt.Println("To reinstall, run:")
 		fmt.Println("  curl -fsSL https://raw.githubusercontent.com/vorzela/vorzela-migrate/main/install.sh | bash")
 		return nil
 	},
 }
 
-// findVMBinary returns the path that should be removed. It first checks the
-// currently running executable; if that looks like a proper install location
-// it uses it. Otherwise it falls back to the well-known install paths.
-func findVMBinary() (string, error) {
-	// os.Executable returns the resolved path of the running process
+// findVMBinary returns the path that should be removed.
+func findVMBinary(explicit string) (string, error) {
+	if explicit != "" {
+		abs, err := filepath.Abs(explicit)
+		if err != nil {
+			return "", err
+		}
+		if _, err := os.Stat(abs); err != nil {
+			return "", fmt.Errorf("%s: %w", abs, err)
+		}
+		return abs, nil
+	}
+
 	exe, err := os.Executable()
 	if err == nil {
-		// Only trust it when it lives in one of the standard dirs
-		dir := filepath.Dir(exe)
-		base := filepath.Base(exe)
-		if base == "vm" && (strings.Contains(dir, ".local/bin") || dir == "/usr/local/bin" || dir == "/usr/bin") {
-			return exe, nil
+		if resolved, rerr := filepath.EvalSymlinks(exe); rerr == nil {
+			exe = resolved
+		}
+		base := strings.ToLower(filepath.Base(exe))
+		if base == "vm" || base == "vm.exe" {
+			// A `go run` / test binary lives in a temp directory; do not
+			// delete that. Everything else that is actually named vm is ours.
+			if !strings.Contains(strings.ToLower(exe), "go-build") &&
+				!strings.Contains(strings.ToLower(exe), os.TempDir()) {
+				return exe, nil
+			}
 		}
 	}
 
-	// Fallback: check standard install locations
+	home, _ := os.UserHomeDir()
 	candidates := []string{
-		filepath.Join(os.Getenv("HOME"), ".local", "bin", "vm"),
+		filepath.Join(home, ".local", "bin", "vm"),
 		"/usr/local/bin/vm",
 		"/usr/bin/vm",
+		filepath.Join(home, "bin", "vm.exe"),
+		filepath.Join(home, ".local", "bin", "vm.exe"),
+	}
+	if localAppData := os.Getenv("LOCALAPPDATA"); localAppData != "" {
+		candidates = append(candidates, filepath.Join(localAppData, "vorzela", "vm.exe"))
+	}
+	if programFiles := os.Getenv("ProgramFiles"); programFiles != "" {
+		candidates = append(candidates, filepath.Join(programFiles, "vorzela", "vm.exe"))
 	}
 	for _, p := range candidates {
+		if p == "" {
+			continue
+		}
 		if _, err := os.Stat(p); err == nil {
 			return p, nil
 		}
 	}
 
-	return "", fmt.Errorf("vm binary not found in expected install locations (%s)",
-		strings.Join(candidates, ", "))
+	return "", fmt.Errorf("vm binary not found in expected install locations; pass --binary <path>")
 }
 
-// cleanPathFromProfiles removes the line 'export PATH="$HOME/.local/bin:$PATH"'
-// (or equivalent) that install.sh added to shell profiles.
+// removeInstallArtifacts removes vm.bak.*, vm.exe.bak.*, and .vm-upgrade-*.
+func removeInstallArtifacts(installDir string) {
+	entries, err := os.ReadDir(installDir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		name := e.Name()
+		if strings.HasPrefix(name, "vm.bak.") ||
+			strings.HasPrefix(name, "vm.exe.bak.") ||
+			strings.HasPrefix(name, ".vm-upgrade-") ||
+			name == "vm.exe.new" {
+			path := filepath.Join(installDir, name)
+			if rmErr := os.Remove(path); rmErr == nil {
+				fmt.Printf("Removed backup: %s\n", path)
+			}
+		}
+	}
+}
+
+func scheduleWindowsDelete(path string) error {
+	// ping is used as a portable sleep; `timeout` is unavailable in some
+	// non-interactive contexts.
+	script := fmt.Sprintf(`ping -n 3 127.0.0.1 >nul & del /f /q "%s"`, path)
+	return exec.Command("cmd", "/C", script).Start()
+}
+
+// cleanPathFromProfiles removes PATH lines that reference installDir.
 func cleanPathFromProfiles(installDir string) {
-	home := os.Getenv("HOME")
+	home, _ := os.UserHomeDir()
 	if home == "" {
 		return
 	}
@@ -122,16 +196,17 @@ func cleanPathFromProfiles(installDir string) {
 		filepath.Join(home, ".zshrc"),
 		filepath.Join(home, ".profile"),
 		filepath.Join(home, ".bash_profile"),
+		filepath.Join(home, ".config", "fish", "config.fish"),
 	}
 
-	// Build a pattern to match lines that export our install directory
 	matchDir := strings.ReplaceAll(installDir, home, "$HOME")
+	absMatch := installDir
 
 	for _, profile := range profiles {
-		if _, err := os.Stat(profile); err != nil {
-			continue // file doesn't exist
+		info, err := os.Stat(profile)
+		if err != nil {
+			continue
 		}
-
 		content, err := os.ReadFile(profile)
 		if err != nil {
 			continue
@@ -141,27 +216,43 @@ func cleanPathFromProfiles(installDir string) {
 		var kept []string
 		removed := 0
 		for _, line := range lines {
-			if strings.Contains(line, matchDir) && strings.Contains(line, "PATH") {
+			hasPath := strings.Contains(line, "PATH")
+			refsInstall := strings.Contains(line, matchDir) || strings.Contains(line, absMatch)
+			if hasPath && refsInstall {
 				removed++
 				continue
 			}
 			kept = append(kept, line)
 		}
-
 		if removed == 0 {
 			continue
 		}
 
-		// Trim trailing blank lines that may have been left by our removal
 		for len(kept) > 0 && strings.TrimSpace(kept[len(kept)-1]) == "" {
 			kept = kept[:len(kept)-1]
 		}
 		newContent := strings.Join(kept, "\n") + "\n"
 
-		if err := os.WriteFile(profile, []byte(newContent), 0o644); err != nil {
+		// Preserve the original file mode instead of forcing 0644.
+		if err := os.WriteFile(profile, []byte(newContent), info.Mode().Perm()); err != nil {
 			fmt.Printf("Warning: could not update %s: %v\n", profile, err)
 		} else {
 			fmt.Printf("Removed PATH entry from %s\n", profile)
 		}
 	}
+}
+
+// cleanWindowsUserPath removes installDir from the persistent user PATH.
+func cleanWindowsUserPath(installDir string) {
+	ps := fmt.Sprintf(
+		`$p=[Environment]::GetEnvironmentVariable('Path','User'); `+
+			`$parts=($p -split ';') | Where-Object { $_ -and $_.TrimEnd('\') -ne '%s' }; `+
+			`[Environment]::SetEnvironmentVariable('Path', ($parts -join ';'), 'User')`,
+		strings.ReplaceAll(strings.TrimRight(installDir, `\`), `'`, `''`))
+
+	if err := exec.Command("powershell", "-NoProfile", "-Command", ps).Run(); err != nil {
+		fmt.Printf("Warning: could not update Windows user PATH: %v\n", err)
+		return
+	}
+	fmt.Println("Removed install directory from Windows user PATH")
 }

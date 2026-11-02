@@ -38,6 +38,7 @@ var knownKeys = map[string]struct{}{
 	"VERIFY_CHECKSUMS":    {},
 	"DETECT_DRIFT":        {},
 	"VERBOSE":             {},
+	"STRICT":              {},
 	"AUTO_RUN_EXTENSIONS": {},
 	"AUTO_RUN_FUNCTIONS":  {},
 	"AUTO_RUN_ENUMS":      {},
@@ -52,6 +53,7 @@ var boolKeys = map[string]struct{}{
 	"VERIFY_CHECKSUMS":    {},
 	"DETECT_DRIFT":        {},
 	"VERBOSE":             {},
+	"STRICT":              {},
 	"AUTO_RUN_EXTENSIONS": {},
 	"AUTO_RUN_FUNCTIONS":  {},
 	"AUTO_RUN_ENUMS":      {},
@@ -113,7 +115,7 @@ func LintVMFile(path string) ([]LintIssue, error) {
 				Line:     lineNum,
 				Key:      line,
 				Message:  "malformed line — expected KEY=VALUE",
-				Severity: LintWarning,
+				Severity: LintError,
 			})
 			continue
 		}

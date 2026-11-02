@@ -34,7 +34,7 @@ function Install-Vorzela {
     Write-Host ""
 
     # Detect architecture
-    $Arch = if ([Environment]::Is64BitProcess) { "amd64" } else { "386" }
+    $Arch = if ([Environment]::Is64BitOperatingSystem) { "amd64" } else { "386" }
     Write-Status "Detected Architecture: Windows ($Arch)"
 
     # Determine binary name
@@ -57,54 +57,62 @@ function Install-Vorzela {
         }
     }
 
-    # Get latest release version
-    Write-Status "Fetching latest release..."
-    # Try GitHub API releases/latest first
-    try {
-        $LatestRelease = (Invoke-RestMethod -Uri "https://api.github.com/repos/$GitHubRepo/releases/latest" -ErrorAction Stop).tag_name
+    # vm upgrade pins the target release via VM_VERSION. Skip discovery when
+    # pinned so upgrades do not depend on the GitHub API.
+    if ($env:VM_VERSION) {
+        $LatestRelease = $env:VM_VERSION
+        Write-Success "Pinned target version: $LatestRelease"
     }
-    catch {
-        $LatestRelease = $null
-    }
-
-    # Fallback: try tags API to get the most recent tag
-    if (-not $LatestRelease) {
+    else {
+        # Get latest release version
+        Write-Status "Fetching latest release..."
+        # Try GitHub API releases/latest first
         try {
-            $Tags = Invoke-RestMethod -Uri "https://api.github.com/repos/$GitHubRepo/tags" -ErrorAction Stop
-            if ($Tags -and $Tags.Count -gt 0) {
-                $LatestRelease = $Tags[0].name
-            }
+            $LatestRelease = (Invoke-RestMethod -Uri "https://api.github.com/repos/$GitHubRepo/releases/latest" -ErrorAction Stop).tag_name
         }
         catch {
             $LatestRelease = $null
         }
-    }
 
-    # Final fallback: follow redirect from /releases/latest to capture tag
-    if (-not $LatestRelease) {
-        try {
-            $resp = Invoke-WebRequest -Uri "https://github.com/$GitHubRepo/releases/latest" -Method Head -MaximumRedirection 0 -ErrorAction Stop
-            if ($resp.Headers.Location) {
-                $LatestRelease = ($resp.Headers.Location.TrimEnd('/')).Split('/')[-1]
-            }
-        }
-        catch {
-            # Some PowerShell versions throw on redirect; try to extract Location from the exception response
+        # Fallback: try tags API to get the most recent tag
+        if (-not $LatestRelease) {
             try {
-                $loc = $_.Exception.Response.Headers['Location']
-                if ($loc) {
-                    $LatestRelease = ($loc.TrimEnd('/')).Split('/')[-1]
+                $Tags = Invoke-RestMethod -Uri "https://api.github.com/repos/$GitHubRepo/tags" -ErrorAction Stop
+                if ($Tags -and $Tags.Count -gt 0) {
+                    $LatestRelease = $Tags[0].name
                 }
             }
-            catch { $null = $null }
+            catch {
+                $LatestRelease = $null
+            }
         }
-    }
 
-    if (-not $LatestRelease) {
-        Write-Warning "Could not fetch latest version from GitHub; will attempt to download if available."
-    }
-    else {
-        Write-Success "Latest version: $LatestRelease"
+        # Final fallback: follow redirect from /releases/latest to capture tag
+        if (-not $LatestRelease) {
+            try {
+                $resp = Invoke-WebRequest -Uri "https://github.com/$GitHubRepo/releases/latest" -Method Head -MaximumRedirection 0 -ErrorAction Stop
+                if ($resp.Headers.Location) {
+                    $LatestRelease = ($resp.Headers.Location.TrimEnd('/')).Split('/')[-1]
+                }
+            }
+            catch {
+                # Some PowerShell versions throw on redirect; try to extract Location from the exception response
+                try {
+                    $loc = $_.Exception.Response.Headers['Location']
+                    if ($loc) {
+                        $LatestRelease = ($loc.TrimEnd('/')).Split('/')[-1]
+                    }
+                }
+                catch { $null = $null }
+            }
+        }
+
+        if (-not $LatestRelease) {
+            Write-Warning "Could not fetch latest version from GitHub; will attempt to download if available."
+        }
+        else {
+            Write-Success "Target version: $LatestRelease"
+        }
     }
 
     # Download binary
@@ -113,10 +121,22 @@ function Install-Vorzela {
 
     if ($LatestRelease) {
         Write-Status "Downloading from: $DownloadUrl"
+        $TempBinary = "$BinaryPath.new"
         try {
-            # Try using Invoke-WebRequest (PowerShell 3.0+)
-            Invoke-WebRequest -Uri $DownloadUrl -OutFile $BinaryPath -UseBasicParsing -ErrorAction Stop
-            Write-Success "Binary downloaded successfully"
+            Remove-Item -Force $TempBinary -ErrorAction SilentlyContinue
+            # Download next to the target so the final move is atomic on the
+            # same volume. A running vm.exe cannot be overwritten directly.
+            Invoke-WebRequest -Uri $DownloadUrl -OutFile $TempBinary -UseBasicParsing -ErrorAction Stop
+            try {
+                Move-Item -Force $TempBinary $BinaryPath -ErrorAction Stop
+                Write-Success "Binary downloaded successfully"
+            }
+            catch {
+                Write-Warning "vm.exe is currently running; scheduling replacement after it exits."
+                $Script = "ping -n 3 127.0.0.1 >nul & move /y `"$TempBinary`" `"$BinaryPath`""
+                Start-Process -FilePath "cmd.exe" -ArgumentList "/C", $Script -WindowStyle Hidden | Out-Null
+                Write-Success "New binary staged at $TempBinary"
+            }
         }
         catch {
             Write-Warning "Failed to download binary for $LatestRelease/$BinaryName"
@@ -189,10 +209,10 @@ function Install-Vorzela {
     Write-Host ""
 
     Write-Status "Next steps:"
-    Write-Host "    1. Read INSTALL.md for setup instructions" -ForegroundColor White
-    Write-Host "    2. Create .vorzela config in your project" -ForegroundColor White
-    Write-Host "    3. Create migration: vm make migration create_users_table" -ForegroundColor White
-    Write-Host "    4. Read QUICK_REFERENCE.md for examples" -ForegroundColor White
+    Write-Host "    1. Read README.md for setup instructions" -ForegroundColor White
+    Write-Host "    2. Create .vm config in your project (vm init)" -ForegroundColor White
+    Write-Host "    3. Create migration: vm make migration users" -ForegroundColor White
+    Write-Host "    4. Validate migrations: vm check" -ForegroundColor White
     Write-Host ""
 
     # Offer to restart PowerShell

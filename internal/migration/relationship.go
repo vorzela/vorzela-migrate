@@ -141,17 +141,12 @@ func GeneratePivotMigration(table1, table2 string, opts CreateMigrationOptions) 
 	columns := strings.Join(columnParts, ",\n")
 
 	// Build indexes
-	indexes := fmt.Sprintf(`
-CREATE INDEX IF NOT EXISTS idx_%s_%s ON %s(%s);
-CREATE INDEX IF NOT EXISTS idx_%s_%s ON %s(%s);`,
-		pivotName, fk1, pivotName, fk1,
-		pivotName, fk2, pivotName, fk2,
-	)
+	indexes := "\n" + CreateIndexSQL(dialect, false, fmt.Sprintf("idx_%s_%s", pivotName, fk1), pivotName, fk1) +
+		"\n" + CreateIndexSQL(dialect, false, fmt.Sprintf("idx_%s_%s", pivotName, fk2), pivotName, fk2)
 
 	// Soft delete index
 	if opts.SoftDelete {
-		indexes += fmt.Sprintf("\nCREATE INDEX IF NOT EXISTS idx_%s_deleted_at ON %s(deleted_at);",
-			pivotName, pivotName)
+		indexes += "\n" + CreateIndexSQL(dialect, false, fmt.Sprintf("idx_%s_deleted_at", pivotName), pivotName, "deleted_at")
 	}
 
 	// Trigger section

@@ -1,10 +1,7 @@
 package cmd
 
 import (
-	"bufio"
 	"fmt"
-	"os"
-	"strings"
 	"time"
 
 	"github.com/urfave/cli/v2"
@@ -53,23 +50,21 @@ var FreshCommand = &cli.Command{
 			return err
 		}
 
+		// Refuse to roll back a history that has hard safety errors (for
+		// example a missing Up marker), because it cannot be rebuilt cleanly.
+		if report := migration.CheckMigrationFiles(cfg.MigrationPath); report.HasErrors() {
+			output.Error("Migration safety check failed: %d error(s); run 'vm check' for details", report.Errors())
+			return fmt.Errorf("migration safety check failed")
+		}
+
 		// Show warnings
-		output.Warning("⚠️  CAUTION: This will rollback ALL migrations and re-run them")
-		output.Warning("⚠️  This may cause data loss in your database!")
+		output.Warning("CAUTION: This will rollback ALL migrations and re-run them")
+		output.Warning("This may cause data loss in your database!")
 		output.Info("Database: %s", cfg.DatabaseURL)
 
 		// Confirm with user if not force flag
 		if !force {
-			reader := bufio.NewReader(os.Stdin)
-			output.Info("\nDo you want to continue? (yes/no): ")
-			response, err := reader.ReadString('\n')
-			if err != nil {
-				output.Error("Failed to read input: %v", err)
-				return fmt.Errorf("failed to read input: %w", err)
-			}
-
-			response = strings.TrimSpace(strings.ToLower(response))
-			if response != "yes" && response != "y" {
+			if !output.ConfirmDefault("Do you want to continue?", false) {
 				output.Info("Fresh operation cancelled")
 				return nil
 			}
@@ -83,6 +78,14 @@ var FreshCommand = &cli.Command{
 		}
 		defer db.Close()
 
+		// Hold the migration lock for the whole destructive rebuild.
+		releaseLock, err := acquireMigrationLock(cfg)
+		if err != nil {
+			output.Error("Failed to acquire migration lock: %v", err)
+			return err
+		}
+		defer releaseLock()
+
 		// Initialize migration table
 		if err := migration.InitMigrationTable(db, cfg.DatabaseURL); err != nil {
 			output.Error("Failed to initialize migration table: %v", err)
@@ -90,24 +93,28 @@ var FreshCommand = &cli.Command{
 		}
 
 		// Rollback all migrations
-		output.Warning("\nDropping all migrations...")
-		rollbackCount, dropDur, err := migration.RollbackAllMigrations(db, cfg.MigrationPath, cfg.DatabaseURL, "Dropped")
+		output.Warning("Dropping all migrations...")
+		rollbackCount, dropDur, err := rollbackAllMigrationsEnhanced(cfg, db)
 		if err != nil {
 			output.Error("Drop failed: %v", err)
 			return fmt.Errorf("drop failed: %w", err)
 		}
 		output.Success("Dropped %d migration(s) in %s", rollbackCount, dropDur.Round(time.Millisecond))
 
+		if err := runAutoPrerequisites(c, &cfg, &db); err != nil {
+			return err
+		}
+
 		// Re-run all migrations
 		output.Warning("Re-running all migrations...")
-		migrateCount, migrateDur, err := migration.RunMigrations(db, cfg.MigrationPath, cfg.DatabaseURL)
+		migrateCount, migrateDur, err := runPendingMigrationsEnhanced(cfg, db)
 		if err != nil {
 			output.Error("Migration failed: %v", err)
 			return fmt.Errorf("migration failed: %w", err)
 		}
 		output.Success("Ran %d migration(s) in %s", migrateCount, migrateDur.Round(time.Millisecond))
 
-		output.Success("\n✨ Fresh completed successfully!")
+		output.Success("✨ Fresh completed successfully!")
 		return nil
 	},
 }

@@ -15,7 +15,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        go: ['1.21', '1.22']
+        go: ['1.27.x']
     
     steps:
       - name: Checkout code
@@ -36,25 +36,21 @@ jobs:
       - name: Verify dependencies
         run: go mod verify
 
-      - name: Run unit tests (non-Ubuntu or Go 1.21)
-        if: matrix.os != 'ubuntu-latest' || matrix.go == '1.21'
+      - name: Run unit tests (non-Ubuntu)
+        if: matrix.os != 'ubuntu-latest'
         run: go test -v -short -timeout=10m ./...
 
-      - name: Run tests with race detector (Ubuntu + Go 1.21)
-        if: matrix.os == 'ubuntu-latest' && matrix.go == '1.21'
+      - name: Run tests with race detector (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
         run: go test -v -short -race -timeout=10m ./...
 
-      - name: Run tests (Ubuntu + Go 1.22)
-        if: matrix.os == 'ubuntu-latest' && matrix.go == '1.22'
-        run: go test -v -short -timeout=10m ./...
-
-      - name: Generate coverage (Ubuntu + Go 1.22)
-        if: matrix.os == 'ubuntu-latest' && matrix.go == '1.22'
+      - name: Generate coverage (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
         run: go test -short -coverprofile=coverage.txt -covermode=atomic -timeout=10m ./...
         continue-on-error: true
 
       - name: Upload coverage to Codecov
-        if: matrix.os == 'ubuntu-latest' && matrix.go == '1.22'
+        if: matrix.os == 'ubuntu-latest'
         uses: codecov/codecov-action@v4
         with:
           file: ./coverage.txt
@@ -74,7 +70,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version: '1.27.x'
           cache: true
 
       - name: Format check
@@ -111,7 +107,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version: '1.27.x'
           cache: true
 
       - name: Build binary (Linux/macOS)
@@ -159,7 +155,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version: '1.27.x'
 
       - name: Run Gosec Security Scanner
         uses: securego/gosec@master

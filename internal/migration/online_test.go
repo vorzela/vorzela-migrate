@@ -51,3 +51,22 @@ func TestOnlineMigration_DialectSupport(t *testing.T) {
 		}
 	}
 }
+
+func TestParseMajorMinor(t *testing.T) {
+	tests := []struct {
+		in           string
+		major, minor int
+		ok           bool
+	}{
+		{"8.0.36-0ubuntu0.22.04.1", 8, 0, true},
+		{"10.11.6-MariaDB", 10, 11, true},
+		{"5.7.44", 5, 7, true},
+		{"not-a-version", 0, 0, false},
+	}
+	for _, tt := range tests {
+		major, minor, ok := parseMajorMinor(tt.in)
+		if ok != tt.ok || major != tt.major || minor != tt.minor {
+			t.Errorf("parseMajorMinor(%q)=(%d,%d,%v), want (%d,%d,%v)", tt.in, major, minor, ok, tt.major, tt.minor, tt.ok)
+		}
+	}
+}

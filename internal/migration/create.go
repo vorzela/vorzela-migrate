@@ -37,27 +37,46 @@ func CreateMigrationWithOptions(name, path string, opts CreateMigrationOptions) 
 	}
 
 	// Ensure functions.sql exists if triggers are enabled (PostgreSQL PL/pgSQL helpers only)
-	if opts.Triggers && !IsMySQLFamily(opts.Dialect) {
+	if (opts.Triggers || strings.HasPrefix(name, "trigger_")) && !IsMySQLFamily(opts.Dialect) {
 		if err := EnsureFunctionsFile(path); err != nil {
 			return err
 		}
 	}
 
-	// Generate timestamp-based filename
+	// Generate timestamp-based filename. Two `vm make` calls in the same second
+	// used to share a timestamp prefix, which makes ordering ambiguous; advance
+	// until the prefix is unused.
 	timestamp := time.Now().Unix()
-	filename := fmt.Sprintf("%d_%s.sql", timestamp, name)
-	filepath := filepath.Join(path, filename)
-
-	// Check if file already exists
-	if _, err := os.Stat(filepath); err == nil {
-		return fmt.Errorf("migration file already exists: %s", filename)
+	var filename string
+	for {
+		prefix := fmt.Sprintf("%d_", timestamp)
+		used := false
+		if entries, readErr := os.ReadDir(path); readErr == nil {
+			for _, entry := range entries {
+				if strings.HasPrefix(entry.Name(), prefix) {
+					used = true
+					break
+				}
+			}
+		}
+		if !used {
+			filename = prefix + name + ".sql"
+			break
+		}
+		timestamp++
 	}
+	filepath := filepath.Join(path, filename)
 
 	// Create migration file with template
 	var template string
-	if opts.IsPivot {
+	switch {
+	case opts.IsPivot:
 		template = GeneratePivotMigration(opts.PivotTables[0], opts.PivotTables[1], opts)
-	} else {
+	case isAlterationMigration(name):
+		template = generateAlterationTemplate(name, opts)
+	case strings.HasPrefix(name, "trigger_"):
+		template = generateTriggerOnlyTemplate(name, opts)
+	default:
 		template = generateMigrationTemplate(name, opts)
 	}
 	if err := os.WriteFile(filepath, []byte(template), 0644); err != nil {
@@ -66,6 +85,107 @@ func CreateMigrationWithOptions(name, path string, opts CreateMigrationOptions) 
 
 	fmt.Printf("Migration file created: %s\n", filename)
 	return nil
+}
+
+// isAlterationMigration reports whether a migration name describes an ALTER
+// operation rather than a new table.
+func isAlterationMigration(name string) bool {
+	return strings.HasPrefix(name, "add_") || strings.HasPrefix(name, "alter_")
+}
+
+// inferAddTarget parses add_<column>_to_<table> and returns (table, column).
+// It returns empty strings when the name does not follow that convention.
+func inferAddTarget(name string) (table, column string) {
+	rest := strings.TrimPrefix(name, "add_")
+	idx := strings.Index(rest, "_to_")
+	if idx <= 0 || idx+4 >= len(rest) {
+		return "", ""
+	}
+	column = rest[:idx]
+	table = rest[idx+4:]
+	if !isValidMigrationName(column) || !isValidMigrationName(table) {
+		return "", ""
+	}
+	return table, column
+}
+
+// generateAlterationTemplate creates an ALTER TABLE scaffold. It infers the
+// table/column from add_<col>_to_<table> when possible and otherwise leaves
+// explicit placeholders for the user (or agent) to fill in.
+func generateAlterationTemplate(name string, opts CreateMigrationOptions) string {
+	now := time.Now().Format("2006-01-02 15:04:05")
+
+	table, column := inferAddTarget(name)
+	inferred := table != "" && column != ""
+	if !inferred {
+		table, column = "your_table", "your_column"
+	}
+
+	gooseUp, gooseDown := gooseMarkers(opts)
+	hint := "-- TODO: replace TYPE with the real column type and add constraints/backfill as needed."
+	if inferred {
+		hint = fmt.Sprintf("-- TODO: replace TYPE with the real type for %s.%s; add NOT NULL/DEFAULT/backfill if needed.", table, column)
+	}
+
+	return fmt.Sprintf(`-- Migration: %s
+-- Created at: %s
+-- Alteration migration (no CREATE TABLE).
+%s
+
+%s-- ⬆ Up (Run when migrating forward)
+ALTER TABLE %s ADD COLUMN %s TYPE;
+
+%s-- ⬇ Down (Run when rolling back)
+ALTER TABLE %s DROP COLUMN IF EXISTS %s;
+`, strings.ToUpper(name), now, hint, gooseUp, table, column, gooseDown, table, column)
+}
+
+// generateTriggerOnlyTemplate creates a trigger scaffold without creating a
+// table. The table name is left as a placeholder because trigger_<name>
+// conventions vary.
+func generateTriggerOnlyTemplate(name string, opts CreateMigrationOptions) string {
+	dialect := ResolveDialect(opts.Dialect)
+	now := time.Now().Format("2006-01-02 15:04:05")
+	gooseUp, gooseDown := gooseMarkers(opts)
+
+	if IsMySQLFamily(dialect) {
+		return fmt.Sprintf(`-- Migration: %s
+-- Created at: %s
+-- Trigger-only migration (edit table_name).
+%s
+%s-- ⬆ Up (Run when migrating forward)
+DROP TRIGGER IF EXISTS %s;
+CREATE TRIGGER %s
+    BEFORE UPDATE ON table_name
+    FOR EACH ROW
+    SET NEW.updated_at = CURRENT_TIMESTAMP;
+
+%s-- ⬇ Down (Run when rolling back)
+DROP TRIGGER IF EXISTS %s;
+`, strings.ToUpper(name), now, "", gooseUp, name, name, gooseDown, name)
+	}
+
+	return fmt.Sprintf(`-- Migration: %s
+-- Created at: %s
+-- Trigger-only migration (edit table_name; requires functions.sql).
+%s
+%s-- ⬆ Up (Run when migrating forward)
+DROP TRIGGER IF EXISTS %s ON table_name;
+CREATE TRIGGER %s
+    BEFORE UPDATE ON table_name
+    FOR EACH ROW
+    EXECUTE FUNCTION auto_update_timestamp();
+
+%s-- ⬇ Down (Run when rolling back)
+DROP TRIGGER IF EXISTS %s ON table_name;
+`, strings.ToUpper(name), now, "", gooseUp, name, name, gooseDown, name)
+}
+
+func gooseMarkers(opts CreateMigrationOptions) (up, down string) {
+	if opts.SqlcSupport {
+		return "-- +goose Up\n", "-- +goose Down\n"
+	}
+	return "", ""
 }
 
 // isValidMigrationName validates the migration name format
@@ -196,12 +316,12 @@ func generateMigrationTemplate(name string, opts CreateMigrationOptions) string 
 	for _, rel := range opts.Relationships {
 		if rel.Type == BelongsTo {
 			fkCol := ForeignKeyColumn(rel.TargetTable)
-			extraIndexes += fmt.Sprintf("\nCREATE INDEX IF NOT EXISTS idx_%s_%s ON %s(%s);", tableName, fkCol, tableName, fkCol)
+			extraIndexes += "\n" + CreateIndexSQL(dialect, false, fmt.Sprintf("idx_%s_%s", tableName, fkCol), tableName, fkCol)
 		}
 	}
 
 	if opts.SoftDelete {
-		extraIndexes += fmt.Sprintf("\nCREATE INDEX IF NOT EXISTS idx_%s_deleted_at ON %s(deleted_at);", tableName, tableName)
+		extraIndexes += "\n" + CreateIndexSQL(dialect, false, fmt.Sprintf("idx_%s_deleted_at", tableName), tableName, "deleted_at")
 	}
 
 	if extraIndexes != "" {

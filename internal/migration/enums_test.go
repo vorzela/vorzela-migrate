@@ -101,8 +101,8 @@ func TestGenerateEnumSyncSQL(t *testing.T) {
 		if !strings.Contains(sql, "IF NOT EXISTS") {
 			t.Errorf("SQL should include existence check; got:\n%s", sql)
 		}
-		if !strings.Contains(sql, "ELSE") {
-			t.Errorf("SQL should have ELSE branch for ALTER TYPE; got:\n%s", sql)
+		if !strings.Contains(sql, "ALTER TYPE status ADD VALUE IF NOT EXISTS 'a'") {
+			t.Errorf("SQL should add values outside the DO block; got:\n%s", sql)
 		}
 	})
 }

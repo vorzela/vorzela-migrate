@@ -600,12 +600,12 @@ func (si *SchemaInspector) DetectDrift(tableName string, expectedColumns []Colum
 		}
 	}
 
-	// Direction 2: columns defined in migrations but not present in DB → "missing column"
+	// Direction 2: columns defined in migrations but not present in DB → "missing column".
+	// Standard columns are only skipped in direction 1 (unexpected DB-only
+	// columns). If a migration defines created_at/updated_at and the DB lacks
+	// it, that is real drift and must be reported.
 	for _, col := range expectedColumns {
 		name := strings.ToLower(col.Name)
-		if autoColumns[name] {
-			continue
-		}
 		if !dbColMap[name] {
 			drift.MissingColumns = append(drift.MissingColumns, col)
 		}
@@ -632,8 +632,8 @@ func (si *SchemaInspector) GenerateAlterStatements(drift *SchemaDrift) []string 
 	// ExtraIndexes: drop indexes that cover orphaned columns before dropping the columns.
 	for _, idx := range drift.ExtraIndexes {
 		statements = append(statements,
-			fmt.Sprintf("DROP INDEX IF EXISTS %s; -- index on orphaned column(s) %s",
-				idx.Name, strings.Join(idx.Columns, ", ")))
+			fmt.Sprintf("%s -- index on orphaned column(s) %s",
+				DropIndexSQL(si.dialect, idx.Name, drift.Table), strings.Join(idx.Columns, ", ")))
 	}
 
 	// AddedColumns: columns that exist in the DB but are not defined in any migration.
@@ -641,8 +641,7 @@ func (si *SchemaInspector) GenerateAlterStatements(drift *SchemaDrift) []string 
 	// the migration-defined schema.
 	for _, col := range drift.AddedColumns {
 		statements = append(statements,
-			fmt.Sprintf("ALTER TABLE %s DROP COLUMN IF EXISTS %s;",
-				drift.Table, col.Name))
+			DropColumnSQL(si.dialect, drift.Table, col.Name))
 
 		if si.dialect == PostgreSQL {
 			enumType := strings.TrimSpace(col.EnumType)
@@ -684,6 +683,9 @@ func (si *SchemaInspector) GenerateAlterStatements(drift *SchemaDrift) []string 
 		// Build the column definition, preserving NOT NULL and DEFAULT so that pgx
 		// cannot scan a NULL into a non-pointer Go field after the column is added.
 		colDef := col.Type
+		if col.IsUnique {
+			colDef += " UNIQUE"
+		}
 		if !col.Nullable {
 			if col.Default.Valid {
 				colDef += " NOT NULL DEFAULT " + col.Default.String
@@ -697,11 +699,13 @@ func (si *SchemaInspector) GenerateAlterStatements(drift *SchemaDrift) []string 
 						drift.Table, col.Name, col.Type, col.Name, drift.Table))
 				continue
 			}
+		} else if col.Default.Valid {
+			// Nullable columns may still have a meaningful default.
+			colDef += " DEFAULT " + col.Default.String
 		}
 
 		statements = append(statements,
-			fmt.Sprintf("ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s;",
-				drift.Table, col.Name, colDef))
+			AddColumnSQL(si.dialect, drift.Table, col.Name, colDef))
 	}
 
 	return statements
@@ -763,10 +767,10 @@ func generateCreateIndexSQL(idx IndexInfo, dialect Dialect) string {
 	}
 	// MySQL / MariaDB — no USING clause for standard indexes
 	if idx.IsUnique {
-		return fmt.Sprintf("CREATE UNIQUE INDEX IF NOT EXISTS %s ON %s (%s);",
+		return fmt.Sprintf("CREATE UNIQUE INDEX %s ON %s (%s);",
 			idx.Name, idx.TableName, cols)
 	}
-	return fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s ON %s (%s);",
+	return fmt.Sprintf("CREATE INDEX %s ON %s (%s);",
 		idx.Name, idx.TableName, cols)
 }
 
@@ -885,6 +889,7 @@ func (si *SchemaInspector) GetAllTables() ([]string, error) {
 			SELECT TABLE_NAME 
 			FROM information_schema.TABLES 
 			WHERE TABLE_SCHEMA = DATABASE()
+			AND TABLE_TYPE = 'BASE TABLE'
 			AND TABLE_NAME != 'migrations'
 			AND TABLE_NAME != 'migrations_lock'
 			ORDER BY TABLE_NAME

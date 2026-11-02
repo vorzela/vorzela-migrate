@@ -175,7 +175,8 @@ func ParseEnabledFunctions(content string) []string {
 
 // ParseAllFunctionNames returns (enabled, disabled) function names.
 // enabled  = names on active CREATE FUNCTION lines.
-// disabled = names found on commented-out CREATE FUNCTION lines.
+// disabled = names found on commented-out CREATE FUNCTION lines (informational).
+// They are not dropped automatically; use `vm functions drop` explicitly.
 func ParseAllFunctionNames(content string) (enabled, disabled []string) {
 	for _, line := range strings.Split(content, "\n") {
 		trimmed := strings.TrimSpace(line)
@@ -193,5 +194,5 @@ func ParseAllFunctionNames(content string) (enabled, disabled []string) {
 			}
 		}
 	}
-	return
+	return uniqueStrings(enabled), uniqueStrings(disabled)
 }

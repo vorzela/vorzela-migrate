@@ -80,6 +80,11 @@ var RollbackCommand = &cli.Command{
 			return err
 		}
 
+		if report := migration.CheckMigrationFiles(cfg.MigrationPath); report.HasErrors() {
+			output.Error("Migration safety check failed: %d error(s); run 'vm check' for details", report.Errors())
+			return fmt.Errorf("migration safety check failed")
+		}
+
 		// Connect to database
 		db, err := database.Connect(cfg.DatabaseURL)
 		if err != nil {
@@ -88,19 +93,66 @@ var RollbackCommand = &cli.Command{
 		}
 		defer db.Close()
 
+		// Create/upgrade the bookkeeping table so rollback works against old
+		// installations (checksum/execution_time_ms columns) and fresh DBs.
+		if err := migration.InitMigrationTable(db, cfg.DatabaseURL); err != nil {
+			output.Error("Failed to initialize migration table: %v", err)
+			return fmt.Errorf("failed to initialize migration table: %w", err)
+		}
+
 		// --- Rollback a specific migration by name ---
 		if specificMigration != "" {
-			dur, err := migration.RollbackMigrationByName(db, cfg.MigrationPath, specificMigration, cfg.DatabaseURL)
-			if err != nil {
-				output.Error("%v", err)
-				return err
+			if c.Bool("dry-run") {
+				filename, downSQL, err := migration.PreviewRollbackByName(db, cfg.MigrationPath, specificMigration)
+				if err != nil {
+					output.Error("%v", err)
+					return err
+				}
+				output.Info("DRY RUN - would roll back %s:", filename)
+				fmt.Println(downSQL)
+				return nil
+			}
+			if !c.Bool("force") && !output.Confirm(fmt.Sprintf("Roll back migration matching %q?", specificMigration)) {
+				output.Info("Rollback cancelled")
+				return nil
+			}
+
+			sqlDB, lerr := database.GetSQLDB(cfg.DatabaseURL)
+			if lerr != nil {
+				output.Error("Failed to get SQL DB connection: %v", lerr)
+				return lerr
+			}
+			defer sqlDB.Close()
+
+			// The enhanced executor owns the lock and transaction for the
+			// single-migration path too.
+			opts := migration.MigrationOptions{
+				Verbose:        c.Bool("verbose") || cfg.Verbose,
+				NonInteractive: !output.IsInteractive(),
+			}
+			executor, lerr := migration.NewEnhancedExecutor(db, sqlDB, cfg.DatabaseURL, cfg.MigrationPath, opts)
+			if lerr != nil {
+				return lerr
+			}
+			dur, lerr := executor.RollbackMigrationByName(specificMigration, opts)
+			if lerr != nil {
+				output.Error("%v", lerr)
+				return lerr
 			}
 			output.Success("Rollback completed in %s", dur.Round(time.Millisecond))
 			return nil
 		}
 
-		// Check if enhanced mode is requested
-		useEnhanced := c.Bool("enhanced") || c.Bool("dry-run")
+		// Check if enhanced mode is requested (config or CLI).
+		useEnhanced := c.Bool("enhanced") || cfg.Enhanced || c.Bool("dry-run")
+
+		// Parse steps once and validate it instead of silently falling back to 1.
+		steps := 1
+		if stepsStr == "all" {
+			steps = 1 << 30 // effectively unlimited
+		} else if _, scanErr := fmt.Sscanf(stepsStr, "%d", &steps); scanErr != nil || steps < 1 {
+			return fmt.Errorf("invalid --steps value %q (expected a positive integer or 'all')", stepsStr)
+		}
 
 		if useEnhanced {
 			// Use enhanced executor with warnings
@@ -111,10 +163,16 @@ var RollbackCommand = &cli.Command{
 			}
 			defer sqlDB.Close()
 
+			nonInteractive := !output.IsInteractive() || envTruthy("VM_NON_INTERACTIVE")
+			if nonInteractive {
+				output.SetNonInteractive(true)
+			}
+
 			opts := migration.MigrationOptions{
-				DryRun:  c.Bool("dry-run"),
-				Force:   c.Bool("force"),
-				Verbose: c.Bool("verbose"),
+				DryRun:         c.Bool("dry-run"),
+				Force:          c.Bool("force"),
+				Verbose:        c.Bool("verbose") || cfg.Verbose,
+				NonInteractive: nonInteractive,
 			}
 
 			executor, err := migration.NewEnhancedExecutor(db, sqlDB, cfg.DatabaseURL, cfg.MigrationPath, opts)
@@ -123,19 +181,8 @@ var RollbackCommand = &cli.Command{
 				return err
 			}
 
-			// Parse steps
-			steps := 1
-			if stepsStr != "all" {
-				fmt.Sscanf(stepsStr, "%d", &steps)
-				if steps < 1 {
-					steps = 1
-				}
-			} else {
-				steps = 999 // Large number to rollback all
-			}
-
 			results, err := executor.RollbackWithWarnings(steps, opts)
-			if err != nil && !c.Bool("force") {
+			if err != nil {
 				return err
 			}
 
@@ -151,6 +198,13 @@ var RollbackCommand = &cli.Command{
 		}
 
 		// Use standard rollback
+		releaseLock, lockErr := acquireMigrationLock(cfg)
+		if lockErr != nil {
+			output.Error("Failed to acquire migration lock: %v", lockErr)
+			return lockErr
+		}
+		defer releaseLock()
+
 		var count int
 		var dur time.Duration
 		if stepsStr == "all" {
@@ -160,12 +214,6 @@ var RollbackCommand = &cli.Command{
 				return fmt.Errorf("rollback failed: %w", err)
 			}
 		} else {
-			steps := 1
-			fmt.Sscanf(stepsStr, "%d", &steps)
-			if steps < 1 {
-				steps = 1
-			}
-
 			count, dur, err = migration.RollbackMigrations(db, cfg.MigrationPath, steps, cfg.DatabaseURL)
 			if err != nil {
 				output.Error("Rollback failed: %v", err)

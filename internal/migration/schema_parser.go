@@ -143,9 +143,9 @@ var alterTableDropRe = regexp.MustCompile(`(?i)ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+
 // alterTableAddFullRe captures table, column name, and the rest of the definition (type + constraints).
 var alterTableAddFullRe = regexp.MustCompile(`(?i)ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:[\w"` + "`" + `]+\.)?([` + "`" + `"\w]+)\s+ADD\s+(?:COLUMN\s+)?(?:IF\s+NOT\s+EXISTS\s+)?([` + "`" + `"\w]+)\s+([^;]+)`)
 
-// stripSQLLineComments removes SQL line comments (-- …) from a SQL string
-// while preserving string literals and newlines.  Newlines inside comments are
-// kept so that the line structure (and therefore any regex offsets) stays intact.
+// stripSQLLineComments removes SQL comments (-- … and /* … */) from a SQL
+// string while preserving string literals, dollar-quoted bodies, and newlines.
+// Newlines inside comments are kept so line structure stays intact.
 func stripSQLLineComments(sql string) string {
 	var b strings.Builder
 	b.Grow(len(sql))
@@ -159,7 +159,6 @@ func stripSQLLineComments(sql string) string {
 		if inString {
 			b.WriteByte(ch)
 			if ch == '\\' && i+1 < len(sql) {
-				// escaped character inside a string — write both bytes
 				i++
 				b.WriteByte(sql[i])
 			} else if ch == stringChar {
@@ -177,13 +176,44 @@ func stripSQLLineComments(sql string) string {
 			continue
 		}
 
-		// Detect the start of a line comment
+		// Dollar-quoted bodies are copied verbatim (they may contain -- or /*).
+		if ch == '$' {
+			if tag, end, ok := readDollarTag(sql, i); ok {
+				b.WriteString(sql[i:end])
+				i = end
+				for i < len(sql) && !strings.HasPrefix(sql[i:], tag) {
+					b.WriteByte(sql[i])
+					i++
+				}
+				if i < len(sql) {
+					b.WriteString(tag)
+					i += len(tag)
+				}
+				continue
+			}
+		}
+
+		// Line comment: skip to newline, but preserve the newline.
 		if ch == '-' && i+1 < len(sql) && sql[i+1] == '-' {
-			// Skip everything up to (but not including) the newline
 			for i < len(sql) && sql[i] != '\n' {
 				i++
 			}
-			// The newline itself (if present) is written on the next iteration
+			continue
+		}
+
+		// Block comment: skip it, preserving newlines.
+		if ch == '/' && i+1 < len(sql) && sql[i+1] == '*' {
+			i += 2
+			for i < len(sql) {
+				if sql[i] == '*' && i+1 < len(sql) && sql[i+1] == '/' {
+					i += 2
+					break
+				}
+				if sql[i] == '\n' {
+					b.WriteByte('\n')
+				}
+				i++
+			}
 			continue
 		}
 
@@ -551,9 +581,6 @@ func uniqueColumnInfos(cols []ColumnInfo) []ColumnInfo {
 func buildExpectedColumnDefsFromFiles(migrationPath string, executedFiles []string) map[string][]ColumnInfo {
 	expected := make(map[string][]ColumnInfo)
 
-	// Track dropped columns per table so we can remove them in the final pass.
-	dropped := make(map[string]map[string]bool)
-
 	for _, filename := range executedFiles {
 		content, err := os.ReadFile(filepath.Join(migrationPath, filename))
 		if err != nil {
@@ -565,57 +592,55 @@ func buildExpectedColumnDefsFromFiles(migrationPath string, executedFiles []stri
 		}
 		sqlContent = stripSQLLineComments(sqlContent)
 
-		// CREATE TABLE
-		for _, match := range createTableRe.FindAllStringSubmatchIndex(sqlContent, -1) {
-			tableName := strings.ToLower(stripQuotes(sqlContent[match[2]:match[3]]))
-			openPos := strings.LastIndex(sqlContent[:match[1]], "(")
-			if openPos == -1 {
-				continue
-			}
-			bodyEnd := findMatchingParen(sqlContent, openPos)
-			if bodyEnd == -1 {
-				continue
-			}
-			body := sqlContent[openPos+1 : bodyEnd]
-			expected[tableName] = append(expected[tableName], parseCreateTableColumnDefs(body)...)
-		}
-
-		// ALTER TABLE ... ADD COLUMN (with type)
-		for _, m := range alterTableAddFullRe.FindAllStringSubmatch(sqlContent, -1) {
-			tableName := strings.ToLower(stripQuotes(m[1]))
-			colName := strings.ToLower(stripQuotes(m[2]))
-			colType := parseTypeDef(m[3])
-			if tableName != "" && colName != "" && !isConstraintKeyword(colName) {
-				nullable, defVal, isUnique := parseColumnConstraints(m[3])
-				expected[tableName] = append(expected[tableName], ColumnInfo{
-					Name: colName, Type: colType, Nullable: nullable, Default: defVal, IsUnique: isUnique,
-				})
-			}
-		}
-
-		// ALTER TABLE ... DROP COLUMN — remember to remove later
-		for _, m := range alterTableDropRe.FindAllStringSubmatch(sqlContent, -1) {
-			tableName := strings.ToLower(stripQuotes(m[1]))
-			colName := strings.ToLower(stripQuotes(m[2]))
-			if tableName != "" && colName != "" {
-				if dropped[tableName] == nil {
-					dropped[tableName] = make(map[string]bool)
+		for _, stmt := range statementsInOrder(sqlContent) {
+			// CREATE TABLE
+			if match := createTableRe.FindStringSubmatchIndex(stmt); match != nil {
+				tableName := strings.ToLower(stripQuotes(stmt[match[2]:match[3]]))
+				openPos := strings.LastIndex(stmt[:match[1]], "(")
+				if openPos != -1 {
+					if bodyEnd := findMatchingParen(stmt, openPos); bodyEnd != -1 {
+						body := stmt[openPos+1 : bodyEnd]
+						expected[tableName] = append(expected[tableName], parseCreateTableColumnDefs(body)...)
+					}
 				}
-				dropped[tableName][colName] = true
+			}
+
+			// ALTER TABLE ... ADD COLUMN (with type)
+			for _, m := range alterTableAddFullRe.FindAllStringSubmatch(stmt, -1) {
+				tableName := strings.ToLower(stripQuotes(m[1]))
+				colName := strings.ToLower(stripQuotes(m[2]))
+				colType := parseTypeDef(m[3])
+				if tableName != "" && colName != "" && !isConstraintKeyword(colName) {
+					nullable, defVal, isUnique := parseColumnConstraints(m[3])
+					expected[tableName] = append(expected[tableName], ColumnInfo{
+						Name: colName, Type: colType, Nullable: nullable, Default: defVal, IsUnique: isUnique,
+					})
+				}
+			}
+
+			// ALTER TABLE ... DROP COLUMN — remove immediately so a column
+			// dropped and later re-added is handled in order.
+			for _, m := range alterTableDropRe.FindAllStringSubmatch(stmt, -1) {
+				tableName := strings.ToLower(stripQuotes(m[1]))
+				colName := strings.ToLower(stripQuotes(m[2]))
+				if tableName == "" || colName == "" {
+					continue
+				}
+				cols := expected[tableName]
+				filtered := cols[:0]
+				for _, c := range cols {
+					if c.Name != colName {
+						filtered = append(filtered, c)
+					}
+				}
+				expected[tableName] = filtered
 			}
 		}
 	}
 
-	// Remove dropped columns and deduplicate.
+	// Deduplicate, keeping the latest definition for each column.
 	for table, cols := range expected {
-		droppedCols := dropped[table]
-		var filtered []ColumnInfo
-		for _, c := range cols {
-			if droppedCols == nil || !droppedCols[c.Name] {
-				filtered = append(filtered, c)
-			}
-		}
-		expected[table] = uniqueColumnInfos(filtered)
+		expected[table] = uniqueColumnInfos(cols)
 	}
 
 	return expected
@@ -637,6 +662,14 @@ var createIndexRe = regexp.MustCompile(
 var createTriggerRe = regexp.MustCompile(
 	`(?is)CREATE\s+(?:OR\s+REPLACE\s+)?TRIGGER\s+([` + "`" + `"\w]+)\s+(BEFORE|AFTER|INSTEAD\s+OF)\s+(INSERT|UPDATE|DELETE|TRUNCATE)\s+ON\s+([` + "`" + `"\w]+)`)
 
+// dropIndexRe matches DROP INDEX [IF EXISTS] name [ON table] (MySQL form).
+var dropIndexRe = regexp.MustCompile(
+	`(?is)DROP\s+INDEX\s+(?:IF\s+EXISTS\s+)?([` + "`" + `"\w]+)`)
+
+// dropTriggerRe matches DROP TRIGGER [IF EXISTS] name [ON table].
+var dropTriggerRe = regexp.MustCompile(
+	`(?is)DROP\s+TRIGGER\s+(?:IF\s+EXISTS\s+)?([` + "`" + `"\w]+)`)
+
 // buildExpectedIndexesFromFiles parses executed migration files and returns
 // a map of tableName -> []IndexInfo listing indexes that should exist.
 // Only the Up section of each file is parsed to avoid false negatives from
@@ -654,14 +687,31 @@ func buildExpectedIndexesFromFiles(migrationPath string, executedFiles []string)
 		if sqlContent == "" {
 			sqlContent = string(content)
 		}
-		for _, idx := range extractIndexesFromSQL(sqlContent) {
-			key := strings.ToLower(idx.TableName) + "." + strings.ToLower(idx.Name)
-			if seen[key] {
-				continue
+		for _, stmt := range statementsInOrder(sqlContent) {
+			for _, idx := range extractIndexesFromSQL(stmt) {
+				key := strings.ToLower(idx.TableName) + "." + strings.ToLower(idx.Name)
+				if seen[key] {
+					continue
+				}
+				seen[key] = true
+				tbl := strings.ToLower(idx.TableName)
+				expected[tbl] = append(expected[tbl], idx)
 			}
-			seen[key] = true
-			tbl := strings.ToLower(idx.TableName)
-			expected[tbl] = append(expected[tbl], idx)
+			// DROP INDEX has no table in PostgreSQL; remove by name across
+			// tables (index names are schema-unique there).
+			for _, m := range dropIndexRe.FindAllStringSubmatch(stmt, -1) {
+				name := strings.ToLower(stripQuotes(m[1]))
+				for tbl, idxs := range expected {
+					filtered := idxs[:0]
+					for _, idx := range idxs {
+						if strings.ToLower(idx.Name) != name {
+							filtered = append(filtered, idx)
+						}
+					}
+					expected[tbl] = filtered
+					delete(seen, tbl+"."+name)
+				}
+			}
 		}
 	}
 	return expected
@@ -684,17 +734,42 @@ func buildExpectedTriggersFromFiles(migrationPath string, executedFiles []string
 		if sqlContent == "" {
 			sqlContent = string(content)
 		}
-		for _, trig := range extractTriggersFromSQL(sqlContent) {
-			key := strings.ToLower(trig.TableName) + "." + strings.ToLower(trig.Name)
-			if seen[key] {
-				continue
+		for _, stmt := range statementsInOrder(sqlContent) {
+			for _, trig := range extractTriggersFromSQL(stmt) {
+				key := strings.ToLower(trig.TableName) + "." + strings.ToLower(trig.Name)
+				if seen[key] {
+					continue
+				}
+				seen[key] = true
+				tbl := strings.ToLower(trig.TableName)
+				expected[tbl] = append(expected[tbl], trig)
 			}
-			seen[key] = true
-			tbl := strings.ToLower(trig.TableName)
-			expected[tbl] = append(expected[tbl], trig)
+			for _, m := range dropTriggerRe.FindAllStringSubmatch(stmt, -1) {
+				name := strings.ToLower(stripQuotes(m[1]))
+				for tbl, trigs := range expected {
+					filtered := trigs[:0]
+					for _, trig := range trigs {
+						if strings.ToLower(trig.Name) != name {
+							filtered = append(filtered, trig)
+						}
+					}
+					expected[tbl] = filtered
+					delete(seen, tbl+"."+name)
+				}
+			}
 		}
 	}
 	return expected
+}
+
+// statementsInOrder returns SQL statements in file order. If the script cannot
+// be parsed, it falls back to the whole script so callers still see something.
+func statementsInOrder(sql string) []string {
+	stmts, err := SplitSQLStatements(sql)
+	if err != nil || len(stmts) == 0 {
+		return []string{sql}
+	}
+	return stmts
 }
 
 // extractIndexesFromSQL parses CREATE INDEX statements from a SQL string.
@@ -970,8 +1045,6 @@ func normaliseAction(s string) string {
 // should exist.  Only the Up section of each file is consulted.
 func buildExpectedConstraintsFromFiles(migrationPath string, executedFiles []string) map[string][]ConstraintInfo {
 	expected := make(map[string][]ConstraintInfo)
-	// Track dropped constraint names per table (from DROP CONSTRAINT / DROP FOREIGN KEY).
-	dropped := make(map[string]map[string]bool)
 	// Deduplicate by (table, constraintKey).
 	seen := make(map[string]bool)
 
@@ -994,30 +1067,21 @@ func buildExpectedConstraintsFromFiles(migrationPath string, executedFiles []str
 			expected[ci.TableName] = append(expected[ci.TableName], ci)
 		}
 
-		// Track dropped constraints so we can remove them from the expected set.
+		// Remove constraints dropped by this migration immediately, so a
+		// constraint dropped and later re-added is handled correctly.
 		for _, m := range alterTableDropConstraintRe.FindAllStringSubmatch(sqlContent, -1) {
 			tbl := strings.ToLower(stripQuotes(m[1]))
 			name := strings.ToLower(stripQuotes(m[2]))
-			if dropped[tbl] == nil {
-				dropped[tbl] = make(map[string]bool)
+			cis := expected[tbl]
+			filtered := cis[:0]
+			for _, ci := range cis {
+				if ci.Name != name {
+					filtered = append(filtered, ci)
+				}
 			}
-			dropped[tbl][name] = true
+			expected[tbl] = filtered
+			delete(seen, tbl+"|"+name)
 		}
-	}
-
-	// Remove constraints that were explicitly dropped.
-	for tbl, cis := range expected {
-		droppedNames := dropped[tbl]
-		if droppedNames == nil {
-			continue
-		}
-		var filtered []ConstraintInfo
-		for _, ci := range cis {
-			if !droppedNames[ci.Name] {
-				filtered = append(filtered, ci)
-			}
-		}
-		expected[tbl] = filtered
 	}
 
 	return expected

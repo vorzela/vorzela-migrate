@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -117,13 +119,24 @@ func (om *OnlineMigration) updateDefaultInBatches(ctx context.Context, table, co
 	const batchSize = 1000
 
 	for {
-		// Update in small batches
-		updateSQL := fmt.Sprintf(`
-			UPDATE %s 
-			SET %s = %s 
-			WHERE %s IS NULL 
-			LIMIT %d
-		`, table, column, defaultValue, column, batchSize)
+		// Update in small batches. PostgreSQL does not support UPDATE ... LIMIT.
+		var updateSQL string
+		if om.dialect == PostgreSQL {
+			updateSQL = fmt.Sprintf(`
+				UPDATE %s
+				SET %s = %s
+				WHERE ctid IN (
+					SELECT ctid FROM %s WHERE %s IS NULL LIMIT %d
+				)
+			`, table, column, defaultValue, table, column, batchSize)
+		} else {
+			updateSQL = fmt.Sprintf(`
+				UPDATE %s
+				SET %s = %s
+				WHERE %s IS NULL
+				LIMIT %d
+			`, table, column, defaultValue, column, batchSize)
+		}
 
 		result, err := om.db.ExecContext(ctx, updateSQL)
 		if err != nil {
@@ -222,8 +235,44 @@ func (om *OnlineMigration) ValidateOnlineSupport() error {
 		if err != nil {
 			return fmt.Errorf("failed to check %s version: %w", om.dialect, err)
 		}
+		major, minor, ok := parseMajorMinor(version)
+		if !ok {
+			return fmt.Errorf("could not parse %s version %q", om.dialect, version)
+		}
+		if om.dialect == MySQL && (major < 8) {
+			return fmt.Errorf("--online requires MySQL 8.0+ (server is %s)", version)
+		}
+		if om.dialect == MariaDB && (major < 10 || (major == 10 && minor < 3)) {
+			return fmt.Errorf("--online requires MariaDB 10.3+ (server is %s)", version)
+		}
 		return nil
 	default:
 		return fmt.Errorf("online migrations not supported for %s", om.dialect)
 	}
+}
+
+// parseMajorMinor extracts the leading major/minor numbers from strings such as
+// "8.0.36-0ubuntu0.22.04.1" or "10.11.6-MariaDB".
+func parseMajorMinor(version string) (major, minor int, ok bool) {
+	parts := strings.SplitN(version, ".", 3)
+	if len(parts) < 2 {
+		return 0, 0, false
+	}
+	major, err := strconv.Atoi(numericPrefix(parts[0]))
+	if err != nil {
+		return 0, 0, false
+	}
+	minor, err = strconv.Atoi(numericPrefix(parts[1]))
+	if err != nil {
+		return 0, 0, false
+	}
+	return major, minor, true
+}
+
+func numericPrefix(s string) string {
+	end := 0
+	for end < len(s) && s[end] >= '0' && s[end] <= '9' {
+		end++
+	}
+	return s[:end]
 }

@@ -1,5 +1,8 @@
 # Vorzela Migration Tool
 
+> **AI agents / LLMs:** start with [`AGENTS.md`](AGENTS.md), then [`LLM.md`](LLM.md).
+> Run `vm init`, `vm lint`, `vm check --json`, `vm migrate --yes`.
+
 ## 📖 Table of Contents
 
 - [Features](#-features)
@@ -54,10 +57,12 @@
 - 🐘 **Multi-Database Support** - PostgreSQL and MySQL/MariaDB with automatic detection
 - 🌍 **Environment-Based Auto Config** - Set `ENVIRONMENT` in `.vm`; the tool auto-configures everything
 - ✅ **Checksum Validation** - Detect if migration files have been modified after execution
+- 🛡️ **Migration Safety Checker** - `vm check` flags missing Up/Down sections, destructive SQL, transaction-hostile statements, duplicate timestamps, and `.vm` typos
+- 🤖 **Agent-Friendly Output** - `vm check --json`, `vm status --json`, `--non-interactive`, and `vm init` for LLM/CI workflows
 - 🔐 **Migration Locking** - Prevent concurrent migrations (advisory locks for PostgreSQL, named locks for MySQL)
 - 🔍 **Schema Drift Detection** - Automatically detect and fix manual database changes
 - 🤖 **Auto Drift Handling** - Configure `auto` / `prompt` / `reject` modes for schema drift
-- 🌐 **Online Migrations** - Zero-downtime strategies for production (PostgreSQL & MySQL 8.0+ / MariaDB)
+- 🌐 **Online Migrations** - Non-blocking strategies for vm-generated drift DDL (PostgreSQL & MySQL 8.0+ / MariaDB)
 - 🛡️ **Partial Failure Recovery** - Track which statements succeeded before a failure
 - ⚠️ **Safe Rollback** - Confirmation prompts and detailed warnings before rollback
 - 📦 **Batch Tracking** - Organized rollback with batch numbers
@@ -68,7 +73,7 @@
 
 ## Requirements
 
-- **Go** 1.16+ (uses modern `os` package APIs, no deprecated `io/ioutil`)
+- **Go** 1.27+
 - **PostgreSQL** 10+ or **MySQL** 5.7+ or **MariaDB** 10.3+
 
 ## Installation
@@ -117,7 +122,7 @@ Download the appropriate binary for your platform from the [releases page](https
 **Linux/macOS:**
 ```bash
 # Download (replace URL with your platform)
-wget https://github.com/vorzela/vorzela-migrate/releases/download/v2.0.5/vm-linux-amd64
+wget https://github.com/vorzela/vorzela-migrate/releases/latest/download/vm-linux-amd64
 
 # Rename and make executable
 chmod +x vm-linux-amd64
@@ -167,7 +172,7 @@ sudo mv vm /usr/local/bin/  # Linux/macOS
 
 **Build with version info:**
 ```bash
-go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=v2.0.5'" -o vm main.go
+go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/internal/version.CurrentVersion=v2.3.0'" -o vm main.go
 ```
 
 ### Verify Installation
@@ -176,7 +181,7 @@ After installation, verify it works:
 
 ```bash
 vm --version
-# Should output: vorzela-migrate v2.0.5
+# Should output: vm version v2.3.0
 
 vm --help
 # Shows all available commands
@@ -272,7 +277,7 @@ vm rollback
 # Basic migration (PostgreSQL/MySQL)
 vm make migration users        # Creates: create_users_table.sql
 vm make migration posts        # Creates: create_posts_table.sql
-vm make migration add_email_to_users      # Creates: add_email_to_users_table.sql
+vm make migration add_email_to_users      # Creates: <ts>_add_email_to_users.sql (ALTER template)
 
 # With soft delete support (adds deleted_at column + index)
 vm make migration users --soft-delete     # Creates: create_users_table.sql (with deleted_at)
@@ -289,13 +294,14 @@ vm make migration posts -sd -t
 
 **Automatic File Naming:**
 - **`create_` prefix**: Automatically added if not present (e.g., `users` → `create_users_table.sql`)
-- **`_table` suffix**: Automatically added if not present
-- **`add_` prefix**: Recognized for alterations (e.g., `add_email_to_users` → `add_email_to_users_table.sql`)
+- **`_table` suffix**: Automatically added for `create_` migrations
+- **`add_` / `alter_` prefix**: Treated as alterations (e.g., `add_email_to_users` → `add_email_to_users.sql`, an `ALTER TABLE users ADD COLUMN email` scaffold)
+- **`trigger_` prefix**: Generates a trigger-only template
 - **Result**: Consistent, descriptive file names without manual typing
 
 **Table Name Extraction (in SQL):**
 - `create_users_table` → `CREATE TABLE users` (strips `create_` and `_table`)
-- `add_email_to_users_table` → Used as-is (no table creation)
+- `add_email_to_users` → inferred as table `users`, column `email` (no table creation)
 
 **Soft Delete Support (`--soft-delete` / `-sd`):**
 - Adds `deleted_at TIMESTAMPTZ DEFAULT NULL` column
@@ -553,38 +559,30 @@ vm rollback --enhanced --force
 
 ### Online Migrations (Zero Downtime)
 
-Use zero-downtime strategies for production deployments:
+`--online` makes **SQL that vm generates** (drift repair) use non-blocking forms,
+and verifies the server supports them. It does **not** rewrite arbitrary user
+migration SQL — vm executes those statements verbatim.
 
 ```bash
-# Enable online migration techniques
 vm migrate --online
-
-# Combine with other enhanced features
 vm migrate --enhanced --online
 ```
 
-**Online strategies:**
+**What vm can do online:**
 
 **PostgreSQL:**
-- ADD COLUMN without table locks
-- Batch updates for default values
-- CREATE INDEX CONCURRENTLY
-- NOT NULL constraints after data population
+- Drift-generated indexes use `CREATE INDEX CONCURRENTLY`
+- Drift mode refuses statements that cannot run in a transaction unless the
+  migration opts out with `-- vm:no-transaction`
 
-**MySQL 8.0+:**
-- ALGORITHM=INSTANT for compatible changes
-- ALGORITHM=INPLACE with LOCK=NONE
-- Automatic fallback to safe methods
+**MySQL 8.0+ / MariaDB:**
+- Drift-generated `ADD COLUMN` uses `ALGORITHM=INSTANT` where supported
 
-**Example:**
+**What you must write yourself:**
 ```sql
--- Traditional (locks table):
-ALTER TABLE users ADD COLUMN email VARCHAR(255) NOT NULL DEFAULT '';
-
--- Online (no locks):
--- Step 1: Add nullable column
--- Step 2: Batch update defaults
--- Step 3: Add NOT NULL constraint
+-- Add this marker if you need a statement that cannot run in a transaction:
+-- vm:no-transaction
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_users_email ON users(email);
 ```
 
 ### Dry Run Mode
@@ -620,10 +618,13 @@ vm rollback --enhanced \
 - `--enhanced, -e` - Enable all enhanced features
 - `--verify-checksums` - Verify migration file integrity
 - `--detect-drift` - Detect manual schema changes
-- `--online` - Use zero-downtime strategies
-- `--dry-run` - Preview without executing
+- `--online` - Non-blocking strategies for vm-generated drift DDL (user SQL is verbatim)
+- `--dry-run` - Preview without executing (no lock/auto-run)
 - `--verbose, -v` - Detailed colored logging
-- `--force` - Skip confirmations and override errors
+- `--force` - Override checksum mismatches (does not skip safety checks)
+- `--strict` - Fail on safety warnings
+- `--allow-destructive` - Acknowledge destructive warnings in strict mode
+- `--yes` - Non-interactive safe auto-run defaults
 
 **Rollback flags:**
 - `--enhanced, -e` - Enhanced rollback with warnings
@@ -636,7 +637,7 @@ vm rollback --enhanced \
 
 Migrations are SQL files with a special format. The tool automatically extracts the UP and DOWN sections.
 
-> **Transactions are handled automatically.** Every migration runs inside its own database transaction. If any statement fails the entire migration is rolled back — no partial changes are left in the database. Do not add `BEGIN` / `COMMIT` to your migration files.
+> **Transactions are handled automatically on PostgreSQL.** Every PostgreSQL migration runs inside its own database transaction; if any statement fails the whole migration is rolled back. MySQL/MariaDB DDL implicitly commits, so vm executes those statements in order and reports the statements that succeeded before a failure. Do not add `BEGIN` / `COMMIT` to migration files. For statements that cannot run in a transaction (for example `CREATE INDEX CONCURRENTLY`), add `-- vm:no-transaction` to the migration.
 
 ```sql
 -- Migration: CREATE_USERS_TABLE
@@ -1012,20 +1013,22 @@ See [CONFIG_ENHANCED.md](CONFIG_ENHANCED.md) for detailed configuration guide.
 
 | Command | Description |
 |---------|-------------|
+| `vm init` | Create a `.vm` config file (safe, never overwrites without `--force`) |
+| `vm check` | Static safety check for migrations + `.vm` (add `--db` for checksums) |
 | `vm migrate` | Run all pending migrations |
 | `vm migrate --step N` | Run only N pending migrations (0 = unlimited) |
 | `vm rollback` | Rollback the last batch of migrations |
 | `vm rollback --steps N` | Rollback last N batches (`all` to rollback everything) |
 | `vm rollback --migration <name>` | Rollback a single migration by partial name match |
 | `vm refresh` | Rollback all migrations then re-run all |
-| `vm fresh` | Drop all tables and re-run all migrations (⚠ destructive) |
-| `vm status` | Show current migration status (pending / executed) |
+| `vm fresh` | Roll back all migrations (Down) then re-run all (⚠ destructive) |
+| `vm status` | Show current migration status (pending / executed); `--json` for agents |
 | `vm make migration <name>` | Create a new migration file |
 | `vm enums migrate` | Install enum types from `enums.sql` |
 | `vm enums drop` | Drop enum types defined in `enums.sql` |
 | `vm enums status` | Compare `enums.sql` types against live database |
 | `vm upgrade` | Upgrade the `vm` binary to the latest release |
-| `vm uninstall` | Remove the `vm` binary and clean shell profile |
+| `vm uninstall` | Remove the `vm` binary and clean PATH entries |
 
 ### `vm make migration` Flags
 
@@ -1045,9 +1048,13 @@ See [CONFIG_ENHANCED.md](CONFIG_ENHANCED.md) for detailed configuration guide.
 | `--enhanced` | `-e` | Enable all enhanced features (checksums, locking, drift) |
 | `--verify-checksums` | | Verify that executed migration files haven't been modified |
 | `--detect-drift` | | Detect manually added columns not tracked in migrations |
-| `--online` | | Use zero-downtime migration strategies (PostgreSQL & MySQL 8+) |
+| `--online` | | Non-blocking strategies for vm-generated drift DDL (PostgreSQL & MySQL 8+ / MariaDB) |
 | `--dry-run` | | Preview SQL without executing |
-| `--force` | | Override checksum mismatches / skip confirmation prompts |
+| `--force` | | Override checksum mismatches (does **not** skip safety checks) |
+| `--strict` | | Fail on safety warnings (destructive SQL, missing Down, transaction-hostile SQL) |
+| `--allow-destructive` | | Acknowledge destructive warnings when `--strict` is used |
+| `--yes` | `-y` | Non-interactive: safe auto-run prompts default to yes (never destructive actions) |
+| `--drift-handling <mode>` | | Override `DRIFT_HANDLING`: `auto`, `prompt`, `reject` |
 | `--verbose` | `-v` | Detailed colored logging with execution timing |
 | `--dsn <url>` | `-d` | Database connection string (overrides `.vm` / env var) |
 | `--path <dir>` | `-p` | Path to migrations directory (default: `migrations`) |
@@ -1064,20 +1071,31 @@ See [CONFIG_ENHANCED.md](CONFIG_ENHANCED.md) for detailed configuration guide.
 | `--verbose` | `-v` | Detailed logging |
 | `--dsn <url>` | `-d` | Database connection string |
 
+### `vm check` Flags
+
+| Flag | Description |
+|------|-------------|
+| `--path <dir>` | Migrations directory to check |
+| `--db` | Also connect to the database and verify executed files/checksums |
+| `--strict` | Treat warnings as errors (use in CI) |
+| `--allow-destructive` | Do not fail strict mode on destructive-SQL warnings |
+| `--json` | Machine-readable report (`path`, `files`, `migrations`, `issues`) |
+
 ### `vm extensions` Sub-commands
 
 | Command | Description |
 |---------|-------------|
-| `vm extensions migrate` | Create `extensions.sql` template (first run) or install extensions |
-| `vm extensions drop` | Drop all extensions defined in `extensions.sql` |
+| `vm extensions migrate` | Create `extensions.sql` template (first run) or install enabled extensions |
+| `vm extensions drop` | Drop all enabled extensions (prompts; `--force` skips) |
 | `vm extensions drop --step` | Drop extensions one at a time with confirmation |
 
 ### `vm functions` Sub-commands
 
 | Command | Description |
 |---------|-------------|
-| `vm functions migrate` | Create `functions.sql` template (first run) or install functions |
-| `vm functions drop` | Drop all common trigger functions |
+| `vm functions migrate` | Create `functions.sql` template (first run) or install/update functions |
+| `vm functions regenerate` | Regenerate the auto-generated section while preserving custom functions |
+| `vm functions drop` | Drop all common trigger functions (prompts; `--force` skips) |
 | `vm functions drop --step` | Drop functions one at a time with confirmation |
 
 ### `vm enums` Sub-commands
@@ -1090,25 +1108,39 @@ See [CONFIG_ENHANCED.md](CONFIG_ENHANCED.md) for detailed configuration guide.
 | `vm enums drop --force` | Drop all enum types without confirmation |
 | `vm enums status` | Show which enum types are present in the live database vs `enums.sql` |
 
-> **Auto-run:** `vm migrate` automatically runs `vm enums migrate` before applying migrations when `AUTO_RUN_ENUMS=true` (default). Set `AUTO_RUN_ENUMS=false` in your `.vm` file to disable.
+> **Auto-run:** `vm migrate` installs missing enum types / missing values before applying migrations when `AUTO_RUN_ENUMS=true` (default). It never drops types based on commented template examples. Set `AUTO_RUN_ENUMS=false` in your `.vm` file to disable.
 
 ### `vm uninstall` Flags
 
 | Flag | Description |
 |------|-------------|
 | `--yes` | Skip confirmation prompt |
-| `--keep-path` | Remove the binary but leave shell profile `PATH` entries untouched |
+| `--keep-path` | Remove the binary but leave shell profile / Windows user PATH entries untouched |
+| `--dry-run` | Show what would be removed without deleting anything |
+| `--binary <path>` | Explicit binary path for custom installs |
 
-> Removes the `vm` binary located via `which vm` or known install paths, and cleans any `PATH` export lines added by `vm install.sh` from `~/.bashrc`, `~/.zshrc`, `~/.profile`, and `~/.bash_profile`.
+> Removes the running `vm` binary (or `--binary`), cleans `vm.bak.*` / `.vm-upgrade-*` files, and removes PATH lines added by the install scripts. On Windows the running `.exe` is deleted after vm exits.
+
+### `vm upgrade`
+
+| Flag | Description |
+|------|-------------|
+| `--check` | Only report whether a newer version exists |
+| `--force` | Reinstall even if already current |
+| `--dry-run` | Show the download URL/target without replacing the binary |
+
+`vm upgrade` compares semantic versions (downgrades and ignored), downloads the matching release asset directly on Linux/macOS, verifies the new binary's `--version`, and falls back to the install script on Windows or when the direct download fails.
 
 ### Global Flags (all commands)
 
 | Flag | Alias | Description |
 |------|-------|-------------|
-| `--dsn <url>` | `-d` | Database connection string |
-| `--path <dir>` | `-p` | Path to migrations directory |
+| `--non-interactive` | | Never prompt; also `VM_NON_INTERACTIVE=1` |
+| `--no-color` | | Disable ANSI colours; also `VM_NO_COLOR=1` |
 | `--version` | | Print the current version |
 | `--help` | `-h` | Show help for a command |
+
+Per-command flags `--dsn` / `--path` are listed with each command. Environment variable `DATABASE_URL` is respected by every DB command.
 
 ## Examples
 
@@ -1492,8 +1524,8 @@ WHERE ru.role_id = 456;
 
 The tool provides helpful warnings and errors:
 
-- ⚠️ Missing UP section in migration file
-- ⚠️ Missing DOWN section in migration file
+- ❌ Missing UP section in migration file (safety checker error)
+- ⚠️ Missing DOWN section in migration file (rollback warning)
 - ❌ Database connection failures
 - ❌ Invalid migration names
 - ❌ SQL execution errors with detailed messages
@@ -1514,7 +1546,7 @@ vorzela-migrate/
 ## Tips & Best Practices
 
 1. **Always use snake_case** for migration names: `users`, `add_email_column`, `create_indexes`
-2. **Use transactions** in your migrations (BEGIN/COMMIT) for safety
+2. **Do not add `BEGIN`/`COMMIT`** inside migrations — vm manages transactions on PostgreSQL (and documents MySQL's implicit DDL commits)
 3. **Test rollbacks** to ensure your DOWN sections work correctly
 4. **Separate concerns** - one migration per table/feature
 5. **Use descriptive names** that clearly indicate what the migration does

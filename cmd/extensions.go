@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -73,24 +72,17 @@ var ExtensionsCommand = &cli.Command{
 					output.Error(fmt.Sprintf("Failed to read %s: %v", extensionsPath, err))
 					return err
 				}
-
-				// ── Hash-based change detection ─────────────────────────────────
-				hashFile := filepath.Join(cfg.MigrationPath, ".vm_extensions_hash")
-				currentHash := fmt.Sprintf("%x", sha256.Sum256(sqlContent))
-
-				if existing, readErr := os.ReadFile(hashFile); readErr == nil {
-					if string(existing) == currentHash {
-						output.Info("Extensions already up to date (no changes since last sync)")
-						return nil
-					}
+				if err := migration.ValidateExtensionsFile(extensionsPath); err != nil {
+					output.Error("%v", err)
+					return err
 				}
 
 				content := string(sqlContent)
-				enabled, disabled := migration.ParseAllExtensionNames(content)
+				enabled, _ := migration.ParseAllExtensionNames(content)
 				ctx := context.Background()
 
-				if len(enabled) == 0 && len(disabled) == 0 {
-					output.Warning("No extensions found in extensions.sql")
+				if len(enabled) == 0 {
+					output.Warning("No enabled extensions found in extensions.sql")
 					output.Info("Uncomment the extensions you need in extensions.sql")
 					return nil
 				}
@@ -113,35 +105,28 @@ var ExtensionsCommand = &cli.Command{
 				}
 
 				// ── Apply enabled extensions (CREATE EXTENSION IF NOT EXISTS is idempotent) ──
-				if len(enabled) > 0 {
-					output.Info(fmt.Sprintf("Syncing extensions from %s...", extensionsPath))
-					if err := db.Exec(ctx, content); err != nil {
+				output.Info(fmt.Sprintf("Syncing extensions from %s...", extensionsPath))
+				statements, parseErr := migration.SplitSQLStatements(content)
+				if parseErr != nil {
+					output.Error("Failed to parse extensions.sql: %v", parseErr)
+					return parseErr
+				}
+				for _, stmt := range statements {
+					if err := db.Exec(ctx, stmt); err != nil {
 						output.Error(fmt.Sprintf("Failed to install extensions: %v", err))
 						return err
 					}
-					for _, s := range states {
-						if s.existed {
-							output.Println("  · already  %s", s.name)
-						} else {
-							output.Println("  + installed %s", s.name)
-						}
+				}
+				for _, s := range states {
+					if s.existed {
+						output.Println("  · already  %s", s.name)
+					} else {
+						output.Println("  + installed %s", s.name)
 					}
 				}
 
-				// ── Drop disabled / commented-out extensions ──────────────────────
-				droppedCount := 0
-				for _, ext := range disabled {
-					dropSQL := fmt.Sprintf("DROP EXTENSION IF EXISTS %s CASCADE;", ext)
-					if err := db.Exec(ctx, dropSQL); err != nil {
-						output.Warning(fmt.Sprintf("Failed to drop extension %s: %v", ext, err))
-						continue
-					}
-					output.Println("  - dropped  %s", ext)
-					droppedCount++
-				}
-
-				// ── Persist hash ────────────────────────────────────────────────
-				_ = os.WriteFile(hashFile, []byte(currentHash), 0644)
+				// Commented-out entries are deliberately NOT dropped here.
+				// Use `vm extensions drop` (explicit) to remove extensions.
 
 				installedCount := 0
 				for _, s := range states {
@@ -149,7 +134,7 @@ var ExtensionsCommand = &cli.Command{
 						installedCount++
 					}
 				}
-				output.Success(fmt.Sprintf("Extension sync complete (installed: %d, dropped: %d)", installedCount, droppedCount))
+				output.Success(fmt.Sprintf("Extension sync complete (installed: %d)", installedCount))
 				return nil
 			},
 		},
@@ -173,6 +158,10 @@ var ExtensionsCommand = &cli.Command{
 					Aliases: []string{"s"},
 					Usage:   "drop extensions one by one with confirmation",
 				},
+				&cli.BoolFlag{
+					Name:  "force",
+					Usage: "skip the drop confirmation prompt",
+				},
 			},
 			Action: func(c *cli.Context) error {
 				// Load configuration
@@ -180,6 +169,9 @@ var ExtensionsCommand = &cli.Command{
 				if err != nil {
 					output.Error(err.Error())
 					return err
+				}
+				if d := migration.DetectDialect(cfg.DatabaseURL); d != migration.PostgreSQL {
+					return fmt.Errorf("vm extensions is not supported on %s — CREATE EXTENSION is a PostgreSQL-only feature", d)
 				}
 
 				// Read extensions.sql to see which ones are enabled
@@ -212,10 +204,7 @@ var ExtensionsCommand = &cli.Command{
 				if stepMode {
 					output.Info("Dropping extensions step by step...")
 					for _, ext := range enabledExtensions {
-						fmt.Printf("Drop extension %s? [y/N]: ", ext)
-						var response string
-						fmt.Scanln(&response)
-						if response != "y" && response != "Y" {
+						if !output.Confirm(fmt.Sprintf("Drop extension %s?", ext)) {
 							output.Info(fmt.Sprintf("Skipped: %s", ext))
 							continue
 						}
@@ -228,11 +217,8 @@ var ExtensionsCommand = &cli.Command{
 						output.Success(fmt.Sprintf("Dropped: %s", ext))
 					}
 				} else {
-					output.Warning("⚠️  This will drop all enabled extensions from extensions.sql")
-					fmt.Printf("Are you sure? [y/N]: ")
-					var response string
-					fmt.Scanln(&response)
-					if response != "y" && response != "Y" {
+					output.Warning("This will drop all enabled extensions from extensions.sql")
+					if !c.Bool("force") && !output.Confirm("Are you sure?") {
 						output.Info("Cancelled")
 						return nil
 					}

@@ -36,6 +36,7 @@ DRIFT_HANDLING=prompt
 
 AUTO_RUN_EXTENSIONS=true   # Run extensions.sql before migrate (if file exists)
 AUTO_RUN_FUNCTIONS=true    # Run functions.sql before migrate (if file exists)
+AUTO_RUN_ENUMS=true        # Run enums.sql before migrate (if file exists)
 
 # Set to false if you want to manually control execution order
 # (Not recommended unless you have a specific reason)
@@ -59,6 +60,9 @@ AUTO_RUN_FUNCTIONS=true    # Run functions.sql before migrate (if file exists)
 
 # Force verbose logging
 # VERBOSE=true
+
+# Fail on safety warnings (destructive SQL, missing Down section)
+# STRICT=false
 
 # ============================================
 # Other Settings

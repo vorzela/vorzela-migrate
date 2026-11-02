@@ -1,10 +1,7 @@
 package cmd
 
 import (
-	"bufio"
 	"fmt"
-	"os"
-	"strings"
 	"time"
 
 	"github.com/urfave/cli/v2"
@@ -16,7 +13,7 @@ import (
 
 var RefreshCommand = &cli.Command{
 	Name:  "refresh",
-	Usage: "Drop all tables (via DOWN migrations) then re-run all migrations",
+	Usage: "Roll back all migrations (Down) then re-run all migrations",
 	Flags: []cli.Flag{
 		&cli.StringFlag{
 			Name:    "dsn",
@@ -53,14 +50,15 @@ var RefreshCommand = &cli.Command{
 			return err
 		}
 
+		if report := migration.CheckMigrationFiles(cfg.MigrationPath); report.HasErrors() {
+			output.Error("Migration safety check failed: %d error(s); run 'vm check' for details", report.Errors())
+			return fmt.Errorf("migration safety check failed")
+		}
+
 		// Confirmation prompt
 		if !c.Bool("force") {
-			output.Warning("⚠️  This will DROP all tables and re-run every migration. Data will be lost!")
-			fmt.Print("Are you sure you want to continue? (yes/no): ")
-			reader := bufio.NewReader(os.Stdin)
-			answer, _ := reader.ReadString('\n')
-			answer = strings.TrimSpace(strings.ToLower(answer))
-			if answer != "yes" && answer != "y" {
+			output.Warning("This will roll back all migrations and re-run every migration. Data will be lost!")
+			if !output.ConfirmDefault("Are you sure you want to continue?", false) {
 				output.Info("Refresh cancelled.")
 				return nil
 			}
@@ -74,6 +72,14 @@ var RefreshCommand = &cli.Command{
 		}
 		defer db.Close()
 
+		// Hold the migration lock for the whole destructive rebuild.
+		releaseLock, err := acquireMigrationLock(cfg)
+		if err != nil {
+			output.Error("Failed to acquire migration lock: %v", err)
+			return err
+		}
+		defer releaseLock()
+
 		// Initialize migration table
 		if err := migration.InitMigrationTable(db, cfg.DatabaseURL); err != nil {
 			output.Error("Failed to initialize migration table: %v", err)
@@ -83,15 +89,19 @@ var RefreshCommand = &cli.Command{
 		overall := time.Now()
 
 		output.Info("Dropping all migrations...")
-		dropCount, dropDur, err := migration.RollbackAllMigrations(db, cfg.MigrationPath, cfg.DatabaseURL, "Dropped")
+		dropCount, dropDur, err := rollbackAllMigrationsEnhanced(cfg, db)
 		if err != nil {
 			output.Error("Drop failed: %v", err)
 			return fmt.Errorf("drop failed: %w", err)
 		}
 		output.Success("Dropped %d migration(s) in %s", dropCount, dropDur.Round(time.Millisecond))
 
+		if err := runAutoPrerequisites(c, &cfg, &db); err != nil {
+			return err
+		}
+
 		output.Info("Running all migrations...")
-		migrateCount, migrateDur, err := migration.RunMigrations(db, cfg.MigrationPath, cfg.DatabaseURL)
+		migrateCount, migrateDur, err := runPendingMigrationsEnhanced(cfg, db)
 		if err != nil {
 			output.Error("Migration failed: %v", err)
 			return fmt.Errorf("migration failed: %w", err)

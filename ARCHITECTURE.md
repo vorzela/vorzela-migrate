@@ -22,41 +22,51 @@ vorzela-migrate/
 │
 ├── cmd/                             # CLI Commands
 │   ├── make.go                      # Create new migration
-│   ├── migrate.go                   # Run pending migrations
-│   ├── rollback.go                  # Rollback migrations
-│   ├── refresh.go                   # Rollback all + re-run
-│   ├── fresh.go                     # Drop tables + migrate
-│   └── status.go                    # Show migration status
+│   ├── init.go                     # Create .vm + migrations dir
+│   ├── check.go                    # Static/db safety checker (vm check)
+│   ├── migrate.go                  # Run pending migrations
+│   ├── rollback.go                 # Rollback migrations
+│   ├── refresh.go                  # Rollback all + re-run
+│   ├── fresh.go                    # Rollback all + re-run (destructive)
+│   └── status.go                   # Show migration status (human/JSON)
 │
 ├── internal/                        # Internal packages
 │   ├── config/
-│   │   └── config.go                # Configuration loading
+│   │   ├── config.go               # Configuration loading (precedence)
+│   │   └── lint.go                 # .vm linter
 │   ├── database/
-│   │   └── connection.go            # Database connection + auto-detection
+│   │   └── connection.go           # DB connect + ping + driver detection
 │   ├── db/
-│   │   ├── db.go                    # DB interface (adapter pattern)
-│   │   ├── postgres.go              # PostgreSQL adapter (pgx v5)
-│   │   └── mysql.go                 # MySQL adapter (database/sql)
+│   │   ├── db.go                   # DB interface (adapter pattern)
+│   │   ├── postgres.go             # PostgreSQL adapter (pgx v5)
+│   │   └── mysql.go                # MySQL adapter + placeholder translation
 │   └── migration/
-│       ├── types.go                 # Data structures (MigrationFile, Migration)
-│       ├── create.go                # Migration creation logic
-│       ├── relationship.go          # Relationship & foreign key generation
-│       ├── executor.go              # Migration execution logic
-│       ├── status.go                # Migration status display
-│       └── dialect.go               # Dialect-aware SQL generation
+│       ├── types.go                # Data structures (MigrationFile, Migration)
+│       ├── create.go               # Create/add_/trigger templates
+│       ├── relationship.go         # Relationship & foreign key generation
+│       ├── executor.go             # Standard executor + shared helpers
+│       ├── enhanced_executor.go    # Checksums/lock/drift/transaction executor
+│       ├── sqlparse.go            # Quote/dollar-aware statement splitter
+│       ├── safety.go              # vm check engine
+│       ├── drift.go               # Schema inspection + drift repair
+│       ├── schema_parser.go       # Migration SQL → expected schema
+│       ├── validation.go          # Legacy content validation
+│       ├── lock.go                # Session-pinned advisory/named locks
+│       ├── online.go              # Online DDL helpers
+│       ├── status.go              # Status report (human/JSON)
+│       └── dialect.go             # Dialect-aware SQL generation
 │
 ├── migrations/                      # Migration files (generated)
-│   ├── .gitkeep
-│   ├── TIMESTAMP_migration1.sql
-│   └── TIMESTAMP_migration2.sql
+│   └── .gitkeep
 │
 ├── README.md                        # User documentation
-├── INSTALL.md                       # Installation guide (all platforms)
-├── NAMING_CONVENTIONS.md            # Naming conventions guide
+├── LLM.md                           # Detailed agent/LLM reference
+├── AGENTS.md                        # Short agent contract
 ├── ARCHITECTURE.md                  # This file
 ├── install.sh                       # Auto-install script (macOS/Linux)
 ├── install.ps1                      # Auto-install script (Windows)
-└── .vm.example                 # Example config file
+├── example.vm                       # Annotated .vm example
+└── .vm.example                      # Short .vm example
 ```
 
 ## Core Components
@@ -66,18 +76,22 @@ vorzela-migrate/
 The CLI layer uses `urfave/cli` v2 for command-line parsing:
 
 **Commands**:
-- `make migration <name>` - Creates new migration files with templates
-- `migrate` - Runs pending migrations  
-- `rollback [--steps N]` - Rolls back last N batches (default: 1)
-- `refresh` - Drops all tables and re-runs all migrations
-- `fresh --seed` - Drops tables with confirmation warnings
-- `status` - Shows current migration status
+- `init` - Creates `.vm` and the migrations directory (safe/idempotent)
+- `check` - Static safety checker (optional live checksum DB check)
+- `make migration <name>` - Creates new migration files with dialect-aware templates
+- `migrate` - Runs pending migrations (safety check, checksums, lock, drift)
+- `rollback [--steps N|all]` - Rolls back batches or one named migration
+- `refresh` - Runs all Down migrations, then all Up migrations
+- `fresh` - Same as refresh, with a stronger destructive warning
+- `status` - Shows current migration status (human or `--json`)
+- `upgrade` / `uninstall` - Tool lifecycle management
 
 **Design**:
 - No `--env` flag (single migrations folder for all environments)
 - DSN from CLI flags, environment variables, or `.vm` config file
 - Database type auto-detected from DSN URL scheme
 - Batch tracking for organized rollback
+- `--non-interactive` / `VM_NON_INTERACTIVE=1` for agents and CI
 
 ### 2. Database Abstraction Layer (internal/db/*)
 
@@ -90,20 +104,19 @@ type DB interface {
     Query(ctx context.Context, sql string, args ...interface{}) (Rows, error)
     QueryRow(ctx context.Context, sql string, args ...interface{}) Row
     Ping(ctx context.Context) error
-    Close() error
+    Close()
 }
 ```
 
 **Adapters**:
 - **postgres.go**: Wraps pgx v5 `pgxpool.Pool`
-  - Connection pooling (configurable)
-  - Automatic retry logic
-  - Prepared statement support
+  - Connection pooling
+  - `$1` placeholders
 
 - **mysql.go**: Wraps `database/sql` with `go-sql-driver/mysql`
   - Standard library based
-  - Connection pooling (configurable)
-  - Multi-statement support
+  - Translates `$1` placeholders to `?` outside strings/comments
+  - Normalises `mysql://` URLs to driver DSNs
 
 **Connection Logic** (`internal/database/connection.go`):
 - Auto-detects database type from DSN:

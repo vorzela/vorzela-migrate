@@ -136,3 +136,35 @@ func TestPrintVersionNoticeNoPanicOnError(t *testing.T) {
 
 	PrintVersionNotice()
 }
+
+func TestIsNewer(t *testing.T) {
+	tests := []struct {
+		name      string
+		current   string
+		candidate string
+		want      bool
+		wantErr   bool
+	}{
+		{"newer patch", "v2.2.4", "v2.2.6", true, false},
+		{"same", "v2.2.4", "v2.2.4", false, false},
+		{"older is not an update", "v2.2.6", "v2.2.4", false, false},
+		{"major", "1.9.9", "2.0.0", true, false},
+		{"prerelease older than release", "1.0.0-beta", "1.0.0", true, false},
+		{"release newer than prerelease is not a downgrade", "1.0.0", "1.0.0-beta", false, false},
+		{"prerelease ordering", "1.0.0-alpha.1", "1.0.0-alpha.2", true, false},
+		{"dev always updates", "dev", "v2.2.9", true, false},
+		{"invalid candidate", "1.0.0", "not-a-version", false, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := IsNewer(tt.current, tt.candidate)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("err=%v wantErr=%v", err, tt.wantErr)
+			}
+			if !tt.wantErr && got != tt.want {
+				t.Fatalf("IsNewer(%q,%q)=%v want %v", tt.current, tt.candidate, got, tt.want)
+			}
+		})
+	}
+}

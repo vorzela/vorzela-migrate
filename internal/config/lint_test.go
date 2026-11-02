@@ -172,12 +172,12 @@ BADLINE
 	}
 	found := false
 	for _, iss := range issues {
-		if iss.Severity == LintWarning && iss.Key == "BADLINE" {
+		if iss.Severity == LintError && iss.Key == "BADLINE" {
 			found = true
 		}
 	}
 	if !found {
-		t.Error("expected LintWarning for malformed line")
+		t.Error("expected LintError for malformed line")
 	}
 }
 

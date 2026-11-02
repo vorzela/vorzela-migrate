@@ -76,6 +76,50 @@ func DropTableSQL(d Dialect, table string) string {
 	return fmt.Sprintf("DROP TABLE IF EXISTS %s CASCADE;", table)
 }
 
+// CreateIndexSQL returns a CREATE INDEX statement for scaffolds. MySQL 8.0
+// does not support IF NOT EXISTS for CREATE INDEX (MariaDB does); omitting it
+// keeps the generated migration portable across both.
+func CreateIndexSQL(d Dialect, unique bool, name, table string, columns ...string) string {
+	colList := strings.Join(columns, ", ")
+	if IsMySQLFamily(d) {
+		if unique {
+			return fmt.Sprintf("CREATE UNIQUE INDEX %s ON %s(%s);", name, table, colList)
+		}
+		return fmt.Sprintf("CREATE INDEX %s ON %s(%s);", name, table, colList)
+	}
+	uniqueWord := ""
+	if unique {
+		uniqueWord = "UNIQUE "
+	}
+	return fmt.Sprintf("CREATE %sINDEX IF NOT EXISTS %s ON %s(%s);", uniqueWord, name, table, colList)
+}
+
+// DropIndexSQL returns a portable DROP INDEX statement.
+func DropIndexSQL(d Dialect, name, table string) string {
+	if IsMySQLFamily(d) {
+		return fmt.Sprintf("DROP INDEX %s ON %s;", name, table)
+	}
+	return fmt.Sprintf("DROP INDEX IF EXISTS %s;", name)
+}
+
+// AddColumnSQL returns a portable ALTER TABLE ADD COLUMN statement. MySQL 8.0
+// does not support IF NOT EXISTS here; MariaDB does, but omitting it keeps the
+// statement valid on both.
+func AddColumnSQL(d Dialect, table, column, definition string) string {
+	if IsMySQLFamily(d) {
+		return fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s;", table, column, definition)
+	}
+	return fmt.Sprintf("ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s;", table, column, definition)
+}
+
+// DropColumnSQL returns a portable ALTER TABLE DROP COLUMN statement.
+func DropColumnSQL(d Dialect, table, column string) string {
+	if IsMySQLFamily(d) {
+		return fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s;", table, column)
+	}
+	return fmt.Sprintf("ALTER TABLE %s DROP COLUMN IF EXISTS %s;", table, column)
+}
+
 // CreateMigrationTableSQL returns the CREATE TABLE statement for migrations table based on dialect
 func CreateMigrationTableSQL(dialect Dialect) string {
 	switch dialect {

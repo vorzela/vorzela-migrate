@@ -9,7 +9,7 @@
 
 **Solution**:
 ```bash
-# Install Go 1.21+ from https://golang.org/dl
+# Install Go 1.27+ from https://go.dev/dl
 # Verify installation
 go version
 ```
@@ -104,8 +104,7 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO myuser;
 
 **Solution**: Check the migrations directory:
 ```bash
-ls migrations/dev/
-ls migrations/server/
+ls migrations/
 ```
 
 Use a different name if needed:
@@ -170,7 +169,7 @@ The migrations table is automatically created the first time you run `vm migrate
 3. Check foreign key constraints
 4. Test SQL manually:
    ```bash
-   psql $DATABASE_URL -f migrations/dev/timestamp_migration.sql
+   psql $DATABASE_URL -f migrations/<timestamp>_<name>.sql
    ```
 
 ---
@@ -234,15 +233,15 @@ vm status --dsn $DATABASE_URL
 **Solution**:
 1. Verify migration files exist:
    ```bash
-   ls migrations/dev/
+   ls migrations/
    ```
 2. Check file naming:
    - Must have timestamp prefix: `1234567890_name.sql`
    - Must have .sql extension
 3. Verify permissions on migration directory:
    ```bash
-   ls -la migrations/dev/
-   chmod 755 migrations/dev/
+   ls -la migrations/
+   chmod 755 migrations/
    ```
 
 ---
@@ -250,26 +249,14 @@ vm status --dsn $DATABASE_URL
 ### Environment Issues
 
 #### "invalid environment"
-**Problem**: Using invalid environment flag
+**Problem**: An old guide mentions `--env`; current vm has no `--env` flag.
 
-**Solution**: Only use 'dev' or 'server':
+**Solution**: Use a single `migrations/` directory for every environment and choose
+the database with `DATABASE_URL` / `.vm` / `--dsn`:
 ```bash
-vm migrate --env dev        # ✓ Correct
-vm migrate --env server     # ✓ Correct
-vm migrate --env production # ✗ Invalid
-```
-
-#### "Wrong environment migrations running"
-**Problem**: Migrations from wrong environment executed
-
-**Solution**: Specify correct environment:
-```bash
-# Check current
-vm status --dsn $DATABASE_URL
-
-# Run correct environment
-vm migrate --dsn $DATABASE_URL --env dev
-vm migrate --dsn $DATABASE_URL --env server
+vm lint
+vm check --json
+vm migrate --dsn "$DATABASE_URL"
 ```
 
 ---
@@ -445,7 +432,7 @@ psql $DATABASE_URL -c "SELECT * FROM migrations;"
 find migrations -name "*.sql"
 
 # 5. Test manual SQL
-psql $DATABASE_URL -f migrations/dev/your_migration.sql
+psql $DATABASE_URL -f migrations/<timestamp>_<name>.sql
 
 # 6. Check file permissions
 ls -la migrations/

@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -71,24 +70,15 @@ var FunctionsCommand = &cli.Command{
 					output.Error(fmt.Sprintf("Failed to read %s: %v", functionsPath, err))
 					return err
 				}
+				if err := migration.ValidateFunctionsFile(functionsPath); err != nil {
+					output.Error("%v", err)
+					return err
+				}
 
 				content := string(sqlContent)
 
-				// ── Hash-based change detection ─────────────────────────────────
-				// Store a SHA256 of functions.sql next to the file.  If the hash
-				// hasn't changed since the last run, there is nothing to re-apply.
-				hashFile := filepath.Join(cfg.MigrationPath, ".vm_functions_hash")
-				currentHash := fmt.Sprintf("%x", sha256.Sum256(sqlContent))
-
-				if existing, readErr := os.ReadFile(hashFile); readErr == nil {
-					if string(existing) == currentHash {
-						output.Info("Functions already up to date (no changes since last sync)")
-						return nil
-					}
-				}
-
 				// ── Pre-flight: classify each function ──────────────────────────
-				enabled, disabled := migration.ParseAllFunctionNames(content)
+				enabled, _ := migration.ParseAllFunctionNames(content)
 				ctx := context.Background()
 
 				type fnState struct {
@@ -111,9 +101,16 @@ var FunctionsCommand = &cli.Command{
 
 				// ── Apply ───────────────────────────────────────────────────────
 				output.Info(fmt.Sprintf("Syncing functions from %s...", functionsPath))
-				if err := db.Exec(ctx, content); err != nil {
-					output.Error(fmt.Sprintf("Failed to apply functions: %v", err))
-					return err
+				statements, parseErr := migration.SplitSQLStatements(content)
+				if parseErr != nil {
+					output.Error(fmt.Sprintf("Failed to parse functions.sql: %v", parseErr))
+					return parseErr
+				}
+				for _, stmt := range statements {
+					if err := db.Exec(ctx, stmt); err != nil {
+						output.Error(fmt.Sprintf("Failed to apply functions: %v", err))
+						return err
+					}
 				}
 
 				createdCount, updatedCount := 0, 0
@@ -127,22 +124,35 @@ var FunctionsCommand = &cli.Command{
 					}
 				}
 
-				// ── Drop disabled / commented-out functions ──────────────────────
-				droppedCount := 0
-				for _, fn := range disabled {
-					dropSQL := fmt.Sprintf("DROP FUNCTION IF EXISTS %s() CASCADE;", fn)
-					if err := db.Exec(ctx, dropSQL); err != nil {
-						output.Warning(fmt.Sprintf("Failed to drop function %s: %v", fn, err))
-						continue
-					}
-					output.Println("  - dropped  %s()", fn)
-					droppedCount++
+				// Commented-out entries are deliberately NOT dropped here.
+				// Use `vm functions drop` (explicit) to remove functions.
+
+				output.Success(fmt.Sprintf("Function sync complete (created: %d, updated: %d)", createdCount, updatedCount))
+				return nil
+			},
+		},
+		{
+			Name:  "regenerate",
+			Usage: "Regenerate the auto-generated section of functions.sql, preserving custom functions",
+			Flags: []cli.Flag{
+				&cli.StringFlag{
+					Name:    "path",
+					Aliases: []string{"p"},
+					Value:   "./migrations",
+					Usage:   "path to migrations directory",
+				},
+			},
+			Action: func(c *cli.Context) error {
+				cfg, err := config.LoadConfig("", c.String("path"))
+				if err != nil {
+					output.Error(err.Error())
+					return err
 				}
-
-				// ── Persist hash so next run can detect no-change ───────────────
-				_ = os.WriteFile(hashFile, []byte(currentHash), 0644)
-
-				output.Success(fmt.Sprintf("Function sync complete (created: %d, updated: %d, dropped: %d)", createdCount, updatedCount, droppedCount))
+				if err := migration.RegenerateFunctions(cfg.MigrationPath); err != nil {
+					output.Error("%v", err)
+					return err
+				}
+				output.Success("functions.sql regenerated")
 				return nil
 			},
 		},
@@ -166,6 +176,10 @@ var FunctionsCommand = &cli.Command{
 					Aliases: []string{"s"},
 					Usage:   "drop functions one by one with confirmation",
 				},
+				&cli.BoolFlag{
+					Name:  "force",
+					Usage: "skip the drop confirmation prompt",
+				},
 			},
 			Action: func(c *cli.Context) error {
 				// Load configuration
@@ -173,6 +187,9 @@ var FunctionsCommand = &cli.Command{
 				if err != nil {
 					output.Error(err.Error())
 					return err
+				}
+				if d := migration.DetectDialect(cfg.DatabaseURL); d != migration.PostgreSQL {
+					return fmt.Errorf("vm functions is not supported on %s — PL/pgSQL trigger functions are a PostgreSQL-only feature", d)
 				}
 
 				// Connect to database
@@ -197,10 +214,7 @@ var FunctionsCommand = &cli.Command{
 				if stepMode {
 					output.Info("Dropping functions step by step...")
 					for _, fn := range functions {
-						fmt.Printf("Drop function %s? [y/N]: ", fn)
-						var response string
-						fmt.Scanln(&response)
-						if response != "y" && response != "Y" {
+						if !output.Confirm(fmt.Sprintf("Drop function %s?", fn)) {
 							output.Info(fmt.Sprintf("Skipped: %s", fn))
 							continue
 						}
@@ -213,6 +227,10 @@ var FunctionsCommand = &cli.Command{
 						output.Success(fmt.Sprintf("Dropped: %s", fn))
 					}
 				} else {
+					if !c.Bool("force") && !output.Confirm("Drop all common functions?") {
+						output.Info("Cancelled")
+						return nil
+					}
 					output.Info("Dropping all common functions...")
 					for _, fn := range functions {
 						dropSQL := fmt.Sprintf("DROP FUNCTION IF EXISTS %s() CASCADE;", fn)
@@ -220,7 +238,7 @@ var FunctionsCommand = &cli.Command{
 							output.Error(fmt.Sprintf("Failed to drop %s: %v", fn, err))
 							continue
 						}
-						output.Info(fmt.Sprintf("✓ Dropped: %s", fn))
+						output.Info(fmt.Sprintf("Dropped: %s", fn))
 					}
 					output.Success("All functions dropped successfully")
 				}
