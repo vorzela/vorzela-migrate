@@ -96,7 +96,7 @@ This is the closest workflow to Go itself. It builds and installs a binary named
 `vm` without root:
 
 ```bash
-GOBIN="$HOME/.local/bin" go install github.com/vorzela/vorzela-migrate/v2/cmd/vm@v2.3.3
+GOBIN="$HOME/.local/bin" go install github.com/vorzela/vorzela-migrate/v2/cmd/vm@v2.3.4
 vm --version
 ```
 
@@ -203,7 +203,7 @@ sudo mv vm /usr/local/bin/  # Linux/macOS
 
 **Build with version info:**
 ```bash
-go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/v2/internal/version.CurrentVersion=v2.3.3'" -o vm ./cmd/vm
+go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/v2/internal/version.CurrentVersion=v2.3.4'" -o vm ./cmd/vm
 ```
 
 ### Verify Installation
@@ -212,7 +212,7 @@ After installation, verify it works:
 
 ```bash
 vm --version
-# Should output: vm version v2.3.3
+# Should output: vm version v2.3.4
 
 vm --help
 # Shows all available commands
@@ -415,7 +415,7 @@ vm is designed to live in one per-user directory, not `/usr/local/bin`:
 
 ```bash
 # Preferred: Go installs it into ~/.local/bin
-GOBIN="$HOME/.local/bin" go install github.com/vorzela/vorzela-migrate/v2/cmd/vm@v2.3.3
+GOBIN="$HOME/.local/bin" go install github.com/vorzela/vorzela-migrate/v2/cmd/vm@v2.3.4
 
 # Or build and move it yourself (no sudo)
 go build -o vm ./cmd/vm

@@ -288,7 +288,7 @@ main() {
             print_status "Fallback instructions:"
             print_status "  1) Install Go (https://go.dev/dl/) and re-run this script"
             print_status "  2) Or use Go directly (no root):"
-            print_status "     GOBIN=\"${INSTALL_DIR}\" go install github.com/${GITHUB_REPO}/cmd/vm@latest"
+            print_status "     GOBIN=\"${INSTALL_DIR}\" go install github.com/${GITHUB_REPO}/v2/cmd/vm@latest"
             print_status "  3) Or build manually:"
             print_status "     git clone https://github.com/${GITHUB_REPO}.git"
             print_status "     cd vorzela-migrate"

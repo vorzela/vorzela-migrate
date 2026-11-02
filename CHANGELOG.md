@@ -2,6 +2,13 @@
 
 All notable changes to Vorzela Migration Tool are documented in this file.
 
+## [2.3.4] - 2026-11-02
+
+### Fixed
+
+- Install-script fallback `go install` path now includes the `/v2` module
+  path (`.../v2/cmd/vm@latest`), matching the semantic import version.
+
 ## [2.3.3] - 2026-11-02
 
 ### Fixed

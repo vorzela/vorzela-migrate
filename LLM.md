@@ -104,7 +104,7 @@ Detection logic (source of truth: `internal/migration/dialect.go` + `internal/da
 Use the user-local binary, never `sudo` or `/usr/local/bin`:
 
 ```bash
-GOBIN="$HOME/.local/bin" go install github.com/vorzela/vorzela-migrate/v2/cmd/vm@v2.3.3
+GOBIN="$HOME/.local/bin" go install github.com/vorzela/vorzela-migrate/v2/cmd/vm@v2.3.4
 ```
 
 Canonical paths: `~/.local/bin/vm` (Linux/macOS) and

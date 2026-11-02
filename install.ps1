@@ -146,7 +146,7 @@ function Install-Vorzela {
             Write-Status "  git clone https://github.com/$GitHubRepo.git"
             Write-Status "  cd vorzela-migrate"
             if ($LatestRelease) { Write-Status "  git checkout $LatestRelease" }
-            Write-Status "  GOBIN=\"$InstallDir\" go install github.com/$GitHubRepo/cmd/vm@latest"
+            Write-Status "  GOBIN=\"$InstallDir\" go install github.com/$GitHubRepo/v2/cmd/vm@latest"
             Write-Status "  # or: go build -o vm.exe ./cmd/vm"
             Write-Status "  Move-Item vm.exe \"$InstallDir\vm.exe\""
             exit 1
@@ -156,7 +156,7 @@ function Install-Vorzela {
         Write-Warning "No release tag detected. Try building from source:"
         Write-Status "  git clone https://github.com/$GitHubRepo.git"
         Write-Status "  cd vorzela-migrate"
-        Write-Status "  GOBIN=\"$InstallDir\" go install github.com/$GitHubRepo/cmd/vm@latest"
+        Write-Status "  GOBIN=\"$InstallDir\" go install github.com/$GitHubRepo/v2/cmd/vm@latest"
         Write-Status "  # or: go build -o vm.exe ./cmd/vm"
         Write-Status "  Move-Item vm.exe \"$InstallDir\vm.exe\""
         exit 1
