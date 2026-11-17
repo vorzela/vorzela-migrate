@@ -1,10 +1,10 @@
-# Vorzela `.vm` + `.vorm` syntax highlighting
+# Vorzela `vm.yaml`/`vm.yml` + `.vorm` syntax highlighting
 
 Editor support for:
 
 | File | Tool | Language id |
 |------|------|-------------|
-| `.vm` | Vorzela Migrate | `vorzela-vm` |
+| `vm.yaml` / `vm.yml` (legacy `.vm`) | Vorzela Migrate | `vorzela-vm` |
 | `.vorm` | vorm ORM | `vorzela-vorm` |
 
 ## Install
@@ -19,12 +19,12 @@ Editor support for:
 |--------|------------------------|
 | **Cursor / VS Code / Insiders / VSCodium** | Yes |
 | **Sublime Text** | Yes |
-| **Vim / Neovim** | Yes (`.vm` + `.vorm`) |
+| **Vim / Neovim** | Yes (`vm.yaml` + `.vorm`) |
 | **Nano / Helix / Zed / JetBrains** | Detected / partial |
 
 ## Features (VS Code / Cursor)
 
-### `.vm` (migrate)
+### `vm.yaml` (migrate)
 
 Syntax · hover · live lint (unknown keys, `DATABASE_URL`) · Ctrl+Space completions
 

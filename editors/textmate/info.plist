@@ -5,7 +5,7 @@
 	<key>contactEmailRot13</key>
 	<string></string>
 	<key>description</key>
-	<string>Syntax highlighting for Vorzela Migrate .vm configuration files</string>
+	<string>Syntax highlighting for Vorzela Migrate vm.yaml/vm.yml (legacy .vm) configuration files</string>
 	<key>name</key>
 	<string>Vorzela VM</string>
 	<key>uuid</key>

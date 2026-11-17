@@ -1,0 +1,61 @@
+// ── Vorzela custom styles ──────────────────────────────────
+// Add your own selectors, theme overrides and new component styles here.
+// Do not edit the generated files under components/ or charts/; updates
+// replace them. Keep your changes in this folder instead.
+
+// global.scss imports this file automatically. Split larger sets into
+// neighbouring files and add `@use 'buttons';` style rules below.
+// ─────────────────────────────────────────────────────────────
+
+@use '..' as vz;
+@use 'sass:math';
+
+// ── Vorzela Sass API ─────────────────────────────────────────
+// Tokens
+//   vz.color('primary', 0.9)      semantic colour with alpha
+//   vz.space(4)                   spacing scale
+//   vz.font-size('sm')            type scale
+//   vz.radius('lg')               corner radius
+//   vz.elevation(2)               shadow level
+//   vz.duration('base')           motion duration
+//   vz.ease('out')                motion easing
+//   vz.z('popover')               z-index layer
+
+// Responsive
+//   @include vz.up('md') { … }        min-width 48rem
+//   @include vz.down('lg') { … }      below 64rem
+//   @include vz.between('sm', 'lg') { … }
+//   @include vz.container-up(28rem) { … }
+//   vz.breakpoint-value('md')         48rem
+
+// Mixins
+//   @include vz.surface(1);
+//   @include vz.raised(2);
+//   @include vz.inset;
+//   @include vz.scrim(12px, 0.5);
+//   @include vz.focus-ring(2px, 2px, 0.6);
+//   @include vz.truncate;
+//   @include vz.line-clamp(2);
+//   @include vz.scrollbar(10px);
+//   @include vz.icon(4);
+//   @include vz.hover { … }
+//   @include vz.active { … }
+//   @include vz.disabled { … }
+//   @include vz.motion-reduce { … }
+
+// Sass math (Dart Sass)
+//   math.div(100%, 3)
+//   math.percentage(math.div(1, 3))
+//   math.round(1.6)
+//   math.clamp(1rem, 2vw, 2rem)
+
+// Overrides
+//   Prefer semantic tokens for theme-wide changes:
+//   :root { --primary: 217 91% 46%; }
+//   .dark { --primary: 211 100% 58%; }
+
+//   For a single component, reuse its CSS variables rather than copying the
+//   generated module into this folder.
+// ─────────────────────────────────────────────────────────────
+
+// Add your rules below.

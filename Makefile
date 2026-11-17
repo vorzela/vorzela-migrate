@@ -1,4 +1,4 @@
-.PHONY: build clean install help test dist migration
+.PHONY: build clean install help test dist migration gui gui-deps gui-dev
 
 # Detect version from git tags, fallback to "dev"
 VERSION ?= $(shell git describe --tags --abbrev=0 2>/dev/null || echo dev)
@@ -14,6 +14,8 @@ help:
 	@echo ""
 	@echo "Development:"
 	@echo "  make migration   - Create a migration (usage: make migration NAME=create_my_table)"
+	@echo "  make gui         - Build the local GUI and embed it in the vm binary"
+	@echo "  make gui-dev     - Run the VorzelaJS GUI dev server (API via vm gui --no-open)"
 	@echo ""
 	@echo "Testing:"
 	@echo "  make fmt         - Format code"
@@ -56,6 +58,23 @@ dist: clean
 migration: build
 	@if [ -z "$(NAME)" ]; then echo "Error: NAME is required. Usage: make migration NAME=create_my_table"; exit 1; fi
 	@./vm make migration $(NAME)
+
+# Build the VorzelaJS GUI and copy the hashed assets into the Go embed folder.
+# Requires Node 20+ and the vorzelajs packages declared in gui/package.json.
+gui-deps:
+	@cd gui && npm install --no-audit --no-fund
+
+gui: gui-deps
+	@echo "Building Vorzela Migrate GUI..."
+	@cd gui && npm run build
+	@rm -rf internal/gui/web/dist
+	@cp -R gui/dist/client internal/gui/web/dist
+	@echo "✓ GUI assets embedded in internal/gui/web/dist"
+
+# Vite dev server. In another terminal run:
+#   ./vm gui --no-open --dev-origin http://localhost:5173
+gui-dev:
+	@cd gui && npm run dev
 
 fmt:
 	@echo "Formatting code..."

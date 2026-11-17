@@ -1,7 +1,7 @@
 {
   "name": "vorzela-vm",
-  "displayName": "Vorzela Config (.vm + .vorm)",
-  "description": "Syntax highlighting, hover docs, completions, and live lint for Vorzela .vm and vorm .vorm files",
+  "displayName": "Vorzela Config (vm.yaml + .vorm)",
+  "description": "Syntax highlighting, hover docs, completions, and live lint for Vorzela vm.yaml/vm.yml and vorm .vorm files",
   "version": "1.2.0",
   "publisher": "vorzela",
   "engines": {
@@ -20,7 +20,7 @@
         "id": "vorzela-vm",
         "aliases": ["Vorzela VM", "vorzela-vm", "vm"],
         "extensions": [".vm"],
-        "filenames": [".vm"],
+        "filenames": ["vm.yaml", "vm.yml", ".vm"],
         "configuration": "./language-configuration.json",
         "icon": {
           "light": "./icons/vm-light.svg",

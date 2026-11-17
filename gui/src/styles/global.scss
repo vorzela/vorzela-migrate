@@ -1,0 +1,20 @@
+// Application stylesheet entry. Import once, before the app renders.
+@use 'index' as vz;
+@use 'base/reset';
+@use 'base/base';
+@use 'base/globals';
+@use 'custom';
+
+// ── Themes ────────────────────────────────────────────────
+@include vz.emit-color-tokens(':root', 'light');
+@include vz.emit-color-tokens('.dark', 'dark');
+@include vz.emit-raw-color-tokens(':root');
+
+// ── Scales ────────────────────────────────────────────────
+@include vz.emit-space-tokens(':root');
+@include vz.emit-type-tokens(':root');
+@include vz.emit-radius-tokens(':root');
+@include vz.emit-shadow-tokens(':root', 'light');
+@include vz.emit-shadow-tokens('.dark', 'dark');
+@include vz.emit-motion-tokens(':root');
+@include vz.emit-z-tokens(':root');

@@ -2,6 +2,48 @@
 
 All notable changes to Vorzela Migration Tool are documented in this file.
 
+## [2.4.0] - 2026-11-17
+
+### Added
+
+- **`vm gui` local GUI** — loopback-only VorzelaJS app (client file router +
+  Vorzela UI) for selecting a saved database, reviewing migration status,
+  creating and editing migration SQL, and applying additive edits with drift.
+  Every mutating API call requires a server-issued, single-use confirmation
+  plan; rollback/fresh require typed project-name confirmation.
+- **GUI credential store** — YAML (default) or SQLite (`--store sqlite`) under
+  the user config directory. Database passwords use AES-256-GCM with a local
+  `0600` key and are injected into `vm` through the child environment, never
+  argv or the browser.
+- **Live schema Tables page** — Vorzela UI `SimpleDataTable` lists database
+  tables, columns, keys and create migrations. Add-table modal runs
+  `vm make migration`; add-column form chooses drift, pending-file edit, or a
+  generated follow-up migration with backfill validation.
+- **Drift-aware edit analysis** — executed `create_*_table` edits are applied
+  with `vm migrate --force --detect-drift` when safe. NOT NULL without a
+  default, NOT NULL UNIQUE, NOT NULL foreign keys, column modifications and
+  drops get a follow-up migration suggestion instead.
+- **GUI security controls** — one-time access token, HttpOnly/SameSite=Strict
+  session cookie, CSRF token, same-origin checks, DNS-rebinding host checks,
+  strict CSP, request-body limits, migration-path containment, encrypted
+  credentials, local audit log and migration backups.
+- **GUI updater and version display** — the sidebar, Dashboard and Settings show
+  the installed version. Settings can check GitHub releases and run
+  `vm upgrade` through the same confirmation-plan flow, with a restart prompt.
+- **`vm init` now creates `vm.yaml`** — `vm.yml` is accepted as an alias and
+  legacy `.vm` files are read last, so existing projects keep working.
+
+### Changed
+
+- Documentation and editor integrations now use `vm.yaml`/`vm.yml` as the
+  primary config names. Example files are `vm.example.yaml` and
+  `vm.example.min.yaml`.
+- Added explicit "run the GUI after install" instructions to the README, GUI
+  documentation and install script output.
+- `migration.DetectDialect` now honors `VM_DIALECT` (`postgres`, `mysql`,
+  `mariadb`) so the GUI can target MariaDB hosts that do not include
+  "mariadb" in the DSN.
+
 ## [2.3.4] - 2026-11-02
 
 ### Fixed

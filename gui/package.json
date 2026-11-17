@@ -1,0 +1,43 @@
+{
+  "name": "vorzela-migrate-gui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local GUI for Vorzela Migrate (vm).",
+  "scripts": {
+    "generate": "tsx src/.vorzelajs/generate.ts",
+    "predev": "npm run generate",
+    "dev": "vite",
+    "prebuild": "npm run generate",
+    "build": "vite build",
+    "preview": "vite preview",
+    "pretypecheck": "npm run generate",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint . --max-warnings=0",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "dependencies": {
+    "@vorzelajs/core": "file:../../vorzelajs/packages/vorzelajs",
+    "@vorzelajs/dom": "file:../../vorzelajs/packages/dom",
+    "@vorzelajs/hydrate": "file:../../vorzelajs/packages/hydrate",
+    "@vorzelajs/reactive": "file:../../vorzelajs/packages/reactive",
+    "@vorzelajs/router": "file:../../vorzelajs/packages/router",
+    "@vorzelajs/seo": "file:../../vorzelajs/packages/seo",
+    "@vorzelajs/server": "file:../../vorzelajs/packages/server",
+    "@vorzelajs/session": "file:../../vorzelajs/packages/session",
+    "@vorzelajs/table": "file:../../vorzelajs/packages/table",
+    "lucide": "^1.73.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@vorzelajs/devtools": "file:../../vorzelajs/packages/devtools",
+    "@vorzelajs/vite-plugin": "file:../../vorzelajs/packages/vite-plugin",
+    "oxlint": "^1.93.0",
+    "prettier": "^3.9.10",
+    "sass-embedded": "^1.107.1",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.7"
+  }
+}

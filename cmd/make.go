@@ -22,7 +22,7 @@ var MakeCommand = &cli.Command{
 				&cli.StringFlag{
 					Name:    "path",
 					Aliases: []string{"p"},
-					Usage:   "path to migrations directory (overrides .vm config)",
+					Usage:   "path to migrations directory (overrides vm.yaml config)",
 				},
 				&cli.BoolFlag{
 					Name:    "soft-delete",
@@ -172,7 +172,7 @@ var MakeCommand = &cli.Command{
 					pathOverride = pathOverrideFlag
 				}
 
-				// Load config to get MIGRATION_PATH from .vm if not specified via flag
+				// Load config to get MIGRATION_PATH from vm.yaml if not specified via flag
 				cfg, err := config.LoadConfig("", pathOverride)
 				if err != nil {
 					output.Error(err.Error())

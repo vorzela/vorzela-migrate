@@ -1,0 +1,120 @@
+@use 'sass:map';
+@use 'sass:string';
+
+/// Colour tokens — the single source of truth for theming.
+///
+/// Values are HSL *triplets* (`220 18% 97%`) so alpha can be applied without
+/// `color-mix()`: `color('primary', .9)` emits `hsl(var(--primary) / 0.9)`.
+/// Keep the triplet format when adding a token, and add it to both maps.
+$light: (
+  'background': '220 18% 97%',
+  'foreground': '222 47% 11%',
+  'card': '0 0% 100%',
+  'card-foreground': '222 47% 11%',
+  'popover': '0 0% 100%',
+  'popover-foreground': '222 47% 11%',
+  'overlay': '222 47% 11%',
+  'primary': '217 91% 46%',
+  'primary-foreground': '0 0% 100%',
+  'secondary': '213 36% 95%',
+  'secondary-foreground': '215 28% 17%',
+  'muted': '216 22% 95%',
+  'muted-foreground': '221 13% 44%',
+  'accent': '216 24% 96%',
+  'accent-foreground': '215 28% 17%',
+  'destructive': '4 74% 49%',
+  'destructive-foreground': '0 0% 100%',
+  'success': '155 90% 24%',
+  'success-foreground': '0 0% 100%',
+  'info': '199 89% 48%',
+  'warning': '38 92% 50%',
+  'border': '218 17% 91%',
+  'input': '219 14% 60%',
+  'ring': '217 91% 46%',
+  'code-bg': '222 47% 11%',
+  'code-fg': '210 40% 98%',
+  'code-border': '215 28% 27%',
+  'code-muted': '215 16% 65%',
+) !default;
+
+$dark: (
+  'background': '240 2% 6%',
+  'foreground': '0 0% 98%',
+  'card': '240 2% 10%',
+  'card-foreground': '0 0% 98%',
+  'popover': '240 2% 13%',
+  'popover-foreground': '0 0% 98%',
+  'overlay': '0 0% 0%',
+  'primary': '211 100% 58%',
+  'primary-foreground': '240 2% 7%',
+  'secondary': '240 2% 16%',
+  'secondary-foreground': '0 0% 93%',
+  'muted': '240 2% 13%',
+  'muted-foreground': '240 2% 66%',
+  'accent': '240 2% 17%',
+  'accent-foreground': '0 0% 98%',
+  'destructive': '3 100% 65%',
+  'destructive-foreground': '240 2% 7%',
+  'success': '135 65% 58%',
+  'success-foreground': '240 2% 7%',
+  'info': '199 100% 62%',
+  'warning': '36 100% 58%',
+  'border': '240 2% 20%',
+  'input': '240 2% 30%',
+  'ring': '211 100% 65%',
+  'code-bg': '240 2% 5%',
+  'code-fg': '0 0% 98%',
+  'code-border': '240 2% 20%',
+  'code-muted': '240 2% 66%',
+) !default;
+
+/// Tokens whose value is already a complete colour. Shared by both themes.
+$raw: (
+  'shadow-color': '220 43% 11%',
+) !default;
+
+/// Read a colour token as a runtime CSS variable.
+///
+/// @param {String} $name - Key from `$light`, e.g. `primary`
+/// @param {Number} $alpha [1] - Opacity from 0 to 1
+/// @return {String} e.g. `hsl(var(--primary) / 0.9)`
+/// @example scss
+///   background: vz.color('primary', .9);
+@function color($name, $alpha: 1) {
+  @if not map.has-key($light, $name) {
+    @error 'Unknown color token `#{$name}`. Add it to tokens/_color.scss (both themes).';
+  }
+
+  @return string.unquote('hsl(var(--#{$name}) / #{$alpha})');
+}
+
+/// Emit theme custom properties.
+///
+/// @param {String} $selector [':root'] - Where to emit
+/// @param {String} $mode ['light'] - `light` or `dark`
+@mixin emit-color-tokens($selector: ':root', $mode: 'light') {
+  $values: $light;
+  $scheme: light;
+
+  @if $mode == 'dark' {
+    $values: $dark;
+    $scheme: dark;
+  }
+
+  #{$selector} {
+    color-scheme: #{$scheme};
+
+    @each $name, $value in $values {
+      --#{$name}: #{$value};
+    }
+  }
+}
+
+/// Emit tokens shared by both themes.
+@mixin emit-raw-color-tokens($selector: ':root') {
+  #{$selector} {
+    @each $name, $value in $raw {
+      --#{$name}: #{$value};
+    }
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "editor.formatOnSave": true,
+  "editor.codeActionsOnSave": {
+    "source.fixAll.oxc": "explicit"
+  },
+  "oxc.enable": true,
+  "prettier.requireConfig": true,
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+  "files.exclude": {
+    "**/dist": true,
+    "**/node_modules": true,
+    "**/.vorzelajs": true
+  },
+  "search.exclude": {
+    "**/dist": true,
+    "**/node_modules": true,
+    "**/.vorzelajs": true,
+    "package-lock.json": true
+  },
+  "files.associations": {
+    "*.scss": "scss"
+  },
+  "editor.quickSuggestions": {
+    "other": true,
+    "comments": false,
+    "strings": true
+  },
+  "editor.snippetSuggestions": "top"
+}

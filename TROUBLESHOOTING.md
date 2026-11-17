@@ -252,7 +252,7 @@ vm status --dsn $DATABASE_URL
 **Problem**: An old guide mentions `--env`; current vm has no `--env` flag.
 
 **Solution**: Use a single `migrations/` directory for every environment and choose
-the database with `DATABASE_URL` / `.vm` / `--dsn`:
+the database with `DATABASE_URL` / `vm.yaml` / `--dsn`:
 ```bash
 vm lint
 vm check --json

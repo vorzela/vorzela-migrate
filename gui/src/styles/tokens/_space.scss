@@ -1,0 +1,60 @@
+@use 'sass:map';
+@use 'sass:string';
+
+/// Spacing scale on a 4px base. Values are compile-time literals.
+$space: (
+  '0': 0,
+  'px': 1px,
+  '0.5': 0.125rem,
+  '1': 0.25rem,
+  '1.5': 0.375rem,
+  '2': 0.5rem,
+  '2.5': 0.625rem,
+  '3': 0.75rem,
+  '3.5': 0.875rem,
+  '4': 1rem,
+  '5': 1.25rem,
+  '6': 1.5rem,
+  '7': 1.75rem,
+  '8': 2rem,
+  '9': 2.25rem,
+  '10': 2.5rem,
+  '11': 2.75rem,
+  '12': 3rem,
+  '14': 3.5rem,
+  '16': 4rem,
+  '20': 5rem,
+  '24': 6rem,
+) !default;
+
+/// Resolve a spacing step.
+///
+/// @param {Number|String} $step - A key from `$space`, e.g. `4`, `0.5`, `px`
+/// @return {Number} e.g. `1rem`
+@function space($step) {
+  $key: '#{$step}';
+
+  @if not map.has-key($space, $key) {
+    @error 'Unknown space step `#{$step}`. Add it to tokens/_space.scss.';
+  }
+
+  @return map.get($space, $key);
+}
+
+/// Emit spacing variables for docs and consumer overrides.
+/// Fractional steps are emitted with dashes (`--space-0-5`) because a dot is
+/// not valid in a custom property name.
+@mixin emit-space-tokens($selector: ':root') {
+  #{$selector} {
+    @each $name, $value in $space {
+      $safe: '#{$name}';
+      $dot: string.index($safe, '.');
+
+      @if $dot {
+        $safe: string.slice($safe, 1, $dot - 1) + '-' + string.slice($safe, $dot + 1);
+      }
+
+      --space-#{$safe}: #{$value};
+    }
+  }
+}

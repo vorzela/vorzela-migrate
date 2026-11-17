@@ -2,6 +2,7 @@ package migration
 
 import (
 	"fmt"
+	"os"
 	"strings"
 )
 
@@ -14,8 +15,20 @@ const (
 	MariaDB    Dialect = "mariadb"
 )
 
-// DetectDialect infers the dialect from a database URL/DSN
+// DetectDialect infers the dialect from a database URL/DSN.
+//
+// VM_DIALECT may explicitly override detection. The GUI uses this to support
+// MariaDB hosts whose name or database does not contain the word "mariadb"
+// (the historical heuristic used by the CLI).
 func DetectDialect(dsn string) Dialect {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("VM_DIALECT"))) {
+	case "postgres", "postgresql", "pg":
+		return PostgreSQL
+	case "mysql":
+		return MySQL
+	case "mariadb":
+		return MariaDB
+	}
 	if strings.HasPrefix(dsn, "mysql://") || strings.Contains(dsn, "@tcp") || strings.Contains(dsn, "tcp(") {
 		if strings.Contains(dsn, "mariadb") {
 			return MariaDB

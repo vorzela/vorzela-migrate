@@ -10,6 +10,39 @@ import (
 	"github.com/vorzela/vorzela-migrate/v2/internal/output"
 )
 
+// ConfigFileNames are the supported Vorzela config names, in preference order.
+// .vm is retained as a legacy fallback.
+var ConfigFileNames = []string{"vm.yaml", "vm.yml", ".vm"}
+
+// FindConfigFileInDir returns the first supported config file in dir.
+func FindConfigFileInDir(dir string) string {
+	for _, name := range ConfigFileNames {
+		candidate := filepath.Join(dir, name)
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			return candidate
+		}
+	}
+	return ""
+}
+
+// FindConfigFile searches the current directory and its parents.
+func FindConfigFile() string {
+	dir, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	for {
+		if found := FindConfigFileInDir(dir); found != "" {
+			return found
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return ""
+		}
+		dir = parent
+	}
+}
+
 // Config holds application configuration.
 type Config struct {
 	DatabaseURL   string
@@ -33,7 +66,7 @@ type Config struct {
 	// Drift handling: auto, reject, prompt
 	DriftHandling string
 
-	// Internal: track which fields were explicitly set in the .vm file
+	// Internal: track which fields were explicitly set in the config file
 	explicitVerbose           bool
 	explicitEnhanced          bool
 	explicitOnline            bool
@@ -44,7 +77,7 @@ type Config struct {
 	explicitAutoRunEnums      bool
 	migrationPathFromVM       bool
 
-	// configDir is the directory containing the .vm file that was loaded.
+	// configDir is the directory containing the config file that was loaded.
 	configDir string
 }
 
@@ -53,7 +86,7 @@ type Config struct {
 // Precedence (highest first):
 //  1. CLI flags
 //  2. Real process environment variables (DATABASE_URL, MIGRATION_PATH)
-//  3. .vm config file (current directory or any parent)
+//  3. vm.yaml / vm.yml / legacy .vm config file (current directory or any parent)
 //  4. .env file (current directory only)
 //  5. Built-in defaults
 func LoadConfig(dsnOverride, pathOverride string) (*Config, error) {
@@ -64,7 +97,7 @@ func LoadConfig(dsnOverride, pathOverride string) (*Config, error) {
 	}
 
 	// .env has the lowest file precedence. Read it instead of loading it into
-	// the process environment: godotenv.Load would make .env override .vm,
+	// the process environment: godotenv.Load would make .env override the config file,
 	// which is the opposite of what the docs promise.
 	if envValues, err := godotenv.Read(".env"); err == nil {
 		for key, value := range envValues {
@@ -72,11 +105,11 @@ func LoadConfig(dsnOverride, pathOverride string) (*Config, error) {
 				applyConfigValue(cfg, key, value)
 			}
 		}
-		// .env MIGRATION_PATH is relative to cwd, not to a .vm file.
+		// .env MIGRATION_PATH is relative to cwd, not to a config file.
 		cfg.migrationPathFromVM = false
 	}
 
-	// .vm overrides .env.
+	// The config file overrides .env.
 	if err := loadVorzelaConfig(cfg); err != nil {
 		return nil, err
 	}
@@ -99,7 +132,7 @@ func LoadConfig(dsnOverride, pathOverride string) (*Config, error) {
 		cfg.migrationPathFromVM = false
 	}
 
-	// A MIGRATION_PATH in a parent .vm is relative to that .vm file, not to
+	// A MIGRATION_PATH in a parent config is relative to that config file, not to
 	// the directory the agent happened to run from.
 	if cfg.migrationPathFromVM && cfg.configDir != "" && !filepath.IsAbs(cfg.MigrationPath) {
 		cwd, cwdErr := os.Getwd()
@@ -122,33 +155,23 @@ func LoadConfigWithOverrides(dsnOverride, envOverride, pathOverride string) (*Co
 	return LoadConfig(dsnOverride, pathOverride)
 }
 
-// loadVorzelaConfig loads configuration from .vm, searching the current
-// directory and then parents.
+// loadVorzelaConfig loads configuration from vm.yaml, vm.yml, or the legacy
+// .vm file, searching the current directory and then parents.
 func loadVorzelaConfig(cfg *Config) error {
-	if err := loadVorzelaFile(".vm", cfg); err == nil {
+	path := FindConfigFile()
+	if path == "" {
 		return nil
 	}
-
-	currentDir, err := os.Getwd()
-	if err != nil {
-		return nil // Don't fail if we can't read cwd
-	}
-
-	for {
-		dir := filepath.Dir(currentDir)
-		if dir == currentDir {
-			break // Reached root
-		}
-		if err := loadVorzelaFile(filepath.Join(dir, ".vm"), cfg); err == nil {
+	if err := loadVorzelaFile(path, cfg); err != nil {
+		if os.IsNotExist(err) {
 			return nil
 		}
-		currentDir = dir
+		return err
 	}
-
-	return nil // Config file is optional
+	return nil
 }
 
-// loadVorzelaFile loads a specific .vm file.
+// loadVorzelaFile loads a specific config file.
 func loadVorzelaFile(path string, cfg *Config) error {
 	content, err := os.ReadFile(path)
 	if err != nil {
@@ -181,7 +204,7 @@ func loadVorzelaFile(path string, cfg *Config) error {
 		value := strings.TrimSpace(rawValue)
 
 		if _, known := knownKeys[key]; !known {
-			output.Warning(".vm line %d: unknown key '%s' — run 'vm lint' for details", lineNum, key)
+			output.Warning("%s line %d: unknown key '%s' — run 'vm lint' for details", filepath.Base(path), lineNum, key)
 			continue
 		}
 		applyConfigValue(cfg, key, value)
@@ -190,7 +213,7 @@ func loadVorzelaFile(path string, cfg *Config) error {
 	return nil
 }
 
-// applyConfigValue applies one KEY=VALUE pair from .vm/.env. Unknown keys are
+// applyConfigValue applies one KEY=VALUE pair from the config file/.env. Unknown keys are
 // ignored by callers that have already validated them.
 func applyConfigValue(cfg *Config, key, value string) {
 	parseBool := func(v string) bool {
@@ -244,7 +267,7 @@ func applyConfigValue(cfg *Config, key, value string) {
 // Validate validates the configuration.
 func (c *Config) Validate() error {
 	if c.DatabaseURL == "" {
-		return fmt.Errorf("database URL is required. Set DATABASE_URL env var, create .vm config file, or use --dsn flag")
+		return fmt.Errorf("database URL is required. Set DATABASE_URL env var, create vm.yaml config file, or use --dsn flag")
 	}
 	if strings.TrimSpace(c.MigrationPath) == "" {
 		return fmt.Errorf("MIGRATION_PATH is empty")
@@ -281,7 +304,7 @@ func (c *Config) IsProduction() bool { return c.Environment == "production" }
 func (c *Config) IsDevelopment() bool { return c.Environment == "development" }
 
 // ApplyEnvironmentDefaults applies defaults based on environment. Explicit
-// .vm values always win; this fixes the previous behaviour where ONLINE=true
+// Config-file values always win; this fixes the previous behaviour where ONLINE=true
 // in development was silently overwritten by the development default.
 func (c *Config) ApplyEnvironmentDefaults() {
 	c.NormalizeEnvironment()

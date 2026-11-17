@@ -1,0 +1,33 @@
+@use '../tokens/color' as color;
+
+@layer base {
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: color.color('background');
+    color: color.color('foreground');
+    font-family:
+      -apple-system,
+      BlinkMacSystemFont,
+      'SF Pro Text',
+      'SF Pro Display',
+      'Segoe UI',
+      Roboto,
+      Helvetica,
+      Arial,
+      sans-serif;
+    font-size: 1rem;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizelegibility;
+  }
+
+  ::selection {
+    background: color.color('primary', 0.2);
+    color: color.color('foreground');
+  }
+
+  :where(button, input, select, textarea) {
+    font: inherit;
+  }
+}

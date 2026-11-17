@@ -1,0 +1,31 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn",
+    "perf": "warn"
+  },
+  "rules": {
+    "eqeqeq": ["error", "smart"],
+    "no-console": [
+      "warn",
+      {
+        "allow": ["warn", "error", "info", "table"]
+      }
+    ],
+    "no-eval": "error",
+    "no-new-func": "error",
+    "no-var": "error",
+    "no-underscore-dangle": "off",
+    "no-shadow": "off",
+    "oxc/no-map-spread": "off",
+    "unicorn/consistent-function-scoping": "off",
+    "no-await-in-loop": "off",
+    "unicorn/no-array-sort": "off"
+  },
+  "ignorePatterns": [
+    "dist/**",
+    "node_modules/**",
+    "src/.vorzelajs/routeTree.gen.ts"
+  ]
+}

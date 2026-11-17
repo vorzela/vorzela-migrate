@@ -16,7 +16,7 @@ import (
 var CheckCommand = &cli.Command{
 	Name:    "check",
 	Aliases: []string{"validate", "safety"},
-	Usage:   "Run static safety checks on migrations and .vm config",
+	Usage:   "Run static safety checks on migrations and the vm.yaml config",
 	Description: `Examples:
   vm check                         # fast, no database connection
   vm check --strict                # warnings (destructive SQL) also fail
@@ -62,7 +62,7 @@ Exit codes: 0 = clean (warnings allowed unless --strict), 1 = errors or strict f
 
 		report := migration.CheckMigrationFiles(cfg.MigrationPath)
 
-		// Lint the .vm file too: a typo in a safety key is exactly the kind of
+		// Lint the config file too: a typo in a safety key is exactly the kind of
 		// problem this command should catch.
 		if vmPath := findVMFile(); vmPath != "" {
 			issues, lerr := config.LintVMFile(vmPath)

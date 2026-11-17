@@ -1,0 +1,36 @@
+@use '../tokens/color' as color;
+
+/// Slim, theme-aware scrollbar.
+///
+/// @param {String} $size ['10px'] - Thickness
+@mixin scrollbar($size: 10px) {
+  scrollbar-width: thin;
+  scrollbar-color: color.color('muted-foreground', 0.4) transparent;
+
+  &::-webkit-scrollbar {
+    width: $size;
+    height: $size;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: color.color('muted-foreground', 0.35);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+
+  &::-webkit-scrollbar-thumb:hover {
+    background: color.color('muted-foreground', 0.55);
+    background-clip: content-box;
+  }
+}
+
+/// Prevent scroll chaining behind an overlay.
+@mixin overscroll {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}

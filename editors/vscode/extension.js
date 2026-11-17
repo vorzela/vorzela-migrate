@@ -59,7 +59,7 @@ function lintDocument(document) {
       const suggestion = closestKey(keyPart);
       const msg = suggestion
         ? `Unknown key — did you mean ${suggestion}?`
-        : "Unknown key — not a recognised Vorzela .vm setting";
+        : "Unknown key — not a recognised Vorzela vm.yaml setting";
       diagnostics.push(
         makeDiagnostic(keyRange, msg, vscode.DiagnosticSeverity.Error, "unknown-key")
       );

@@ -21,13 +21,14 @@ func New() *cli.App {
 		Description: `Vorzela runs SQL migrations against PostgreSQL, MySQL, or MariaDB.
 
 Agent/LLM quick start:
-  vm init                    create .vm config
-  vm lint                    validate .vm
+  vm init                    create vm.yaml config
+  vm lint                    validate vm.yaml
   vm check --json            static safety report (no DB needed)
   vm check --db --json       checksums + missing files against the live DB
   vm status --json           executed/pending migrations
   vm make migration <name>   scaffold a migration
   vm migrate --yes           run pending migrations non-interactively
+  vm gui                     local, token-protected migration GUI
 
 Use "vm check --strict" in CI to fail on destructive SQL and missing Down sections.`,
 		Flags: []cli.Flag{
@@ -53,6 +54,7 @@ Use "vm check --strict" in CI to fail on destructive SQL and missing Down sectio
 			cmd.FreshCommand,
 			cmd.RefreshCommand,
 			cmd.StatusCommand,
+			cmd.GuiCommand,
 			cmd.UpgradeCommand,
 			cmd.UninstallCommand,
 		},

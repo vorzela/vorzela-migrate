@@ -1,10 +1,10 @@
 # Zed editor — add to ~/.config/zed/settings.json (or project .zed/settings.json)
 #
-# Prefer mapping .vm to Ini until a tree-sitter grammar exists:
+# Prefer mapping vm.yaml/vm.yml (and legacy .vm) to Ini until a tree-sitter grammar exists:
 #
 # {
 #   "file_types": {
-#     "Ini": ["vm", ".vm"]
+#     "Ini": ["vm", "vm.yaml", "vm.yml", ".vm"]
 #   }
 # }
 #

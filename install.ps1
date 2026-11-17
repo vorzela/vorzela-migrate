@@ -209,11 +209,12 @@ function Install-Vorzela {
     Write-Status "Quick start:"
     Write-Host "    vm --version" -ForegroundColor White
     Write-Host "    vm --help" -ForegroundColor White
+    Write-Host "    vm gui                 # local, confirmation-first migration GUI" -ForegroundColor White
     Write-Host ""
 
     Write-Status "Next steps:"
     Write-Host "    1. Read README.md for setup instructions" -ForegroundColor White
-    Write-Host "    2. Create .vm config in your project (vm init)" -ForegroundColor White
+    Write-Host "    2. Create vm.yaml config in your project (vm init)" -ForegroundColor White
     Write-Host "    3. Create migration: vm make migration users" -ForegroundColor White
     Write-Host "    4. Validate migrations: vm check" -ForegroundColor White
     Write-Host ""

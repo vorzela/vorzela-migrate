@@ -4,26 +4,33 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/urfave/cli/v2"
+	"github.com/vorzela/vorzela-migrate/v2/internal/config"
 	"github.com/vorzela/vorzela-migrate/v2/internal/output"
 )
 
-// InitCommand creates a .vm config file. It never overwrites an existing file
-// unless --force is passed, so agents can run it idempotently.
+// InitCommand creates a vm.yaml config file. It never overwrites an existing
+// config unless --force is passed, so agents can run it idempotently.
 var InitCommand = &cli.Command{
 	Name:  "init",
-	Usage: "Create a .vm configuration file in the current directory",
+	Usage: "Create a vm.yaml configuration file in the current directory",
 	Flags: []cli.Flag{
 		&cli.StringFlag{
+			Name:  "file",
+			Usage: "config filename to create: vm.yaml or vm.yml",
+			Value: "vm.yaml",
+		},
+		&cli.StringFlag{
 			Name:  "database-url",
-			Usage: "DATABASE_URL to write into .vm",
+			Usage: "DATABASE_URL to write into the config file",
 			Value: "postgres://user:password@localhost:5432/myapp",
 		},
 		&cli.StringFlag{
 			Name:    "path",
 			Aliases: []string{"p"},
-			Usage:   "migrations directory to write into .vm",
+			Usage:   "migrations directory to write into the config file",
 			Value:   "./migrations",
 		},
 		&cli.StringFlag{
@@ -34,27 +41,36 @@ var InitCommand = &cli.Command{
 		&cli.BoolFlag{
 			Name:    "force",
 			Aliases: []string{"f"},
-			Usage:   "overwrite an existing .vm file",
+			Usage:   "overwrite the existing config file",
 		},
 	},
 	Action: func(c *cli.Context) error {
-		file := ".vm"
-		if _, err := os.Stat(file); err == nil && !c.Bool("force") {
-			output.Warning(".vm already exists; use --force to overwrite")
+		file := strings.TrimSpace(c.String("file"))
+		if file == "" {
+			file = "vm.yaml"
+		}
+		if file != filepath.Base(file) {
+			return fmt.Errorf("--file must be a filename in the current directory")
+		}
+		if file != "vm.yaml" && file != "vm.yml" {
+			return fmt.Errorf("--file must be vm.yaml or vm.yml")
+		}
+		if found := config.FindConfigFileInDir("."); found != "" && !c.Bool("force") {
+			output.Warning("%s already exists; use --force to overwrite", found)
 			return nil
 		}
 
-		content := fmt.Sprintf(`# Vorzela Migration Configuration (.vm)
+		content := fmt.Sprintf(`# Vorzela Migration Configuration (%s)
 # Validate with: vm lint
 # Full reference: LLM.md
 DATABASE_URL=%s
 ENVIRONMENT=%s
 MIGRATION_PATH=%s
 DRIFT_HANDLING=prompt
-`, c.String("database-url"), c.String("environment"), c.String("path"))
+`, file, c.String("database-url"), c.String("environment"), c.String("path"))
 
 		if err := os.WriteFile(file, []byte(content), 0o644); err != nil {
-			output.Error("Failed to write .vm: %v", err)
+			output.Error("Failed to write %s: %v", file, err)
 			return err
 		}
 

@@ -7,7 +7,7 @@
 name = "vorzela-vm"
 scope = "source.vorzela-vm"
 injection-regex = "vorzela-vm"
-file-types = ["vm", { glob = ".vm" }]
+file-types = ["vm", { glob = ".vm" }, { glob = "vm.yaml" }, { glob = "vm.yml" }]
 comment-tokens = "#"
 indent = { tab-width = 2, unit = "  " }
 grammar = "ini"

@@ -8,7 +8,7 @@ This file is the short contract for AI agents and automation. Deep reference:
 Use the user-local binary, never `sudo` or `/usr/local/bin`:
 
 ```bash
-GOBIN="$HOME/.local/bin" go install github.com/vorzela/vorzela-migrate/v2/cmd/vm@v2.3.4
+GOBIN="$HOME/.local/bin" go install github.com/vorzela/vorzela-migrate/v2/cmd/vm@v2.4.0
 ```
 
 Canonical paths: `~/.local/bin/vm` (Linux/macOS) and
@@ -18,7 +18,7 @@ Canonical paths: `~/.local/bin/vm` (Linux/macOS) and
 ## Golden rules
 
 1. **Use `vm` commands, do not hand-write migration SQL** unless the user explicitly asks.
-2. The only file an agent should create from scratch is `.vm` — prefer `vm init`.
+2. The only file an agent should create from scratch is `vm.yaml` — prefer `vm init`.
 3. Never create `extensions.sql`, `functions.sql`, or `enums.sql` by hand; let `vm` generate them.
 4. Prefer editing the existing `create_*_table.sql` + `vm migrate --force --detect-drift`
    (or `vm fresh --force` on disposable DBs) over stacking `add_*` files. See LLM.md §1.1.
@@ -94,8 +94,8 @@ DROP TABLE IF EXISTS users CASCADE;
 
 ## Config precedence
 
-CLI flags > real env vars (`DATABASE_URL`, `MIGRATION_PATH`) > `.vm` > `.env` > defaults.
-`MIGRATION_PATH` in a parent `.vm` resolves relative to that file.
+CLI flags > real env vars (`DATABASE_URL`, `MIGRATION_PATH`) > `vm.yaml`/`vm.yml` (legacy `.vm` last) > `.env` > defaults.
+`MIGRATION_PATH` in a parent config file resolves relative to that file.
 
 ## Do not
 

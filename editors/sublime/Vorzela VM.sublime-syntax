@@ -1,6 +1,6 @@
 %YAML 1.2
 ---
-# Vorzela Migrate .vm config — Sublime Text 3 / 4
+# Vorzela Migrate vm.yaml config (legacy .vm) — Sublime Text 3 / 4
 name: Vorzela VM
 file_extensions:
   - vm

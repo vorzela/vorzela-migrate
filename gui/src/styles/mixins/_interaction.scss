@@ -1,0 +1,38 @@
+/// Hover that only fires on devices with a real pointer.
+@mixin hover {
+  @media (hover: hover) and (pointer: fine) {
+    &:hover {
+      @content;
+    }
+  }
+}
+
+/// Pressed state.
+@mixin active {
+  &:active {
+    @content;
+  }
+}
+
+/// Disabled for native controls and ARIA-disabled elements.
+@mixin disabled {
+  &:disabled,
+  &[aria-disabled='true'] {
+    @content;
+  }
+}
+
+/// Selected state shared by tabs, listboxes, and segmented controls.
+@mixin selected {
+  &[aria-selected='true'],
+  &[data-state='selected'] {
+    @content;
+  }
+}
+
+/// Placeholder text for inputs and textareas.
+@mixin placeholder {
+  &::placeholder {
+    @content;
+  }
+}

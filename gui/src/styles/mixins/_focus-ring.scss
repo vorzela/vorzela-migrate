@@ -1,0 +1,15 @@
+@use '../tokens/color' as color;
+
+/// Visible keyboard focus. Outline follows `border-radius` in every supported
+/// browser and does not consume layout space.
+///
+/// @param {Number} $width [2px] - Outline width
+/// @param {Number} $offset [2px] - Gap between element and outline
+/// @param {Number} $alpha [0.6] - Ring opacity
+/// @param {String} $token ['ring'] - Colour token
+@mixin focus-ring($width: 2px, $offset: 2px, $alpha: 0.6, $token: 'ring') {
+  &:focus-visible {
+    outline: $width solid color.color($token, $alpha);
+    outline-offset: $offset;
+  }
+}

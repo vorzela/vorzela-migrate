@@ -2,12 +2,12 @@
 
 > **Primary directive for AI agents:** Run `vm` commands — do not create files manually unless explicitly asked.  
 > The CLI generates migration files, `extensions.sql`, `functions.sql`, and `enums.sql` for you.  
-> Use `vm lint` to validate the `.vm` config. Use `vm migrate --detect-drift` to surface and fix manual schema changes.
+> Use `vm lint` to validate the `vm.yaml` config. Use `vm migrate --detect-drift` to surface and fix manual schema changes.
 >
 > **Schema changes — keep migration history thin:** Prefer editing the existing `create_*_table` migration + drift (or `vm fresh` in disposable DBs).  
 > Do **not** default to `vm make migration add_…`. Use `add_` only when drift cannot safely apply the change (see [§1.1](#11-schema-change-decision-tree--avoid-migration-sprawl)).
 >
-> **`.vm` syntax highlighting:** see [`editors/README.md`](editors/README.md) (VS Code/Cursor: hover docs + live lint for unknown/required keys under `editors/vscode/`).
+> **`vm.yaml` syntax highlighting:** see [`editors/README.md`](editors/README.md) (VS Code/Cursor: hover docs + live lint for unknown/required keys under `editors/vscode/`).
 
 **Supported databases (auto-detected from `DATABASE_URL`):** MySQL · MariaDB · **PostgreSQL (default)**
 
@@ -21,8 +21,8 @@
 0.1. [Agent Contract (read this first)](#01-agent-contract-read-this-first)
 1. [Key Principle: Prefer Commands Over Files](#1-key-principle-prefer-commands-over-files)
    - [1.1 Schema change decision tree](#11-schema-change-decision-tree--avoid-migration-sprawl)
-2. [.vm Config File — Setup and Variables](#2-vm-config-file--setup-and-variables)
-3. [Linting the .vm Config](#3-linting-the-vm-config)
+2. [vm.yaml Config File — Setup and Variables](#2-vm-config-file--setup-and-variables)
+3. [Linting the vm.yaml Config](#3-linting-the-vm-config)
 4. [Creating Migration Files](#4-creating-migration-files)
 5. [Running Migrations](#5-running-migrations)
    - [5.1 `vm migrate --force`](#51-vm-migrate---force--checksum-override)
@@ -35,7 +35,7 @@
 11. [Functions (PostgreSQL only)](#11-functions-postgresql-only)
 12. [Enums (PostgreSQL only)](#12-enums-postgresql-only)
 13. [Migration File Format](#13-migration-file-format)
-14. [Complete .vm Variable Reference](#14-complete-vm-variable-reference)
+14. [Complete vm.yaml Variable Reference](#14-complete-vm-variable-reference)
 15. [Validation Rules](#15-validation-rules)
 16. [Error Reference](#16-error-reference)
 17. [Command Quick-Reference](#17-command-quick-reference)
@@ -75,6 +75,7 @@ Detection logic (source of truth: `internal/migration/dialect.go` + `internal/da
 1. If DSN starts with `mysql://` **or** contains `@tcp` / `tcp(` → MySQL path
 2. Within that path, if DSN also contains `mariadb` → dialect `mariadb`, else `mysql`
 3. **Everything else defaults to PostgreSQL**
+4. `VM_DIALECT=postgres|mysql|mariadb` overrides detection (the GUI uses this for MariaDB hosts whose DSN does not contain `mariadb`).
 
 ### Feature matrix
 
@@ -92,7 +93,7 @@ Detection logic (source of truth: `internal/migration/dialect.go` + `internal/da
 ### Critical agent rules for MySQL / MariaDB
 
 1. **Do not** run `vm extensions`, `vm functions`, or `vm enums` — they error with “not supported on mysql/mariadb”.
-2. Dialect comes from `DATABASE_URL` in `.vm` — `vm make migration` scaffolds the correct types automatically (`BIGINT AUTO_INCREMENT`, `TIMESTAMP`, no `DROP … CASCADE`).
+2. Dialect comes from `DATABASE_URL` in `vm.yaml` — `vm make migration` scaffolds the correct types automatically (`BIGINT AUTO_INCREMENT`, `TIMESTAMP`, no `DROP … CASCADE`).
 3. `--triggers` is supported on MySQL/MariaDB: generates a single-statement `SET NEW.updated_at = CURRENT_TIMESTAMP` trigger (does **not** create `functions.sql`). Soft-delete *update protection* remains PostgreSQL-only; MySQL/MariaDB still get the timestamp auto-update.
 4. Prefer PostgreSQL in examples and new projects unless the user explicitly needs MySQL/MariaDB.
 5. `--online` works for PostgreSQL, MySQL, and MariaDB (MariaDB uses the same ALGORITHM=INSTANT/INPLACE path as MySQL).
@@ -104,7 +105,7 @@ Detection logic (source of truth: `internal/migration/dialect.go` + `internal/da
 Use the user-local binary, never `sudo` or `/usr/local/bin`:
 
 ```bash
-GOBIN="$HOME/.local/bin" go install github.com/vorzela/vorzela-migrate/v2/cmd/vm@v2.3.4
+GOBIN="$HOME/.local/bin" go install github.com/vorzela/vorzela-migrate/v2/cmd/vm@v2.4.0
 ```
 
 Canonical paths: `~/.local/bin/vm` (Linux/macOS) and
@@ -117,7 +118,7 @@ Agents should be able to complete a normal migration task without guessing. Use 
 
 | Need | Command | Output |
 |------|---------|--------|
-| Create config | `vm init` | `.vm` + migrations dir (never overwrites) |
+| Create config | `vm init` | `vm.yaml` + migrations dir (never overwrites) |
 | Validate config | `vm lint` | exit 0 clean, non-zero errors |
 | Static safety check | `vm check --json` | JSON `issues[]`; exit 1 on errors |
 | Strict CI gate | `vm check --strict --json` | exit 1 on warnings too |
@@ -126,6 +127,7 @@ Agents should be able to complete a normal migration task without guessing. Use 
 | Run migrations | `vm migrate --yes` | non-interactive; safe auto-run defaults |
 | Preview SQL | `vm migrate --dry-run` | no lock, no migration execution |
 | Rollback preview | `vm rollback --dry-run` | prints Down SQL |
+| Local GUI | `vm gui` | loopback-only, one-time token, confirmation plans |
 
 **Non-interactive rules:**
 - `--non-interactive` or `VM_NON_INTERACTIVE=1` disables all prompts.
@@ -142,15 +144,15 @@ Agents should be able to complete a normal migration task without guessing. Use 
 
 | Task | Wrong approach | Correct approach |
 |------|---------------|-----------------|
-| Bootstrap a project | Hand-write `.vm` from memory | `vm init` then edit `DATABASE_URL` |
-| Validate config | Read the `.vm` file | `vm lint` |
+| Bootstrap a project | Hand-write `vm.yaml` from memory | `vm init` then edit `DATABASE_URL` |
+| Validate config | Read the `vm.yaml` file | `vm lint` |
 | Check migrations before running | Hope for the best | `vm check --json` (or `--db`) |
 | Create a **new table** | Write a `.sql` file manually | `vm make migration <name>` |
 | Add a **column / tweak** an existing table | `vm make migration add_…` (default instinct — wrong) | Edit the existing `create_*_table.sql`, then drift or `fresh` — see [§1.1](#11-schema-change-decision-tree--avoid-migration-sprawl) |
 | Add extensions | Write to `extensions.sql` manually | `vm extensions migrate` (generates file on first run) |
 | Add trigger functions | Write to `functions.sql` manually | `vm functions migrate` (generates file on first run) |
 | Add enum types | Write to `enums.sql` manually | `vm enums migrate` (generates file on first run) |
-| Validate config | Read the `.vm` file | `vm lint` |
+| Validate config | Read the `vm.yaml` file | `vm lint` |
 | Live DB out of sync with migration SQL | Write ALTER SQL or a new `add_` file | `vm migrate --detect-drift` → answer **yes** |
 | Check what's pending | Inspect files | `vm status` |
 
@@ -235,11 +237,14 @@ vm migrate
 
 ---
 
-## 2. .vm Config File — Setup and Variables
+## 2. vm.yaml Config File — Setup and Variables
 
-The `.vm` file is **the only file an LLM should create** (when the user needs one). Everything else is generated by CLI commands.
+> Config file names: `vm.yaml` (preferred), `vm.yml` (alias), and legacy `.vm`
+> (read last for backward compatibility). `vm init` creates `vm.yaml`.
 
-Create it with `vm init` (recommended; it also creates the migrations directory), or by writing a `.vm` file at the project root. Walk through:
+The `vm.yaml` file is **the only file an LLM should create** (when the user needs one). Everything else is generated by CLI commands.
+
+Create it with `vm init` (recommended; it also creates the migrations directory), or by writing a `vm.yaml` file at the project root. Walk through:
 
 ### Minimal config (PostgreSQL — default)
 ```ini
@@ -324,11 +329,11 @@ AUTO_RUN_ENUMS=true                  # run enums.sql first
 ### Config resolution order (highest priority first)
 1. CLI flag (`--dsn`, `--path`, etc.)
 2. Real environment variables (`DATABASE_URL`, `MIGRATION_PATH`)
-3. `.vm` file (current dir or any parent)
-4. `.env` file (current dir) — **lower priority than `.vm`**
+3. `vm.yaml` file (current dir or any parent)
+4. `.env` file (current dir) — **lower priority than `vm.yaml`**
 5. Built-in defaults
 
-`MIGRATION_PATH` in a parent `.vm` is resolved relative to that `.vm` file, not the directory you happen to run from. `vm init` writes a `.vm` in the current directory.
+`MIGRATION_PATH` in a parent `vm.yaml` is resolved relative to that `vm.yaml` file, not the directory you happen to run from. `vm init` writes a `vm.yaml` in the current directory.
 
 ### Lint the config immediately after creating it
 ```bash
@@ -337,13 +342,13 @@ vm lint
 
 ---
 
-## 3. Linting the .vm Config
+## 3. Linting the vm.yaml Config
 
-`vm lint` validates the `.vm` file for unknown keys, wrong value types, duplicate keys, and missing required values. Always run it after creating or editing `.vm`.
+`vm lint` validates the `vm.yaml` file for unknown keys, wrong value types, duplicate keys, and missing required values. Always run it after creating or editing `vm.yaml`.
 
 ```bash
-vm lint                        # auto-finds .vm in current or parent directories
-vm lint --file /path/to/.vm    # explicit path
+vm lint                        # auto-finds vm.yaml in current or parent directories
+vm lint --file /path/to/vm.yaml    # explicit path
 ```
 
 **What it checks:**
@@ -417,11 +422,11 @@ vm make migration users --many-to-many roles
 
 **Cannot combine:** `--many-to-many` with `--belongs-to` or `--one-to-one`.
 
-**Trigger dependency (PostgreSQL):** `--triggers` embeds a call to `auto_update_timestamp()` (or `auto_update_with_soft_delete_protection()` when combined with `--soft-delete`). Run `vm functions migrate` before running these migrations or set `AUTO_RUN_FUNCTIONS=true` in `.vm`.
+**Trigger dependency (PostgreSQL):** `--triggers` embeds a call to `auto_update_timestamp()` (or `auto_update_with_soft_delete_protection()` when combined with `--soft-delete`). Run `vm functions migrate` before running these migrations or set `AUTO_RUN_FUNCTIONS=true` in `vm.yaml`.
 
 **Triggers on MySQL/MariaDB:** `--triggers` scaffolds a single-statement `SET NEW.updated_at = CURRENT_TIMESTAMP` trigger. No `functions.sql` / `vm functions migrate` required. Soft-delete update protection remains PostgreSQL-only.
 
-Dialect for scaffolds is taken from `DATABASE_URL` in `.vm` (defaults to PostgreSQL when unset).
+Dialect for scaffolds is taken from `DATABASE_URL` in `vm.yaml` (defaults to PostgreSQL when unset).
 
 ---
 
@@ -431,7 +436,7 @@ Dialect for scaffolds is taken from `DATABASE_URL` in `.vm` (defaults to Postgre
 vm migrate [flags]
 ```
 
-### Auto-run order on every `vm migrate` (PostgreSQL only, configurable via .vm)
+### Auto-run order on every `vm migrate` (PostgreSQL only, configurable via vm.yaml)
 1. Acquire the migration lock (covers auto-run + migrations)
 2. `extensions.sql` — install missing enabled extensions if `AUTO_RUN_EXTENSIONS=true`
 3. `functions.sql` — create missing functions (and apply the file) if `AUTO_RUN_FUNCTIONS=true`
@@ -467,7 +472,7 @@ MySQL/MariaDB: steps 2–4 are skipped.
 ### Common invocations
 
 ```bash
-vm migrate                                        # standard run, reads .vm
+vm migrate                                        # standard run, reads vm.yaml
 vm migrate --dry-run                              # preview without touching DB
 vm migrate --step 3                               # run next 3 pending only
 vm migrate --enhanced                             # all safety features
@@ -594,7 +599,7 @@ Drift occurs when someone alters the database directly (e.g. `ALTER TABLE`, `DRO
 vm migrate --detect-drift
 ```
 
-Or set `DETECT_DRIFT=true` / `ENVIRONMENT=development` in `.vm` — drift detection runs automatically.
+Or set `DETECT_DRIFT=true` / `ENVIRONMENT=development` in `vm.yaml` — drift detection runs automatically.
 
 ### What happens
 
@@ -634,7 +639,7 @@ Same rule: `add_` only because drift cannot auto-apply. Otherwise keep the colum
 
 Advisory comments are **never sent to the database driver** — only printed as guidance.
 
-### Drift handling modes (set in `.vm`)
+### Drift handling modes (set in `vm.yaml`)
 
 | `DRIFT_HANDLING` | Behaviour |
 |-----------------|-----------|
@@ -735,7 +740,7 @@ vm extensions drop --step       # one at a time with y/N per extension
 ### Auto-run
 When `AUTO_RUN_EXTENSIONS=true` (default), `vm migrate` installs missing enabled extensions before running migration files. It **never drops** an extension based on commented-out template lines — use `vm extensions drop` explicitly.
 
-If extension / function / enum sync **fails** (e.g. bad password), migrate **stops** and offers `Retry …?` after you fix `.vm` / `DATABASE_URL` — it does not continue to the next step. Decline retry to abort; or set `AUTO_RUN_*=false` to skip that step.
+If extension / function / enum sync **fails** (e.g. bad password), migrate **stops** and offers `Retry …?` after you fix `vm.yaml` / `DATABASE_URL` — it does not continue to the next step. Decline retry to abort; or set `AUTO_RUN_*=false` to skip that step.
 
 ---
 
@@ -901,7 +906,7 @@ CREATE TRIGGER trigger_<table>_auto_update
 
 ---
 
-## 14. Complete .vm Variable Reference
+## 14. Complete vm.yaml Variable Reference
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
@@ -945,7 +950,7 @@ Run `vm check --json` to see the exact findings before running `vm migrate`.
 
 | Error message | Cause | Fix |
 |---------------|-------|-----|
-| `database URL is required` | No `DATABASE_URL` anywhere | Add to `.vm` or use `--dsn` |
+| `database URL is required` | No `DATABASE_URL` anywhere | Add to `vm.yaml` or use `--dsn` |
 | `migration safety check failed: N error(s)` | Static checker found hard errors | Run `vm check --json`, fix the listed files |
 | `strict safety check failed: N warning(s)` | `STRICT=true` / `--strict` and warnings exist | Fix warnings or pass `--allow-destructive` |
 | `CREATE EXTENSION found` in a migration | Extension in migration file | Move to `extensions.sql`, run `vm extensions migrate` |
@@ -957,7 +962,7 @@ Run `vm check --json` to see the exact findings before running `vm migrate`.
 | `function auto_update_timestamp() does not exist` | Trigger function not installed | Run `vm functions migrate` |
 | Drift advisory: `NOT NULL COLUMN … has no DEFAULT value` | Missing column is NOT NULL without a DEFAULT | **Only then** `vm make migration add_<col>_to_<table>` with DEFAULT/backfill — otherwise edit create + drift (§1.1) |
 | Drift advisory: `UNIQUE COLUMN … cannot safely auto-add` | Missing column has a UNIQUE constraint | **Only then** `add_` with backfill — otherwise edit create + drift (§1.1) |
-| Lint: `unknown key — did you mean X?` | Typo in `.vm` key | Fix key name; run `vm lint` again |
+| Lint: `unknown key — did you mean X?` | Typo in `vm.yaml` key | Fix key name; run `vm lint` again |
 | Lint: `malformed line — expected KEY=VALUE` | Line without `=` | Fix or comment out the line |
 
 ---
@@ -966,9 +971,9 @@ Run `vm check --json` to see the exact findings before running `vm migrate`.
 
 ```bash
 # Config
-vm init                                      # create .vm + migrations dir
-vm lint                                      # validate .vm file
-vm lint --file /path/to/.vm                  # explicit path
+vm init                                      # create vm.yaml + migrations dir
+vm lint                                      # validate vm.yaml file
+vm lint --file /path/to/vm.yaml                  # explicit path
 vm check                                     # static migration safety check
 vm check --db --json                         # checksums + missing files, machine-readable
 vm check --strict                            # warnings are errors (CI)
@@ -1011,6 +1016,12 @@ vm enums migrate                             # create/install enums.sql
 vm enums drop [--force] [--step]             # drop enum types
 vm enums status                              # compare file vs live DB
 
+# Local GUI
+vm gui                                      # token-protected loopback GUI
+vm gui --no-open                            # print the access URL only
+vm gui --store sqlite                       # SQLite config store
+vm gui --allow-remote --tls-cert c.pem --tls-key k.pem
+
 # Tool management
 vm upgrade [--check] [--dry-run]             # upgrade / check only
 vm uninstall [--yes] [--keep-path] [--dry-run] [--binary <path>]
@@ -1023,7 +1034,7 @@ vm --version
 
 ### New project from scratch (PostgreSQL — default)
 ```bash
-# 1. Create .vm config + migrations dir
+# 1. Create vm.yaml config + migrations dir
 vm init --database-url postgres://user:pass@localhost:5432/mydb
 
 # 2. Validate config
@@ -1048,8 +1059,8 @@ vm migrate
 
 ### New project from scratch (MySQL or MariaDB)
 ```bash
-# 1. Create .vm — MySQL example (for MariaDB, put "mariadb" in host or DB name)
-cat > .vm <<'EOF'
+# 1. Create vm.yaml — MySQL example (for MariaDB, put "mariadb" in host or DB name)
+cat > vm.yaml <<'EOF'
 DATABASE_URL=mysql://user:pass@localhost:3306/mydb
 ENVIRONMENT=development
 DRIFT_HANDLING=prompt
@@ -1091,7 +1102,7 @@ vm migrate --force --detect-drift
 
 ### Production-safe deployment
 ```ini
-# .vm
+# vm.yaml
 ENVIRONMENT=production
 DRIFT_HANDLING=reject
 ```

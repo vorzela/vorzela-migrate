@@ -6,6 +6,7 @@ import (
 )
 
 func TestDetectDialect(t *testing.T) {
+	t.Setenv("VM_DIALECT", "")
 	tests := []struct {
 		name       string
 		driverName string
@@ -26,6 +27,17 @@ func TestDetectDialect(t *testing.T) {
 				t.Errorf("DetectDialect(%q) = %v, want %v", tt.driverName, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestDetectDialectEnvOverride(t *testing.T) {
+	t.Setenv("VM_DIALECT", "mariadb")
+	if got := DetectDialect("mysql://db-host/app"); got != MariaDB {
+		t.Fatalf("VM_DIALECT override = %v, want MariaDB", got)
+	}
+	t.Setenv("VM_DIALECT", "postgres")
+	if got := DetectDialect("mysql://db-host/app"); got != PostgreSQL {
+		t.Fatalf("VM_DIALECT override = %v, want PostgreSQL", got)
 	}
 }
 

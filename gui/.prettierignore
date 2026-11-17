@@ -1,0 +1,11 @@
+dist/
+node_modules/
+package-lock.json
+src/.vorzelajs/routeTree.gen.ts
+src/components/
+src/hooks/
+src/lib/cx.ts
+src/lib/overlay.ts
+src/lib/types.ts
+src/styles/**
+!src/styles/app.scss

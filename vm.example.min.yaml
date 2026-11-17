@@ -1,9 +1,9 @@
-# Vorzela Migration Tool Configuration (.vm)
+# Vorzela Migration Tool Configuration (vm.yaml)
 # Optional: you can also use environment variables or CLI flags.
-# Precedence: CLI flags > real env vars > .vm > .env > defaults
+# Precedence: CLI flags > real env vars > vm.yaml > .env > defaults
 #
 # Create/validate:
-#   vm init        # writes a .vm + migrations directory
+#   vm init        # writes vm.yaml + migrations directory
 #   vm lint        # validates this file
 
 # Database connection (required)

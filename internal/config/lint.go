@@ -14,7 +14,7 @@ const (
 	LintWarning LintSeverity = "warning"
 )
 
-// LintIssue represents a single problem found in a .vm file.
+// LintIssue represents a single problem found in a config file.
 type LintIssue struct {
 	Line     int
 	Key      string
@@ -26,7 +26,7 @@ func (l LintIssue) String() string {
 	return fmt.Sprintf("line %d [%s] %s: %s", l.Line, l.Severity, l.Key, l.Message)
 }
 
-// knownKeys is the authoritative set of recognised .vm keys.
+// knownKeys is the authoritative set of recognised config keys.
 var knownKeys = map[string]struct{}{
 	"DATABASE_URL":        {},
 	"MIGRATION_PATH":      {},
@@ -84,7 +84,7 @@ func isValidBool(v string) bool {
 	return false
 }
 
-// LintVMFile reads a .vm file and returns all detected issues.
+// LintVMFile reads a vm.yaml/vm.yml/.vm file and returns all detected issues.
 // It returns (nil, nil) when the file does not exist — absence is not an error.
 func LintVMFile(path string) ([]LintIssue, error) {
 	content, err := os.ReadFile(path)

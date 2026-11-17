@@ -1,0 +1,59 @@
+@use 'sass:map';
+@use 'sass:string';
+
+/// Motion tokens. Components should opt in with `motion-safe()` when adding
+/// non-essential movement; the global guard handles the rest.
+$durations: (
+  'fast': '150ms',
+  'base': '200ms',
+  'slow': '300ms',
+  'slower': '500ms',
+) !default;
+
+$easings: (
+  'out': 'cubic-bezier(0.22, 1, 0.36, 1)',
+  'in-out': 'cubic-bezier(0.4, 0, 0.2, 1)',
+  'spring': 'cubic-bezier(0.34, 1.56, 0.64, 1)',
+) !default;
+
+/// @param {String} $name ['base'] - `fast`, `base`, `slow`, `slower`
+@function duration($name: 'base') {
+  @if not map.has-key($durations, $name) {
+    @error 'Unknown duration `#{$name}`. Use one of: #{map.keys($durations)}.';
+  }
+
+  @return string.unquote('var(--duration-#{$name})');
+}
+
+/// @param {String} $name ['out'] - `out`, `in-out`, `spring`
+@function ease($name: 'out') {
+  @if not map.has-key($easings, $name) {
+    @error 'Unknown easing `#{$name}`. Use one of: #{map.keys($easings)}.';
+  }
+
+  @return string.unquote('var(--ease-#{$name})');
+}
+
+@mixin motion-safe {
+  @media (prefers-reduced-motion: no-preference) {
+    @content;
+  }
+}
+
+@mixin motion-reduce {
+  @media (prefers-reduced-motion: reduce) {
+    @content;
+  }
+}
+
+@mixin emit-motion-tokens($selector: ':root') {
+  #{$selector} {
+    @each $name, $value in $durations {
+      --duration-#{$name}: #{$value};
+    }
+
+    @each $name, $value in $easings {
+      --ease-#{$name}: #{$value};
+    }
+  }
+}

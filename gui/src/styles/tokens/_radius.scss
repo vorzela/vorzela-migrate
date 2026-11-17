@@ -1,0 +1,32 @@
+@use 'sass:map';
+@use 'sass:string';
+
+/// Continuous corner radii. Every component reads `var(--radius-*)`, so a
+/// consumer can retune the whole kit by overriding these variables.
+$radii: (
+  'xs': 6px,
+  'sm': 8px,
+  'md': 10px,
+  'lg': 12px,
+  'xl': 16px,
+  '2xl': 20px,
+  '3xl': 24px,
+  'full': 999px,
+) !default;
+
+/// @param {String} $name ['lg'] - Key from `$radii`
+@function radius($name: 'lg') {
+  @if not map.has-key($radii, $name) {
+    @error 'Unknown radius `#{$name}`. Use one of: #{map.keys($radii)}.';
+  }
+
+  @return string.unquote('var(--radius-#{$name})');
+}
+
+@mixin emit-radius-tokens($selector: ':root') {
+  #{$selector} {
+    @each $name, $value in $radii {
+      --radius-#{$name}: #{$value};
+    }
+  }
+}

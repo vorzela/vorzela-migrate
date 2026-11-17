@@ -22,7 +22,7 @@ vorzela-migrate/
 │
 ├── cmd/                             # CLI Commands
 │   ├── make.go                      # Create new migration
-│   ├── init.go                     # Create .vm + migrations dir
+│   ├── init.go                     # Create vm.yaml + migrations dir
 │   ├── check.go                    # Static/db safety checker (vm check)
 │   ├── migrate.go                  # Run pending migrations
 │   ├── rollback.go                 # Rollback migrations
@@ -33,7 +33,7 @@ vorzela-migrate/
 ├── internal/                        # Internal packages
 │   ├── config/
 │   │   ├── config.go               # Configuration loading (precedence)
-│   │   └── lint.go                 # .vm linter
+│   │   └── lint.go                 # vm.yaml linter
 │   ├── database/
 │   │   └── connection.go           # DB connect + ping + driver detection
 │   ├── db/
@@ -65,8 +65,8 @@ vorzela-migrate/
 ├── ARCHITECTURE.md                  # This file
 ├── install.sh                       # Auto-install script (macOS/Linux)
 ├── install.ps1                      # Auto-install script (Windows)
-├── example.vm                       # Annotated .vm example
-└── .vm.example                      # Short .vm example
+├── vm.example.yaml                 # Annotated vm.yaml example
+└── vm.example.min.yaml             # Short vm.yaml example
 ```
 
 ## Core Components
@@ -76,7 +76,7 @@ vorzela-migrate/
 The CLI layer uses `urfave/cli` v2 for command-line parsing:
 
 **Commands**:
-- `init` - Creates `.vm` and the migrations directory (safe/idempotent)
+- `init` - Creates `vm.yaml` and the migrations directory (safe/idempotent)
 - `check` - Static safety checker (optional live checksum DB check)
 - `make migration <name>` - Creates new migration files with dialect-aware templates
 - `migrate` - Runs pending migrations (safety check, checksums, lock, drift)
@@ -88,7 +88,7 @@ The CLI layer uses `urfave/cli` v2 for command-line parsing:
 
 **Design**:
 - No `--env` flag (single migrations folder for all environments)
-- DSN from CLI flags, environment variables, or `.vm` config file
+- DSN from CLI flags, environment variables, or `vm.yaml` config file
 - Database type auto-detected from DSN URL scheme
 - Batch tracking for organized rollback
 - `--non-interactive` / `VM_NON_INTERACTIVE=1` for agents and CI
@@ -279,7 +279,7 @@ COMMIT;
 
 ### Optional: sqlc/goose Compatibility
 
-If you use sqlc or other goose-compatible tools, enable goose markers in your `.vm` config:
+If you use sqlc or other goose-compatible tools, enable goose markers in your `vm.yaml` config:
 
 ```
 SQLC_SUPPORT=true
@@ -307,7 +307,7 @@ Vorzela supports three configuration methods with clear priority:
 
 1. **CLI Flags** (highest priority) - `--dsn`, `--path`
 2. **Environment Variables** - `DATABASE_URL`, `MIGRATION_PATH`
-3. **Config Files** - `.vm` or `.env` (lowest priority)
+3. **Config Files** - `vm.yaml` or `.env` (lowest priority)
 
 **DSN URL Schemes**:
 - PostgreSQL: `postgres://user:pass@host:port/dbname` or `postgresql://...`

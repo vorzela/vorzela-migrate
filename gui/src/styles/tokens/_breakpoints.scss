@@ -1,0 +1,48 @@
+@use 'sass:map';
+
+/// Viewport breakpoints. Prefer container queries for reusable components.
+$breakpoints: (
+  'sm': 40rem,
+  'md': 48rem,
+  'lg': 64rem,
+  'xl': 80rem,
+  '2xl': 96rem,
+) !default;
+
+@function breakpoint-value($name) {
+  @if not map.has-key($breakpoints, $name) {
+    @error 'Unknown breakpoint `#{$name}`. Use one of: #{map.keys($breakpoints)}.';
+  }
+
+  @return map.get($breakpoints, $name);
+}
+
+@mixin up($name) {
+  @media (min-width: breakpoint-value($name)) {
+    @content;
+  }
+}
+
+@mixin down($name) {
+  @media (max-width: calc(#{breakpoint-value($name)} - 0.02px)) {
+    @content;
+  }
+}
+
+@mixin between($lower, $upper) {
+  @media (min-width: breakpoint-value($lower)) and (max-width: calc(#{breakpoint-value($upper)} - 0.02px)) {
+    @content;
+  }
+}
+
+@mixin container-up($size, $name: null) {
+  @if $name {
+    @container #{$name} (min-width: #{$size}) {
+      @content;
+    }
+  } @else {
+    @container (min-width: #{$size}) {
+      @content;
+    }
+  }
+}

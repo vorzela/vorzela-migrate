@@ -73,6 +73,61 @@ func TestLoadConfig(t *testing.T) {
 	}
 }
 
+func TestFindConfigFilePreference(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"vm.yaml", "vm.yml", ".vm"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("DATABASE_URL=postgres://x/db\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := FindConfigFileInDir(dir); filepath.Base(got) != "vm.yaml" {
+		t.Fatalf("preferred config = %q, want vm.yaml", got)
+	}
+	if err := os.Remove(filepath.Join(dir, "vm.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	if got := FindConfigFileInDir(dir); filepath.Base(got) != "vm.yml" {
+		t.Fatalf("fallback config = %q, want vm.yml", got)
+	}
+	if err := os.Remove(filepath.Join(dir, "vm.yml")); err != nil {
+		t.Fatal(err)
+	}
+	if got := FindConfigFileInDir(dir); filepath.Base(got) != ".vm" {
+		t.Fatalf("legacy config = %q, want .vm", got)
+	}
+}
+
+func TestLoadConfigUsesVMYAML(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := os.WriteFile("vm.yaml", []byte("DATABASE_URL=postgres://yaml:5432/db\nMIGRATION_PATH=./yaml-migrations\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadConfig("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DatabaseURL != "postgres://yaml:5432/db" {
+		t.Fatalf("DatabaseURL = %q", cfg.DatabaseURL)
+	}
+	if cfg.MigrationPath != "./yaml-migrations" {
+		t.Fatalf("MigrationPath = %q", cfg.MigrationPath)
+	}
+}
+
+func TestLoadConfigUsesVMYML(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := os.WriteFile("vm.yml", []byte("DATABASE_URL=postgres://yml:5432/db\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadConfig("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DatabaseURL != "postgres://yml:5432/db" {
+		t.Fatalf("DatabaseURL = %q", cfg.DatabaseURL)
+	}
+}
+
 func TestLoadVorzelaFile(t *testing.T) {
 	// Create a temporary directory for testing
 	tmpDir := t.TempDir()

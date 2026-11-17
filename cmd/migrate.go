@@ -295,7 +295,7 @@ var MigrateCommand = &cli.Command{
 
 // runAutoPrerequisite runs an auto-run step (extensions / functions / enums).
 // On failure it does NOT continue to the next migrate step — it prompts to retry
-// after the user fixes credentials/config, reloading .vm and reconnecting.
+// after the user fixes credentials/config, reloading vm.yaml and reconnecting.
 func runAutoPrerequisite(
 	c *cli.Context,
 	name, skipFlag string,
@@ -311,14 +311,14 @@ func runAutoPrerequisite(
 
 		output.Error("Failed to run %s: %v", name, err)
 		output.Info("Migrate will not continue until this succeeds.")
-		output.Info("Fix the issue (e.g. DATABASE_URL / password in .vm or env), then retry.")
-		output.Info("To skip this step, set %s=false in .vm and re-run `vm migrate`", skipFlag)
+		output.Info("Fix the issue (e.g. DATABASE_URL / password in vm.yaml or env), then retry.")
+		output.Info("To skip this step, set %s=false in vm.yaml and re-run `vm migrate`", skipFlag)
 
 		if !output.ConfirmDefault(fmt.Sprintf("Retry %s?", name), false) {
 			return fmt.Errorf("%s failed: %w", name, err)
 		}
 
-		// Reload config so fixed credentials / .vm changes take effect.
+		// Reload config so fixed credentials / vm.yaml changes take effect.
 		newCfg, lerr := config.LoadConfig(c.String("dsn"), c.String("path"))
 		if lerr != nil {
 			output.Warning("Could not reload config: %v — retrying with previous settings", lerr)

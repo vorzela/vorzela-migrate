@@ -1,0 +1,23 @@
+{
+  "registry": "https://raw.githubusercontent.com/vorzela/vorzela-ui-vorzelajs/main/registry",
+  "version": "0.3.0",
+  "aliases": {
+    "base": "~",
+    "components": "~/components/ui",
+    "primitives": "~/components/primitives",
+    "lib": "~/lib",
+    "hooks": "~/hooks",
+    "styles": "~/styles",
+    "charts": "~/charts"
+  },
+  "paths": {
+    "base": "src",
+    "components": "src/components/ui",
+    "primitives": "src/components/primitives",
+    "lib": "src/lib",
+    "hooks": "src/hooks",
+    "styles": "src/styles",
+    "charts": "src/charts"
+  },
+  "css": "src/styles/global.scss"
+}

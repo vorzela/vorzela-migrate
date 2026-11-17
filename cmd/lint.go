@@ -12,12 +12,12 @@ import (
 
 var LintCommand = &cli.Command{
 	Name:  "lint",
-	Usage: "Validate the .vm configuration file for errors and warnings",
+	Usage: "Validate the vm.yaml/vm.yml configuration file for errors and warnings",
 	Flags: []cli.Flag{
 		&cli.StringFlag{
 			Name:    "file",
 			Aliases: []string{"f"},
-			Usage:   "path to the .vm file to lint (defaults to .vm in current or parent directories)",
+			Usage:   "path to the config file to lint (defaults to vm.yaml/vm.yml in current or parent directories)",
 		},
 	},
 	Action: func(c *cli.Context) error {
@@ -28,8 +28,8 @@ var LintCommand = &cli.Command{
 		}
 
 		if vmPath == "" {
-			output.Warning("No .vm file found in the current or parent directories")
-			output.Info("Create a .vm file based on example.vm to get started")
+			output.Warning("No vm.yaml, vm.yml or .vm file found in the current or parent directories")
+			output.Info("Create one with `vm init` (vm.yaml) or copy vm.example.yaml to get started")
 			return nil
 		}
 
@@ -80,22 +80,7 @@ var LintCommand = &cli.Command{
 	},
 }
 
-// findVMFile searches the current directory and parents for a .vm file.
+// findVMFile searches the current directory and parents for a config file.
 func findVMFile() string {
-	dir, err := os.Getwd()
-	if err != nil {
-		return ""
-	}
-	for {
-		candidate := filepath.Join(dir, ".vm")
-		if _, err := os.Stat(candidate); err == nil {
-			return candidate
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
-		}
-		dir = parent
-	}
-	return ""
+	return config.FindConfigFile()
 }

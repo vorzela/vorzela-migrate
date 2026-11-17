@@ -34,7 +34,7 @@ const KEYS = {
       "|-------|----------|--------|------------------|--------------|----------|\n" +
       "| development / dev | true | false | true | true | true |\n" +
       "| production / prod | true | true | true | true | false |\n\n" +
-      "Explicit keys in `.vm` override these defaults.",
+      "Explicit keys in `vm.yaml` override these defaults.",
   },
   ENV: {
     type: "enum",

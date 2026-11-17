@@ -1,0 +1,10 @@
+@use '../tokens/space' as space;
+
+/// Normalise an inline SVG icon.
+///
+/// @param {Number|String} $size [4] - A spacing step
+@mixin icon($size: 4) {
+  flex: none;
+  width: space.space($size);
+  height: space.space($size);
+}

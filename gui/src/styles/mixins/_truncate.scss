@@ -1,0 +1,17 @@
+/// Single-line ellipsis.
+@mixin truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/// Multi-line clamp.
+///
+/// @param {Number} $lines [2] - Maximum visible lines
+@mixin line-clamp($lines: 2) {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: $lines;
+  line-clamp: $lines;
+}

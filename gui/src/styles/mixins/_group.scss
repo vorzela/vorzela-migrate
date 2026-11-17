@@ -1,0 +1,37 @@
+/// Cross-module state hooks.
+///
+/// CSS Module names are hashed, so marker classes cannot work. Components mark
+/// a parent with `data-group` / `data-peer`; attributes are never hashed.
+
+@mixin group-hover {
+  @media (hover: hover) and (pointer: fine) {
+    [data-group]:hover &,
+    [data-group][data-state='open'] & {
+      @content;
+    }
+  }
+}
+
+@mixin group-focus {
+  [data-group]:focus-within & {
+    @content;
+  }
+}
+
+@mixin group-state($state) {
+  [data-group][data-state='#{$state}'] & {
+    @content;
+  }
+}
+
+@mixin peer-focus {
+  [data-peer]:focus-visible ~ & {
+    @content;
+  }
+}
+
+@mixin peer-checked {
+  [data-peer]:checked ~ & {
+    @content;
+  }
+}

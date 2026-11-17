@@ -1,0 +1,18 @@
+/// Progressive enhancement gate.
+///
+/// @param {String} $feature - A declaration, e.g. `color: oklch(0% 0 0)`
+@mixin supports($feature) {
+  @supports (#{$feature}) {
+    @content;
+  }
+}
+
+/// Fallback-first helper.
+///
+/// @param {String} $property - CSS property
+/// @param {String} $fallback - Universally supported value
+/// @param {String} $modern - Enhancement value
+@mixin progressive($property, $fallback, $modern) {
+  #{$property}: $fallback;
+  #{$property}: $modern;
+}

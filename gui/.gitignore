@@ -1,0 +1,9 @@
+node_modules/
+dist/
+coverage/
+.vite/
+*.tsbuildinfo
+*.local
+.DS_Store
+src/.vorzelajs/routeTree.gen.ts
+.vorzelajs-ui/
