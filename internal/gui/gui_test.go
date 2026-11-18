@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vorzela/vorzela-migrate/v2/internal/config"
 	"github.com/vorzela/vorzela-migrate/v2/internal/migration"
 	"github.com/vorzela/vorzela-migrate/v2/internal/version"
 )
@@ -417,13 +418,14 @@ func TestPlanStoreSingleUseAndSessionBinding(t *testing.T) {
 func TestFilterCheckReport(t *testing.T) {
 	report := &migration.SafetyReport{Issues: []migration.SafetyIssue{
 		{Code: "config_warning", Message: "DATABASE_URL: DATABASE_URL is not set — the tool requires a database connection string", Severity: migration.SafetyWarning},
+		{Code: "config_warning", Message: "database_url: database_url is not set — the tool requires a database connection string", Severity: migration.SafetyWarning},
 		{Code: "missing_down_marker", Message: "missing down", Severity: migration.SafetyWarning},
 	}}
 	filtered := filterCheckReport(report, true)
 	if len(filtered.Issues) != 1 || filtered.Issues[0].Code != "missing_down_marker" {
 		t.Fatalf("filtered = %+v", filtered.Issues)
 	}
-	if len(report.Issues) != 2 {
+	if len(report.Issues) != 3 {
 		t.Fatal("filter mutated the original report")
 	}
 }
@@ -462,5 +464,38 @@ func TestPrepareRequestJSONShape(t *testing.T) {
 	cancel()
 	if ctx.Err() == nil {
 		t.Fatal("context sanity check failed")
+	}
+}
+
+func TestProjectVMContentIsValidYAML(t *testing.T) {
+	conn := &Connection{
+		Engine:   "postgres",
+		Host:     "localhost",
+		Port:     5432,
+		Database: "app",
+		Username: "user",
+	}
+	for _, writeDSN := range []bool{false, true} {
+		content, err := projectVMContent(Project{}, conn, "pa:ss#word", "./migrations", "development", writeDSN)
+		if err != nil {
+			t.Fatalf("writeDSN=%v: %v", writeDSN, err)
+		}
+		dir := t.TempDir()
+		path := filepath.Join(dir, "vm.yaml")
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		issues, err := config.LintVMFile(path)
+		if err != nil {
+			t.Fatalf("writeDSN=%v: %v", writeDSN, err)
+		}
+		for _, issue := range issues {
+			if issue.Severity == config.LintError {
+				t.Fatalf("writeDSN=%v: generated YAML has error: %s\n%s", writeDSN, issue, content)
+			}
+			if strings.Contains(issue.Message, "legacy KEY=VALUE") {
+				t.Fatalf("writeDSN=%v: generated YAML is not YAML: %s", writeDSN, issue)
+			}
+		}
 	}
 }

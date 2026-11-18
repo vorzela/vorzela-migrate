@@ -375,19 +375,19 @@ func projectVMContent(project Project, conn *Connection, password, migrationPath
 		if err != nil {
 			return "", err
 		}
-		b.WriteString("DATABASE_URL=")
-		b.WriteString(dsn)
+		b.WriteString("database_url: ")
+		b.WriteString(config.QuoteYAMLValue(dsn))
 		b.WriteString("\n")
 	} else {
 		b.WriteString("# DATABASE_URL is injected by `vm gui` from the selected saved connection.\n")
 		b.WriteString("# Uncomment and set this to use the plain vm CLI on this project:\n")
-		b.WriteString("# DATABASE_URL=postgres://user:password@localhost:5432/database\n")
+		b.WriteString("# database_url: 'postgres://user:password@localhost:5432/database'\n")
 	}
-	b.WriteString("ENVIRONMENT=")
-	b.WriteString(environment)
-	b.WriteString("\nMIGRATION_PATH=")
-	b.WriteString(migrationPath)
-	b.WriteString("\nDRIFT_HANDLING=prompt\n")
+	b.WriteString("environment: ")
+	b.WriteString(config.QuoteYAMLValue(environment))
+	b.WriteString("\nmigration_path: ")
+	b.WriteString(config.QuoteYAMLValue(migrationPath))
+	b.WriteString("\ndrift_handling: prompt\n")
 	return b.String(), nil
 }
 

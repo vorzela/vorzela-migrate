@@ -1,10 +1,14 @@
-# Vorzela `vm.yaml`/`vm.yml` + `.vorm` syntax highlighting
+# Vorzela `vm.yaml`/`vm.yml` + `.vorm` editor support
 
-Editor support for:
+`vm.yaml` / `vm.yml` are real YAML files and use your editor's built-in YAML
+support. The Vorzela extensions in this directory add syntax highlighting,
+hover docs and completions for the **legacy `.vm`** format and for vorm
+`.vorm` files.
 
-| File | Tool | Language id |
-|------|------|-------------|
-| `vm.yaml` / `vm.yml` (legacy `.vm`) | Vorzela Migrate | `vorzela-vm` |
+| File | Syntax | Language id |
+|------|--------|-------------|
+| `vm.yaml` / `vm.yml` | Built-in YAML | `yaml` |
+| `.vm` (legacy) | Vorzela Migrate | `vorzela-vm` |
 | `.vorm` | vorm ORM | `vorzela-vorm` |
 
 ## Install
@@ -19,12 +23,20 @@ Editor support for:
 |--------|------------------------|
 | **Cursor / VS Code / Insiders / VSCodium** | Yes |
 | **Sublime Text** | Yes |
-| **Vim / Neovim** | Yes (`vm.yaml` + `.vorm`) |
+| **Vim / Neovim** | Yes (`.vm` + `.vorm`) |
 | **Nano / Helix / Zed / JetBrains** | Detected / partial |
 
 ## Features (VS Code / Cursor)
 
-### `vm.yaml` (migrate)
+### `vm.yaml` / `vm.yml` (migrate)
+
+Use the built-in YAML language support. `vm lint` validates keys and values:
+
+```bash
+vm lint
+```
+
+### `.vm` (legacy migrate config)
 
 Syntax · hover · live lint (unknown keys, `DATABASE_URL`) · Ctrl+Space completions
 
@@ -43,7 +55,7 @@ Workspace [`.vscode/settings.json`](../.vscode/settings.json) associates both fi
 
 ```bash
 mkdir -p ~/.cursor/extensions
-ln -sfn "$(pwd)/editors/vscode" ~/.cursor/extensions/vorzela.vorzela-vm-1.2.0
+ln -sfn "$(pwd)/editors/vscode" ~/.cursor/extensions/vorzela.vorzela-vm-1.3.0
 ```
 
-Extension version is **1.2.0** (`vorzela-vm` package name; includes `.vorm`).
+Extension version is **1.3.0** (`vorzela-vm` package name; includes `.vorm`).

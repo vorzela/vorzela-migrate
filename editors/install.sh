@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Auto-install Vorzela vm.yaml/vm.yml syntax support into editors detected on this machine.
+# Auto-install Vorzela legacy .vm / .vorm syntax support into editors detected on this machine.
+# vm.yaml/vm.yml use the editor built-in YAML support and need no install.
 #
 # Usage (from repo root or editors/):
 #   ./editors/install.sh              # detect & install all found editors
@@ -13,13 +14,13 @@ set -euo pipefail
 EDITORS_ROOT="$(cd "$(dirname "$0")" && pwd)"
 VSCODE_EXT="$EDITORS_ROOT/vscode"
 EXT_ID="vorzela.vorzela-vm"
-EXT_VER="1.2.0"
+EXT_VER="1.3.0"
 LIST_ONLY=0
 FILTER=""
 
 usage() {
   cat <<EOF
-Vorzela vm.yaml/vm.yml editor installer
+Vorzela .vm/.vorm editor installer
 
 Usage: $0 [options]
 
@@ -173,7 +174,7 @@ detect_nano() {
   link_file "$EDITORS_ROOT/nano/vorzela.nanorc" "$nanorc_dir/vorzela.nanorc"
   touch "$HOME/.nanorc"
   if ! grep -Fq 'vorzela.nanorc' "$HOME/.nanorc" 2>/dev/null; then
-    printf '\n# Vorzela vm.yaml/vm.yml syntax\n%s\n' "$include_line" >> "$HOME/.nanorc"
+    printf '\n# Vorzela legacy .vm/.vorm syntax\n%s\n' "$include_line" >> "$HOME/.nanorc"
     ok "Linked Nano + appended include to ~/.nanorc"
   else
     ok "Linked Nano (~/.nanorc already includes vorzela.nanorc)"
@@ -222,11 +223,12 @@ detect_zed() {
     return
   fi
   mkdir -p "$HOME/.config/zed"
-  if [[ -f "$settings" ]] && grep -Fq '"Ini"' "$settings" 2>/dev/null && grep -Fq 'vm.yaml' "$settings" 2>/dev/null; then
-    ok "Zed settings already map vm.yaml (Ini)"
+  if [[ -f "$settings" ]] && grep -Fq '"Ini"' "$settings" 2>/dev/null && grep -Fq '.vm' "$settings" 2>/dev/null; then
+    ok "Zed settings already map legacy .vm (Ini)"
   else
-    warn "Zed detected — map vm.yaml/vm.yml to Ini in $settings (see editors/zed/README.md)"
-    warn '  Example: "file_types": { "Ini": ["vm", "vm.yaml", "vm.yml", ".vm"] }'
+    warn "Zed detected — map legacy .vm to Ini in $settings (see editors/zed/README.md)"
+    warn '  vm.yaml/vm.yml already use Zed built-in YAML; no mapping needed.'
+    warn '  Example: "file_types": { "Ini": ["vm", ".vm"] }'
   fi
 }
 
@@ -250,11 +252,11 @@ detect_jetbrains() {
   fi
   warn "JetBrains detected — add TextMate bundle manually:"
   warn "  Settings → Editor → TextMate Bundles → + → $EDITORS_ROOT/textmate"
-  warn "  Or map vm.yaml / vm.yml (and legacy .vm) under File Types → Ini / Properties"
+  warn "  Or map legacy .vm under File Types → Ini / Properties"
 }
 
 # ── Main ─────────────────────────────────────────────────────────────────────
-log "Vorzela vm.yaml/vm.yml editor installer"
+log "Vorzela .vm/.vorm editor installer"
 log "Source: $EDITORS_ROOT"
 log
 
@@ -271,5 +273,5 @@ if [[ "$LIST_ONLY" -eq 1 ]]; then
   log "Dry run complete. Re-run without --list to install."
 else
   log "Done. Reload open editors to pick up changes."
-  log "Cursor/VS Code: Developer: Reload Window — then Ctrl+Space in vm.yaml for keys."
+  log "Cursor/VS Code: Developer: Reload Window — then Ctrl+Space in legacy .vm files for keys."
 fi

@@ -33,6 +33,7 @@ vorzela-migrate/
 ├── internal/                        # Internal packages
 │   ├── config/
 │   │   ├── config.go               # Configuration loading (precedence)
+│   │   ├── yaml.go                 # YAML parser/keys for vm.yaml/vm.yml
 │   │   └── lint.go                 # vm.yaml linter
 │   ├── database/
 │   │   └── connection.go           # DB connect + ping + driver detection
@@ -281,8 +282,8 @@ COMMIT;
 
 If you use sqlc or other goose-compatible tools, enable goose markers in your `vm.yaml` config:
 
-```
-SQLC_SUPPORT=true
+```yaml
+sqlc_support: true
 ```
 
 This will add `-- +goose Up` and `-- +goose Down` markers to all new migrations.

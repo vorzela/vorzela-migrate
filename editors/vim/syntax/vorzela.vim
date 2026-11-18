@@ -1,4 +1,4 @@
-" Vorzela Migrate .vm configuration syntax
+" Vorzela Migrate legacy .vm configuration syntax
 " Language: vorzela
 
 if exists("b:current_syntax")

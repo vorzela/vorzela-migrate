@@ -57,7 +57,7 @@
 - 🧩 **Optional ORM (v3 / vorm)** - Models introspected from your database, sqlc-style typed queries, relations, and its own in-process migration runner; see [Optional ORM (vorm)](#-optional-orm-vorm)
 - 🚀 **No DSN Flag Required** - Use config files instead of repeating `--dsn` flag
 - 🐘 **Multi-Database Support** - PostgreSQL and MySQL/MariaDB with automatic detection
-- 🌍 **Environment-Based Auto Config** - Set `ENVIRONMENT` in `vm.yaml`; the tool auto-configures everything
+- 🌍 **Environment-Based Auto Config** - Set `environment` in `vm.yaml`; the tool auto-configures everything
 - ✅ **Checksum Validation** - Detect if migration files have been modified after execution
 - 🛡️ **Migration Safety Checker** - `vm check` flags missing Up/Down sections, destructive SQL, transaction-hostile statements, duplicate timestamps, and `vm.yaml` typos
 - 🤖 **Agent-Friendly Output** - `vm check --json`, `vm status --json`, `--non-interactive`, and `vm init` for LLM/CI workflows
@@ -98,7 +98,7 @@ This is the closest workflow to Go itself. It builds and installs a binary named
 `vm` without root:
 
 ```bash
-GOBIN="$HOME/.local/bin" go install github.com/vorzela/vorzela-migrate/v2/cmd/vm@v2.4.0
+GOBIN="$HOME/.local/bin" go install github.com/vorzela/vorzela-migrate/v2/cmd/vm@v2.4.1
 vm --version
 ```
 
@@ -205,7 +205,7 @@ sudo mv vm /usr/local/bin/  # Linux/macOS
 
 **Build with version info:**
 ```bash
-go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/v2/internal/version.CurrentVersion=v2.4.0'" -o vm ./cmd/vm
+go build -ldflags "-X 'github.com/vorzela/vorzela-migrate/v2/internal/version.CurrentVersion=v2.4.1'" -o vm ./cmd/vm
 ```
 
 ### Verify Installation
@@ -214,7 +214,7 @@ After installation, verify it works:
 
 ```bash
 vm --version
-# Should output: vm version v2.4.0
+# Should output: vm version v2.4.1
 
 vm --help
 # Shows all available commands
@@ -306,16 +306,16 @@ Database type is automatically detected from the DSN URL.
 Create `vm.yaml` file with your environment:
 
 **Development:**
-```ini
-DATABASE_URL=postgres://user:password@localhost:5432/myapp
-ENVIRONMENT=development
+```yaml
+database_url: 'postgres://user:password@localhost:5432/myapp'
+environment: development
 ```
 
 **Production:**
-```ini
-DATABASE_URL=postgres://prod-db:5432/myapp
-ENVIRONMENT=production
-DRIFT_HANDLING=auto
+```yaml
+database_url: 'postgres://prod-db:5432/myapp'
+environment: production
+drift_handling: auto
 ```
 
 Then simply run:
@@ -330,9 +330,9 @@ vm migrate  # Auto-applies environment-based settings!
 No more typing `--enhanced --online --verify-checksums --detect-drift --verbose`!
 
 **Configuration Options:**
-- `ENVIRONMENT`: `development` or `production` (auto-applies settings)
-- `DRIFT_HANDLING`: `auto` (apply fixes), `prompt` (ask), or `reject` (fail)
-- `ENHANCED`, `ONLINE`, `VERIFY_CHECKSUMS`, `DETECT_DRIFT`, `VERBOSE`: Override defaults
+- `environment`: `development` or `production` (auto-applies settings)
+- `drift_handling`: `auto` (apply fixes), `prompt` (ask), or `reject` (fail)
+- `enhanced`, `online`, `verify_checksums`, `detect_drift`, `verbose`: Override defaults
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for implementation details and [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for common issues.
 
@@ -341,13 +341,13 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for implementation details and [TROUBLESH
 Create `vm.yaml` file:
 
 **PostgreSQL:**
-```ini
-DATABASE_URL=postgres://user:password@localhost:5432/myapp
+```yaml
+database_url: 'postgres://user:password@localhost:5432/myapp'
 ```
 
 **MySQL/MariaDB:**
-```ini
-DATABASE_URL=mysql://user:password@localhost:3306/myapp
+```yaml
+database_url: 'mysql://user:password@localhost:3306/myapp'
 ```
 
 Then simply:
@@ -470,7 +470,7 @@ vm is designed to live in one per-user directory, not `/usr/local/bin`:
 
 ```bash
 # Preferred: Go installs it into ~/.local/bin
-GOBIN="$HOME/.local/bin" go install github.com/vorzela/vorzela-migrate/v2/cmd/vm@v2.4.0
+GOBIN="$HOME/.local/bin" go install github.com/vorzela/vorzela-migrate/v2/cmd/vm@v2.4.1
 
 # Or build and move it yourself (no sudo)
 go build -o vm ./cmd/vm
@@ -746,7 +746,7 @@ DROP TABLE IF EXISTS users;
 
 ## 🔌 Integration with sqlc & goose
 
-Vorzela migrations are fully compatible with [**sqlc**](https://sqlc.dev/) (SQL compiler) and [**goose**](https://github.com/pressly/goose) (database migration tool). When `SQLC_SUPPORT=true` is enabled, all generated migrations include goose-style directional markers.
+Vorzela migrations are fully compatible with [**sqlc**](https://sqlc.dev/) (SQL compiler) and [**goose**](https://github.com/pressly/goose) (database migration tool). When `sqlc_support: true` is set, all generated migrations include goose-style directional markers.
 
 ### Why Use This Integration?
 
@@ -757,24 +757,24 @@ Vorzela migrations are fully compatible with [**sqlc**](https://sqlc.dev/) (SQL 
 
 ### Enable sqlc/goose Support
 
-Add `SQLC_SUPPORT=true` to your `vm.yaml` configuration file:
+Add `sqlc_support: true` to your `vm.yaml` configuration file:
 
-```ini
+```yaml
 # vm.yaml file
-DATABASE_URL=postgres://user:pass@localhost:5432/mydb
-MIGRATION_PATH=./migrations
-SQLC_SUPPORT=true  # Enables goose markers
+database_url: 'postgres://user:pass@localhost:5432/mydb'
+migration_path: './migrations'
+sqlc_support: true  # Enables goose markers
 ```
 
-Or set it as an environment variable:
+Or set it in a `.env` file next to `vm.yaml`:
 
-```bash
-export SQLC_SUPPORT=true
+```ini
+SQLC_SUPPORT=true
 ```
 
 ### Migration File Comparison
 
-**Without SQLC_SUPPORT (default):**
+**Without `sqlc_support` (default):**
 
 ```sql
 -- Migration: CREATE_TABLE_USERS
@@ -791,7 +791,7 @@ CREATE TABLE IF NOT EXISTS users (
 DROP TABLE IF EXISTS users CASCADE;
 ```
 
-**With SQLC_SUPPORT=true:**
+**With `sqlc_support: true`:**
 
 ```sql
 -- Migration: CREATE_TABLE_USERS
@@ -814,10 +814,10 @@ DROP TABLE IF EXISTS users CASCADE;
 
 **Step 1:** Enable sqlc support in `vm.yaml`:
 
-```ini
-DATABASE_URL=postgres://user:pass@localhost:5432/mydb
-MIGRATION_PATH=./migrations
-SQLC_SUPPORT=true
+```yaml
+database_url: 'postgres://user:pass@localhost:5432/mydb'
+migration_path: './migrations'
+sqlc_support: true
 ```
 
 **Step 2:** Create migrations with Vorzela:
@@ -892,13 +892,13 @@ func main() {
 
 ### Using with goose Directly
 
-**Important:** Goose requires `SQLC_SUPPORT=true` to be enabled in your `vm.yaml` config. The goose markers (`-- +goose Up/Down`) are necessary for goose to parse the migrations.
+**Important:** Goose support requires `sqlc_support: true` in your `vm.yaml` config. The goose markers (`-- +goose Up/Down`) are necessary for goose to parse the migrations.
 
-With `SQLC_SUPPORT=true` enabled, Vorzela migrations can be run with goose:
+With `sqlc_support: true` enabled, Vorzela migrations can be run with goose:
 
 ```bash
-# First, ensure SQLC_SUPPORT is enabled in vm.yaml
-echo "SQLC_SUPPORT=true" >> vm.yaml
+# First, ensure sqlc_support is enabled in vm.yaml
+echo "sqlc_support: true" >> vm.yaml
 
 # Install goose
 go install github.com/pressly/goose/v3/cmd/goose@latest
@@ -970,15 +970,15 @@ go run ./cmd/vm
 
 All Vorzela features work seamlessly with sqlc/goose markers:
 
-```ini
+```yaml
 # vm.yaml - Full-featured configuration
-DATABASE_URL=postgres://localhost:5432/mydb
-MIGRATION_PATH=./migrations
-ENVIRONMENT=production
-SQLC_SUPPORT=true              # Enable goose markers
-VERIFY_CHECKSUMS=true          # Ensure migration integrity
-DETECT_DRIFT=true              # Detect manual schema changes
-ONLINE_MIGRATIONS=true         # Zero-downtime migrations
+database_url: 'postgres://localhost:5432/mydb'
+migration_path: './migrations'
+environment: production
+sqlc_support: true              # Enable goose markers
+verify_checksums: true          # Ensure migration integrity
+detect_drift: true              # Detect manual schema changes
+online: true                    # Zero-downtime migrations
 ```
 
 This gives you:
@@ -1060,21 +1060,22 @@ migrations to run inside your own binary with no external dependency.
 > **Config names:** use `vm.yaml` (preferred) or `vm.yml`. Legacy projects with
 > a `.vm` file still work — `.vm` is checked last when no YAML config exists.
 
-> **Editor highlighting:** Syntax coloring, **hover docs**, **Ctrl+Space** key list, and **live lint** for `vm.yaml` files live in [`editors/`](editors/README.md). **Not automatic on clone** — run once:
+> **Editor support:** YAML syntax for `vm.yaml`/`vm.yml`; optional Vorzela highlighting, hover docs and completions for legacy `.vm` files live in [`editors/`](editors/README.md). **Not automatic on clone** — run once:
 > ```bash
 > ./editors/install.sh          # auto-detects Cursor, VS Code, Sublime, Vim, Nano, …
 > ./editors/install.sh --list   # dry-run
 > ```
 >
-> - **Required key:** `DATABASE_URL` (hover explains formats; missing/empty is flagged)
-> - **Unknown keys:** red error underline + “did you mean …?” (same as `vm lint`)
+> - `vm.yaml` / `vm.yml` use your editor's built-in **YAML** support.
+> - Legacy `.vm` files use the Vorzela `KEY=VALUE` grammar in the extension.
+> - `vm lint` reports unknown keys, bad values, and legacy `KEY=VALUE` content in a YAML file.
 
 ### Three Ways to Configure
 
 **1. Configuration File (vm.yaml)** - Recommended for local development
-```ini
-DATABASE_URL=postgres://localhost:5432/myapp
-MIGRATION_PATH=./migrations
+```yaml
+database_url: 'postgres://localhost:5432/myapp'
+migration_path: './migrations'
 ```
 
 **2. Environment Variables** - Recommended for CI/CD and production
@@ -1143,7 +1144,7 @@ See [CONFIG_ENHANCED.md](CONFIG_ENHANCED.md) for detailed configuration guide.
 | `--strict` | | Fail on safety warnings (destructive SQL, missing Down, transaction-hostile SQL) |
 | `--allow-destructive` | | Acknowledge destructive warnings when `--strict` is used |
 | `--yes` | `-y` | Non-interactive: safe auto-run prompts default to yes (never destructive actions) |
-| `--drift-handling <mode>` | | Override `DRIFT_HANDLING`: `auto`, `prompt`, `reject` |
+| `--drift-handling <mode>` | | Override `drift_handling`: `auto`, `prompt`, `reject` |
 | `--verbose` | `-v` | Detailed colored logging with execution timing |
 | `--dsn <url>` | `-d` | Database connection string (overrides `vm.yaml` / env var) |
 | `--path <dir>` | `-p` | Path to migrations directory (default: `migrations`) |
@@ -1197,7 +1198,7 @@ See [CONFIG_ENHANCED.md](CONFIG_ENHANCED.md) for detailed configuration guide.
 | `vm enums drop --force` | Drop all enum types without confirmation |
 | `vm enums status` | Show which enum types are present in the live database vs `enums.sql` |
 
-> **Auto-run:** `vm migrate` installs missing enum types / missing values before applying migrations when `AUTO_RUN_ENUMS=true` (default). It never drops types based on commented template examples. Set `AUTO_RUN_ENUMS=false` in your `vm.yaml` file to disable.
+> **Auto-run:** `vm migrate` installs missing enum types / missing values before applying migrations when `auto_run_enums: true` (the default). It never drops types based on commented template examples. Set `auto_run_enums: false` in your `vm.yaml` file to disable.
 
 ### `vm uninstall` Flags
 

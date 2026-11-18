@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -99,7 +100,15 @@ func TestFindConfigFilePreference(t *testing.T) {
 
 func TestLoadConfigUsesVMYAML(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := os.WriteFile("vm.yaml", []byte("DATABASE_URL=postgres://yaml:5432/db\nMIGRATION_PATH=./yaml-migrations\n"), 0o644); err != nil {
+	content := `# real YAML config
+database_url: 'postgres://yaml:5432/db'
+migration_path: './yaml-migrations'
+environment: production
+enhanced: false
+drift_handling: reject
+auto_run_enums: false
+`
+	if err := os.WriteFile("vm.yaml", []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err := LoadConfig("", "")
@@ -112,11 +121,23 @@ func TestLoadConfigUsesVMYAML(t *testing.T) {
 	if cfg.MigrationPath != "./yaml-migrations" {
 		t.Fatalf("MigrationPath = %q", cfg.MigrationPath)
 	}
+	if cfg.Environment != "production" {
+		t.Fatalf("Environment = %q", cfg.Environment)
+	}
+	if cfg.Enhanced {
+		t.Fatal("Enhanced = true, want false from explicit override")
+	}
+	if cfg.DriftHandling != "reject" {
+		t.Fatalf("DriftHandling = %q", cfg.DriftHandling)
+	}
+	if cfg.AutoRunEnums {
+		t.Fatal("AutoRunEnums = true, want false from explicit override")
+	}
 }
 
 func TestLoadConfigUsesVMYML(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := os.WriteFile("vm.yml", []byte("DATABASE_URL=postgres://yml:5432/db\n"), 0o644); err != nil {
+	if err := os.WriteFile("vm.yml", []byte("database_url: 'postgres://yml:5432/db'\nenv: development\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err := LoadConfig("", "")
@@ -124,6 +145,59 @@ func TestLoadConfigUsesVMYML(t *testing.T) {
 		t.Fatal(err)
 	}
 	if cfg.DatabaseURL != "postgres://yml:5432/db" {
+		t.Fatalf("DatabaseURL = %q", cfg.DatabaseURL)
+	}
+	if cfg.Environment != "development" {
+		t.Fatalf("Environment = %q", cfg.Environment)
+	}
+}
+
+func TestLoadConfigYAMLAcceptsUppercaseKeys(t *testing.T) {
+	t.Chdir(t.TempDir())
+	content := `DATABASE_URL: 'postgres://upper:5432/db'
+MIGRATION_PATH: './upper'
+ONLINE: true
+`
+	if err := os.WriteFile("vm.yaml", []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadConfig("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DatabaseURL != "postgres://upper:5432/db" {
+		t.Fatalf("DatabaseURL = %q", cfg.DatabaseURL)
+	}
+	if !cfg.Online {
+		t.Fatal("Online = false, want true")
+	}
+}
+
+func TestLoadConfigYAMLRejectsStructuredValue(t *testing.T) {
+	t.Chdir(t.TempDir())
+	content := "database_url: 'postgres://x/db'\nenhanced: [true]\n"
+	if err := os.WriteFile("vm.yaml", []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := LoadConfig("", "")
+	if err == nil || !strings.Contains(err.Error(), "invalid YAML") {
+		t.Fatalf("error = %v, want invalid YAML error", err)
+	}
+}
+
+func TestLoadConfigFallsBackToLegacyDotenvVMYAML(t *testing.T) {
+	t.Chdir(t.TempDir())
+	// v2.4.0 generated KEY=VALUE content into vm.yaml. Keep those projects
+	// working while vm lint tells the user to convert the file.
+	content := "DATABASE_URL=postgres://legacy:5432/db\nENVIRONMENT=development\n"
+	if err := os.WriteFile("vm.yaml", []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadConfig("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DatabaseURL != "postgres://legacy:5432/db" {
 		t.Fatalf("DatabaseURL = %q", cfg.DatabaseURL)
 	}
 }
@@ -633,5 +707,18 @@ func TestDotEnvDoesNotOverrideVM(t *testing.T) {
 	}
 	if cfg.DatabaseURL != "postgres://from-vm/db" {
 		t.Fatalf("DatabaseURL=%q, want .vm value to beat .env", cfg.DatabaseURL)
+	}
+}
+
+func TestQuoteYAMLValue(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"postgres://user:pass@localhost:5432/db", "'postgres://user:pass@localhost:5432/db'"},
+		{"it's", "'it''s'"},
+		{"line\nbreak", `"line\nbreak"`},
+	}
+	for _, tc := range cases {
+		if got := QuoteYAMLValue(tc.in); got != tc.want {
+			t.Errorf("QuoteYAMLValue(%q) = %q, want %q", tc.in, got, tc.want)
+		}
 	}
 }

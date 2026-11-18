@@ -8,35 +8,35 @@
 
 # Database connection (required)
 # PostgreSQL (default):
-DATABASE_URL=postgres://user:password@localhost:5432/myapp
+database_url: 'postgres://user:password@localhost:5432/myapp'
 # MySQL:
-# DATABASE_URL=mysql://user:password@localhost:3306/myapp
+# database_url: 'mysql://user:password@localhost:3306/myapp'
 # MySQL DSN style:
-# DATABASE_URL=user:password@tcp(localhost:3306)/myapp
+# database_url: 'user:password@tcp(localhost:3306)/myapp'
 # MariaDB: use mysql:// and include "mariadb" in the host or database name.
 
 # Migration files path (default: ./migrations)
-# MIGRATION_PATH=./migrations
+# migration_path: './migrations'
 
 # Environment defaults: development | production
-ENVIRONMENT=development
+environment: development
 
 # Schema drift handling: auto | prompt | reject
-DRIFT_HANDLING=prompt
+drift_handling: prompt
 
 # Optional overrides
-# ENHANCED=true
-# ONLINE=false
-# VERIFY_CHECKSUMS=true
-# DETECT_DRIFT=true
-# VERBOSE=true
-# STRICT=false          # fail on safety warnings (destructive SQL, missing Down)
-# SQLC_SUPPORT=false    # add goose Up/Down markers
+# enhanced: true
+# online: false
+# verify_checksums: true
+# detect_drift: true
+# verbose: true
+# strict: false          # fail on safety warnings (destructive SQL, missing Down)
+# sqlc_support: false    # add goose Up/Down markers
 
 # Auto-run additive prerequisites before migrate (PostgreSQL only)
-AUTO_RUN_EXTENSIONS=true
-AUTO_RUN_FUNCTIONS=true
-AUTO_RUN_ENUMS=true
+auto_run_extensions: true
+auto_run_functions: true
+auto_run_enums: true
 
 # Common commands
 #   vm check --json

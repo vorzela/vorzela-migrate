@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -86,6 +87,7 @@ func isValidBool(v string) bool {
 
 // LintVMFile reads a vm.yaml/vm.yml/.vm file and returns all detected issues.
 // It returns (nil, nil) when the file does not exist — absence is not an error.
+// YAML files are parsed as YAML; the legacy .vm file keeps the KEY=VALUE rules.
 func LintVMFile(path string) ([]LintIssue, error) {
 	content, err := os.ReadFile(path)
 	if err != nil {
@@ -95,6 +97,125 @@ func LintVMFile(path string) ([]LintIssue, error) {
 		return nil, fmt.Errorf("could not read %s: %w", path, err)
 	}
 
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".yaml", ".yml":
+		return lintYAMLConfig(content), nil
+	default:
+		return lintDotenvConfig(content), nil
+	}
+}
+
+// lintYAMLConfig validates a vm.yaml/vm.yml file.
+func lintYAMLConfig(content []byte) []LintIssue {
+	entries, err := parseYAMLConfig(content)
+	if err != nil {
+		if looksLikeDotenv(content) {
+			return []LintIssue{{
+				Line:     1,
+				Key:      "file",
+				Message:  "legacy KEY=VALUE syntax — convert this file to YAML (database_url: ...) or rename it to .vm",
+				Severity: LintWarning,
+			}}
+		}
+		return []LintIssue{{
+			Line:     0,
+			Key:      "file",
+			Message:  fmt.Sprintf("invalid YAML: %v", err),
+			Severity: LintError,
+		}}
+	}
+
+	var issues []LintIssue
+	seen := make(map[string]int) // canonical key → first line number
+	hasDatabaseURL := false
+
+	for _, entry := range entries {
+		// Unknown key check.
+		if entry.Key == "" {
+			suggestion := closestYAMLKey(entry.RawKey)
+			msg := "unknown key"
+			if suggestion != "" {
+				msg = fmt.Sprintf("unknown key — did you mean %s?", suggestion)
+			}
+			issues = append(issues, LintIssue{
+				Line:     entry.Line,
+				Key:      entry.RawKey,
+				Message:  msg,
+				Severity: LintError,
+			})
+			continue // Don't validate the value of unknown keys.
+		}
+
+		// Duplicate key check.
+		if firstLine, duplicate := seen[entry.Key]; duplicate {
+			issues = append(issues, LintIssue{
+				Line:     entry.Line,
+				Key:      entry.RawKey,
+				Message:  fmt.Sprintf("duplicate key (first defined on line %d)", firstLine),
+				Severity: LintWarning,
+			})
+		} else {
+			seen[entry.Key] = entry.Line
+		}
+
+		value := strings.TrimSpace(entry.Value)
+
+		// Boolean value check.
+		if _, isBool := boolKeys[entry.Key]; isBool {
+			if !isValidBool(value) {
+				issues = append(issues, LintIssue{
+					Line:     entry.Line,
+					Key:      entry.RawKey,
+					Message:  fmt.Sprintf("invalid boolean value %q — expected true or false", value),
+					Severity: LintError,
+				})
+			}
+		}
+
+		// ENVIRONMENT / ENV enum check.
+		if entry.Key == "ENVIRONMENT" {
+			if _, ok := validEnvironments[strings.ToLower(value)]; !ok {
+				issues = append(issues, LintIssue{
+					Line:     entry.Line,
+					Key:      entry.RawKey,
+					Message:  fmt.Sprintf("invalid value %q — expected development, dev, production, or prod", value),
+					Severity: LintError,
+				})
+			}
+		}
+
+		// DRIFT_HANDLING enum check.
+		if entry.Key == "DRIFT_HANDLING" {
+			if _, ok := validDriftHandling[strings.ToLower(value)]; !ok {
+				issues = append(issues, LintIssue{
+					Line:     entry.Line,
+					Key:      entry.RawKey,
+					Message:  fmt.Sprintf("invalid value %q — expected auto, prompt, or reject", value),
+					Severity: LintError,
+				})
+			}
+		}
+
+		// DATABASE_URL presence tracking.
+		if entry.Key == "DATABASE_URL" && value != "" {
+			hasDatabaseURL = true
+		}
+	}
+
+	if !hasDatabaseURL {
+		issues = append(issues, LintIssue{
+			Line:     0,
+			Key:      "database_url",
+			Message:  "database_url is not set — the tool requires a database connection string",
+			Severity: LintWarning,
+		})
+	}
+
+	return issues
+}
+
+// lintDotenvConfig validates the legacy KEY=VALUE format.
+func lintDotenvConfig(content []byte) []LintIssue {
 	var issues []LintIssue
 	seen := make(map[string]int) // key → first line number
 	hasDatabaseURL := false
@@ -210,7 +331,15 @@ func LintVMFile(path string) ([]LintIssue, error) {
 		})
 	}
 
-	return issues, nil
+	return issues
+}
+
+// closestYAMLKey suggests the snake_case spelling for a mistyped YAML key.
+func closestYAMLKey(typo string) string {
+	if match := closestKey(typo); match != "" {
+		return preferredYAMLKey(match)
+	}
+	return ""
 }
 
 // closestKey returns the known key that most closely matches the typo, using a

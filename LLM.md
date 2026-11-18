@@ -105,7 +105,7 @@ Detection logic (source of truth: `internal/migration/dialect.go` + `internal/da
 Use the user-local binary, never `sudo` or `/usr/local/bin`:
 
 ```bash
-GOBIN="$HOME/.local/bin" go install github.com/vorzela/vorzela-migrate/v2/cmd/vm@v2.4.0
+GOBIN="$HOME/.local/bin" go install github.com/vorzela/vorzela-migrate/v2/cmd/vm@v2.4.1
 ```
 
 Canonical paths: `~/.local/bin/vm` (Linux/macOS) and
@@ -133,7 +133,7 @@ Agents should be able to complete a normal migration task without guessing. Use 
 - `--non-interactive` or `VM_NON_INTERACTIVE=1` disables all prompts.
 - Safe additive operations (install missing extensions/functions/enums) default to **yes** in non-interactive mode.
 - Destructive actions (`fresh`, `refresh`, `rollback`, drops) still require `--force`; they never auto-approve.
-- `--detect-drift` with `DRIFT_HANDLING=prompt` is skipped in non-interactive mode. For agent runs after a checksum change use `--drift-handling=auto` or `--drift-handling=reject`.
+- `--detect-drift` with `drift_handling: prompt` is skipped in non-interactive mode. For agent runs after a checksum change use `--drift-handling=auto` or `--drift-handling=reject`.
 - JSON commands suppress the “new version available” notice so stdout stays parseable.
 
 **Never** invent a `--json` field. Read the JSON output of `vm check`/`vm status`; it is the stable machine contract.
@@ -247,84 +247,84 @@ The `vm.yaml` file is **the only file an LLM should create** (when the user need
 Create it with `vm init` (recommended; it also creates the migrations directory), or by writing a `vm.yaml` file at the project root. Walk through:
 
 ### Minimal config (PostgreSQL — default)
-```ini
-DATABASE_URL=postgres://user:pass@localhost:5432/mydb
+```yaml
+database_url: 'postgres://user:pass@localhost:5432/mydb'
 ```
 
 ### Minimal config (MySQL)
-```ini
-DATABASE_URL=mysql://user:pass@localhost:3306/mydb
+```yaml
+database_url: 'mysql://user:pass@localhost:3306/mydb'
 ```
 
 ### Minimal config (MariaDB — include `mariadb` in host or path)
-```ini
-DATABASE_URL=mysql://user:pass@mariadb-host:3306/mydb
+```yaml
+database_url: 'mysql://user:pass@mariadb-host:3306/mydb'
 ```
 
 ### Development config (recommended for local)
-```ini
-DATABASE_URL=postgres://user:pass@localhost:5432/mydb
-ENVIRONMENT=development
-DRIFT_HANDLING=prompt
+```yaml
+database_url: 'postgres://user:pass@localhost:5432/mydb'
+environment: development
+drift_handling: prompt
 ```
 
 ### Production config
-```ini
-DATABASE_URL=postgres://prod-user:pass@prod-host:5432/mydb
-ENVIRONMENT=production
-DRIFT_HANDLING=reject
+```yaml
+database_url: 'postgres://prod-user:pass@prod-host:5432/mydb'
+environment: production
+drift_handling: reject
 ```
 
 ### Full config with all variables explained
 
-```ini
+```yaml
 # ── Required ──────────────────────────────────────────────────────────────────
 # Default / preferred: PostgreSQL
-DATABASE_URL=postgres://user:pass@localhost:5432/mydb
+database_url: 'postgres://user:pass@localhost:5432/mydb'
 # MySQL URL:   mysql://user:pass@localhost:3306/mydb
 # MySQL DSN:   user:pass@tcp(localhost:3306)/mydb
 # MariaDB:     mysql://… with "mariadb" in host or path (see §0)
 
 # ── Environment (auto-applies defaults listed below) ──────────────────────────
 # Values: development | dev | production | prod
-ENVIRONMENT=development
+environment: development
 
 # ── Drift handling ────────────────────────────────────────────────────────────
 # auto   → apply fixes silently
 # prompt → ask before applying (default)
 # reject → fail migration if drift detected
-DRIFT_HANDLING=prompt
+drift_handling: prompt
 
 # ── Optional path override ────────────────────────────────────────────────────
-MIGRATION_PATH=./migrations          # default: ./migrations
+migration_path: './migrations'       # default: ./migrations
 
 # ── sqlc / goose compatibility ────────────────────────────────────────────────
-SQLC_SUPPORT=false                   # adds +goose Up/Down markers
+sqlc_support: false                  # adds +goose Up/Down markers
 
 # ── Auto-run before vm migrate (PostgreSQL only; silently skipped on MySQL/MariaDB) ───
-AUTO_RUN_EXTENSIONS=true             # run extensions.sql first
-AUTO_RUN_FUNCTIONS=true              # run functions.sql first
-AUTO_RUN_ENUMS=true                  # run enums.sql first
+auto_run_extensions: true            # run extensions.sql first
+auto_run_functions: true             # run functions.sql first
+auto_run_enums: true                 # run enums.sql first
 
-# ── Manual overrides (override ENVIRONMENT defaults) ─────────────────────────
-# ENHANCED=true                      # checksum + locking + drift
-# ONLINE=true                        # zero-downtime strategies (PG + MySQL 8+ / MariaDB)
-# VERIFY_CHECKSUMS=true              # detect modified migration files
-# DETECT_DRIFT=true                  # detect manual schema changes
-# VERBOSE=true                       # coloured output with timing
-# STRICT=false                       # fail on safety warnings (destructive SQL, missing Down)
+# ── Manual overrides (override environment defaults) ─────────────────────────
+# enhanced: true                     # checksum + locking + drift
+# online: true                       # zero-downtime strategies (PG + MySQL 8+ / MariaDB)
+# verify_checksums: true             # detect modified migration files
+# detect_drift: true                 # detect manual schema changes
+# verbose: true                      # coloured output with timing
+# strict: false                      # fail on safety warnings (destructive SQL, missing Down)
 ```
 
-### What ENVIRONMENT sets automatically
+### What `environment` sets automatically
 
-| Setting          | development | production |
-|------------------|-------------|------------|
-| `ENHANCED`       | true        | true       |
-| `ONLINE`         | false       | true       |
-| `VERIFY_CHECKSUMS` | true      | true       |
-| `DETECT_DRIFT`   | true        | true       |
-| `VERBOSE`        | true        | false      |
-| `DRIFT_HANDLING` | prompt      | prompt     |
+| Setting             | development | production |
+|---------------------|-------------|------------|
+| `enhanced`          | true        | true       |
+| `online`            | false       | true       |
+| `verify_checksums`  | true        | true       |
+| `detect_drift`      | true        | true       |
+| `verbose`           | true        | false      |
+| `drift_handling`    | prompt      | prompt     |
 
 ### Config resolution order (highest priority first)
 1. CLI flag (`--dsn`, `--path`, etc.)
@@ -333,7 +333,7 @@ AUTO_RUN_ENUMS=true                  # run enums.sql first
 4. `.env` file (current dir) — **lower priority than `vm.yaml`**
 5. Built-in defaults
 
-`MIGRATION_PATH` in a parent `vm.yaml` is resolved relative to that `vm.yaml` file, not the directory you happen to run from. `vm init` writes a `vm.yaml` in the current directory.
+`migration_path` in a parent `vm.yaml` is resolved relative to that `vm.yaml` file, not the directory you happen to run from. `vm init` writes a `vm.yaml` in the current directory.
 
 ### Lint the config immediately after creating it
 ```bash
@@ -352,18 +352,19 @@ vm lint --file /path/to/vm.yaml    # explicit path
 ```
 
 **What it checks:**
-- `DATABASE_URL` is present and non-empty
+- `database_url` is present and non-empty
+- The file parses as YAML (a flat `key: value` mapping)
 - All keys are in the known set (unknown keys → error with a spelling suggestion)
-- Boolean keys (`ENHANCED`, `ONLINE`, `VERIFY_CHECKSUMS`, `DETECT_DRIFT`, `VERBOSE`, `STRICT`, `SQLC_SUPPORT`, `AUTO_RUN_*`) have values `true`/`false`/`1`/`0`
-- `ENVIRONMENT` / `ENV` is one of: `development`, `dev`, `production`, `prod`
-- `DRIFT_HANDLING` is one of: `auto`, `prompt`, `reject`
+- Boolean keys (`enhanced`, `online`, `verify_checksums`, `detect_drift`, `verbose`, `strict`, `sqlc_support`, `auto_run_*`) have values `true` or `false`
+- `environment` (or `env`) is one of: `development`, `dev`, `production`, `prod`
+- `drift_handling` is one of: `auto`, `prompt`, `reject`
 - No duplicate keys
-- No malformed `KEY=VALUE` lines
+- Legacy `KEY=VALUE` content in a `.yaml` file is reported as a warning
 
 **Exit codes:** 0 = clean, non-zero = errors found.
 
-**Full known key list:**
-`DATABASE_URL`, `MIGRATION_PATH`, `SQLC_SUPPORT`, `ENVIRONMENT`, `ENV`, `ENHANCED`, `ONLINE`, `VERIFY_CHECKSUMS`, `DETECT_DRIFT`, `VERBOSE`, `STRICT`, `AUTO_RUN_EXTENSIONS`, `AUTO_RUN_FUNCTIONS`, `AUTO_RUN_ENUMS`, `DRIFT_HANDLING`
+**Full known key list (snake_case; uppercase spellings are also accepted):**
+`database_url`, `migration_path`, `sqlc_support`, `environment`, `env`, `enhanced`, `online`, `verify_checksums`, `detect_drift`, `verbose`, `strict`, `auto_run_extensions`, `auto_run_functions`, `auto_run_enums`, `drift_handling`
 
 ---
 
@@ -422,7 +423,7 @@ vm make migration users --many-to-many roles
 
 **Cannot combine:** `--many-to-many` with `--belongs-to` or `--one-to-one`.
 
-**Trigger dependency (PostgreSQL):** `--triggers` embeds a call to `auto_update_timestamp()` (or `auto_update_with_soft_delete_protection()` when combined with `--soft-delete`). Run `vm functions migrate` before running these migrations or set `AUTO_RUN_FUNCTIONS=true` in `vm.yaml`.
+**Trigger dependency (PostgreSQL):** `--triggers` embeds a call to `auto_update_timestamp()` (or `auto_update_with_soft_delete_protection()` when combined with `--soft-delete`). Run `vm functions migrate` before running these migrations or set `auto_run_functions: true` in `vm.yaml`.
 
 **Triggers on MySQL/MariaDB:** `--triggers` scaffolds a single-statement `SET NEW.updated_at = CURRENT_TIMESTAMP` trigger. No `functions.sql` / `vm functions migrate` required. Soft-delete update protection remains PostgreSQL-only.
 
@@ -438,9 +439,9 @@ vm migrate [flags]
 
 ### Auto-run order on every `vm migrate` (PostgreSQL only, configurable via vm.yaml)
 1. Acquire the migration lock (covers auto-run + migrations)
-2. `extensions.sql` — install missing enabled extensions if `AUTO_RUN_EXTENSIONS=true`
-3. `functions.sql` — create missing functions (and apply the file) if `AUTO_RUN_FUNCTIONS=true`
-4. `enums.sql` — create missing types / add missing values if `AUTO_RUN_ENUMS=true`
+2. `extensions.sql` — install missing enabled extensions if `auto_run_extensions: true`
+3. `functions.sql` — create missing functions (and apply the file) if `auto_run_functions: true`
+4. `enums.sql` — create missing types / add missing values if `auto_run_enums: true`
 5. All pending migration files (in timestamp order)
 
 Auto-run is **additive only**. Commented-out template entries are not treated as
@@ -464,7 +465,7 @@ MySQL/MariaDB: steps 2–4 are skipped.
 | `--strict` | | Fail on safety warnings (destructive SQL, missing Down, transaction-hostile statements) |
 | `--allow-destructive` | | Acknowledge destructive warnings when `--strict` is used |
 | `--yes` | `-y` | Non-interactive: safe auto-run prompts default to yes (never destructive actions) |
-| `--drift-handling <mode>` | | Override `DRIFT_HANDLING` (`auto`/`prompt`/`reject`) |
+| `--drift-handling <mode>` | | Override `drift_handling` (`auto`/`prompt`/`reject`) |
 | `--verbose` | `-v` | Coloured output with timing |
 
 > `--online` does **not** rewrite arbitrary migration SQL. If you need `CREATE INDEX CONCURRENTLY`, add `-- vm:no-transaction` to that migration and write it explicitly.
@@ -492,7 +493,7 @@ vm migrate --force --detect-drift                 # accept new checksums + sync 
 
 ## 5.1 `vm migrate --force` — checksum override
 
-Checksums record the content of each migration **at the moment it first ran**. If you later edit an already-executed file (the normal §1.1 path: change `create_*_table.sql`), `VERIFY_CHECKSUMS` / enhanced mode will fail with:
+Checksums record the content of each migration **at the moment it first ran**. If you later edit an already-executed file (the normal §1.1 path: change `create_*_table.sql`), `verify_checksums: true` / enhanced mode will fail with:
 
 ```text
 checksum verification failed (use --force to override)
@@ -504,7 +505,7 @@ checksum verification failed (use --force to override)
 
 1. Continues past checksum mismatches (without `--force`, migrate **stops**).
 2. **Re-hashes** the modified executed files and writes the new checksums into the `migrations` table so the next run is clean.
-3. Does **not** by itself ALTER the live database — pair with `--detect-drift` (or `DRIFT_HANDLING` / env defaults) to sync columns, or use `vm fresh --force` on disposable DBs.
+3. Does **not** by itself ALTER the live database — pair with `--detect-drift` (or `drift_handling` / env defaults) to sync columns, or use `vm fresh --force` on disposable DBs.
 
 ### When LLMs **should** use `--force`
 
@@ -531,7 +532,7 @@ vm migrate --force --detect-drift
 # 3. Optional: vm status
 ```
 
-If `ENVIRONMENT=development` (checksums + drift already on), the same is:
+If `environment: development` (checksums + drift already on), the same is:
 
 ```bash
 vm migrate --force --detect-drift
@@ -585,7 +586,7 @@ Checks:
 
 JSON shape is stable: `{path, files, migrations, issues:[{file,section,line,code,severity,message,statement,destructive}], checked_files}`.
 
-`vm migrate` runs the static checker automatically. Hard errors always stop it; warnings stop it only with `--strict` / `STRICT=true`.
+`vm migrate` runs the static checker automatically. Hard errors always stop it; warnings stop it only with `--strict` / `strict: true`.
 
 ---
 
@@ -599,7 +600,7 @@ Drift occurs when someone alters the database directly (e.g. `ALTER TABLE`, `DRO
 vm migrate --detect-drift
 ```
 
-Or set `DETECT_DRIFT=true` / `ENVIRONMENT=development` in `vm.yaml` — drift detection runs automatically.
+Or set `detect_drift: true` / `environment: development` in `vm.yaml` — drift detection runs automatically.
 
 ### What happens
 
@@ -641,7 +642,7 @@ Advisory comments are **never sent to the database driver** — only printed as 
 
 ### Drift handling modes (set in `vm.yaml`)
 
-| `DRIFT_HANDLING` | Behaviour |
+| `drift_handling` | Behaviour |
 |-----------------|-----------|
 | `prompt` | Interactive — asks before applying (default). Non-interactive mode skips drift repair. |
 | `auto` | Applies additive fixes silently. Destructive fixes (DROP COLUMN etc.) are skipped unless `--allow-destructive`. |
@@ -738,9 +739,9 @@ vm extensions drop --step       # one at a time with y/N per extension
 ```
 
 ### Auto-run
-When `AUTO_RUN_EXTENSIONS=true` (default), `vm migrate` installs missing enabled extensions before running migration files. It **never drops** an extension based on commented-out template lines — use `vm extensions drop` explicitly.
+When `auto_run_extensions: true` (default), `vm migrate` installs missing enabled extensions before running migration files. It **never drops** an extension based on commented-out template lines — use `vm extensions drop` explicitly.
 
-If extension / function / enum sync **fails** (e.g. bad password), migrate **stops** and offers `Retry …?` after you fix `vm.yaml` / `DATABASE_URL` — it does not continue to the next step. Decline retry to abort; or set `AUTO_RUN_*=false` to skip that step.
+If extension / function / enum sync **fails** (e.g. bad password), migrate **stops** and offers `Retry …?` after you fix `vm.yaml` / `DATABASE_URL` — it does not continue to the next step. Decline retry to abort; or set `auto_run_*: false` to skip that step.
 
 ---
 
@@ -772,10 +773,10 @@ vm functions drop --step       # one at a time with y/N per function
 ```
 
 ### Auto-run
-When `AUTO_RUN_FUNCTIONS=true` (default), `vm migrate` creates missing functions before running migration files. When at least one function is missing, the full file is applied (`CREATE OR REPLACE`), so body edits are picked up too. If all functions already exist, run `vm functions migrate` to force a body update. It never drops functions based on commented lines; use `vm functions drop` explicitly.
+When `auto_run_functions: true` (default), `vm migrate` creates missing functions before running migration files. When at least one function is missing, the full file is applied (`CREATE OR REPLACE`), so body edits are picked up too. If all functions already exist, run `vm functions migrate` to force a body update. It never drops functions based on commented lines; use `vm functions drop` explicitly.
 
 ### Required before `--triggers` migrations (PostgreSQL only)
-If `vm make migration <name> --triggers` was used against PostgreSQL, run `vm functions migrate` once (or rely on `AUTO_RUN_FUNCTIONS=true`) before running `vm migrate`. MySQL/MariaDB triggers do not need `functions.sql`.
+If `vm make migration <name> --triggers` was used against PostgreSQL, run `vm functions migrate` once (or rely on `auto_run_functions: true`) before running `vm migrate`. MySQL/MariaDB triggers do not need `functions.sql`.
 
 ---
 
@@ -814,7 +815,7 @@ vm enums status                 # compare file vs live database
 - ? In database but NOT in file — unknown/manually added type
 
 ### Auto-run
-When `AUTO_RUN_ENUMS=true` (default), `vm migrate` creates missing enum types and adds missing values before running migration files. It never drops types based on commented template examples; use `vm enums drop` explicitly.
+When `auto_run_enums: true` (default), `vm migrate` creates missing enum types and adds missing values before running migration files. It never drops types based on commented template examples; use `vm enums drop` explicitly.
 
 ---
 
@@ -836,7 +837,7 @@ CREATE TABLE IF NOT EXISTS users (
 DROP TABLE IF EXISTS users CASCADE;
 ```
 
-### Goose format (when `SQLC_SUPPORT=true`)
+### Goose format (when `sqlc_support: true`)
 ```sql
 -- +goose Up
 -- ⬆ Up (Run when migrating forward)
@@ -910,22 +911,22 @@ CREATE TRIGGER trigger_<table>_auto_update
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `DATABASE_URL` | string | — | **Required.** Connection string |
-| `MIGRATION_PATH` | string | `./migrations` | Path to migration files |
-| `ENVIRONMENT` / `ENV` | enum | — | `development`/`dev`/`production`/`prod`; auto-applies group defaults |
-| `ENHANCED` | bool | env-dependent | Enables checksum + locking + drift as a group |
-| `ONLINE` | bool | env-dependent | Zero-downtime migration strategies |
-| `VERIFY_CHECKSUMS` | bool | env-dependent | Detect modified executed migration files |
-| `DETECT_DRIFT` | bool | env-dependent | Detect manual schema changes before running |
-| `VERBOSE` | bool | env-dependent | Coloured output with per-migration timing |
-| `STRICT` | bool | `false` | Treat safety warnings as errors (same as `--strict`) |
-| `DRIFT_HANDLING` | enum | `prompt` | `auto` / `prompt` / `reject` |
-| `AUTO_RUN_EXTENSIONS` | bool | `true` | Run `extensions.sql` before migrations (PG only) |
-| `AUTO_RUN_FUNCTIONS` | bool | `true` | Run `functions.sql` before migrations (PG only) |
-| `AUTO_RUN_ENUMS` | bool | `true` | Run `enums.sql` before migrations (PG only) |
-| `SQLC_SUPPORT` | bool | `false` | Add `+goose Up/Down` markers for sqlc compatibility |
+| `database_url` | string | — | **Required.** Connection string |
+| `migration_path` | string | `./migrations` | Path to migration files |
+| `environment` / `env` | enum | — | `development`/`dev`/`production`/`prod`; auto-applies group defaults |
+| `enhanced` | bool | env-dependent | Enables checksum + locking + drift as a group |
+| `online` | bool | env-dependent | Zero-downtime migration strategies |
+| `verify_checksums` | bool | env-dependent | Detect modified executed migration files |
+| `detect_drift` | bool | env-dependent | Detect manual schema changes before running |
+| `verbose` | bool | env-dependent | Coloured output with per-migration timing |
+| `strict` | bool | `false` | Treat safety warnings as errors (same as `--strict`) |
+| `drift_handling` | enum | `prompt` | `auto` / `prompt` / `reject` |
+| `auto_run_extensions` | bool | `true` | Run `extensions.sql` before migrations (PG only) |
+| `auto_run_functions` | bool | `true` | Run `functions.sql` before migrations (PG only) |
+| `auto_run_enums` | bool | `true` | Run `enums.sql` before migrations (PG only) |
+| `sqlc_support` | bool | `false` | Add `+goose Up/Down` markers for sqlc compatibility |
 
-**Boolean values accepted:** `true`, `false`, `1`, `0` (case-insensitive)
+**Boolean values accepted:** `true` or `false` (YAML booleans). The legacy `.vm` format also accepts `1`/`0`.
 
 ---
 
@@ -937,7 +938,7 @@ CREATE TRIGGER trigger_<table>_auto_update
 - Has no `-- ⬆ Up` / `-- +goose Up` / `-- migrate:up` marker
 - Has an empty Up section, unterminated quote/comment, unbalanced parentheses, or explicit `BEGIN`/`COMMIT`/`ROLLBACK`
 
-With `--strict` / `STRICT=true` it also fails on warnings:
+With `--strict` / `strict: true` it also fails on warnings:
 - Missing Down marker or empty Down section
 - Destructive SQL in Up (`DROP TABLE`, `DROP COLUMN`, `TRUNCATE`, `DELETE`/`UPDATE` without `WHERE`) unless `--allow-destructive`
 - `CREATE INDEX CONCURRENTLY` / `VACUUM` without `-- vm:no-transaction`
@@ -950,9 +951,9 @@ Run `vm check --json` to see the exact findings before running `vm migrate`.
 
 | Error message | Cause | Fix |
 |---------------|-------|-----|
-| `database URL is required` | No `DATABASE_URL` anywhere | Add to `vm.yaml` or use `--dsn` |
+| `database URL is required` | No `database_url` / `DATABASE_URL` anywhere | Add `database_url` to `vm.yaml` or use `--dsn` |
 | `migration safety check failed: N error(s)` | Static checker found hard errors | Run `vm check --json`, fix the listed files |
-| `strict safety check failed: N warning(s)` | `STRICT=true` / `--strict` and warnings exist | Fix warnings or pass `--allow-destructive` |
+| `strict safety check failed: N warning(s)` | `strict: true` / `--strict` and warnings exist | Fix warnings or pass `--allow-destructive` |
 | `CREATE EXTENSION found` in a migration | Extension in migration file | Move to `extensions.sql`, run `vm extensions migrate` |
 | `CREATE FUNCTION found` in a migration | Function in migration file | Move to `functions.sql`, run `vm functions migrate` |
 | `checksum mismatch` / `checksum verification failed (use --force to override)` | Edited an already-executed migration file | **Intentional (dev):** `vm migrate --force --detect-drift` → yes (§5.1). **Accidental:** restore file from git. **Prod immutable history:** do not force — use `add_` instead |
@@ -963,7 +964,9 @@ Run `vm check --json` to see the exact findings before running `vm migrate`.
 | Drift advisory: `NOT NULL COLUMN … has no DEFAULT value` | Missing column is NOT NULL without a DEFAULT | **Only then** `vm make migration add_<col>_to_<table>` with DEFAULT/backfill — otherwise edit create + drift (§1.1) |
 | Drift advisory: `UNIQUE COLUMN … cannot safely auto-add` | Missing column has a UNIQUE constraint | **Only then** `add_` with backfill — otherwise edit create + drift (§1.1) |
 | Lint: `unknown key — did you mean X?` | Typo in `vm.yaml` key | Fix key name; run `vm lint` again |
-| Lint: `malformed line — expected KEY=VALUE` | Line without `=` | Fix or comment out the line |
+| Lint: `invalid YAML` | `vm.yaml` is not valid YAML | Fix the YAML syntax (keys use `key: value`), then run `vm lint` |
+| Lint: `legacy KEY=VALUE syntax` | v2.4.1-style dotenv content in `vm.yaml` | Convert to YAML or rename the file to `.vm` |
+| Lint: `malformed line — expected KEY=VALUE` | Legacy `.vm` line without `=` | Fix or comment out the line |
 
 ---
 
@@ -1061,12 +1064,12 @@ vm migrate
 ```bash
 # 1. Create vm.yaml — MySQL example (for MariaDB, put "mariadb" in host or DB name)
 cat > vm.yaml <<'EOF'
-DATABASE_URL=mysql://user:pass@localhost:3306/mydb
-ENVIRONMENT=development
-DRIFT_HANDLING=prompt
-AUTO_RUN_EXTENSIONS=false
-AUTO_RUN_FUNCTIONS=false
-AUTO_RUN_ENUMS=false
+database_url: 'mysql://user:pass@localhost:3306/mydb'
+environment: development
+drift_handling: prompt
+auto_run_extensions: false
+auto_run_functions: false
+auto_run_enums: false
 EOF
 
 vm lint
@@ -1101,10 +1104,10 @@ vm migrate --force --detect-drift
 ```
 
 ### Production-safe deployment
-```ini
+```yaml
 # vm.yaml
-ENVIRONMENT=production
-DRIFT_HANDLING=reject
+environment: production
+drift_handling: reject
 ```
 ```bash
 vm check --db --strict --json   # CI gate: errors/warnings/checksums

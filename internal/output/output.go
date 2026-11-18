@@ -81,6 +81,12 @@ func Warning(msg string, args ...interface{}) {
 	Yellow.Printf("⚠ "+msg+"\n", args...)
 }
 
+// WarningStderr prints a warning to stderr. Use this for config-loading
+// advisories so commands that emit JSON on stdout stay machine-readable.
+func WarningStderr(msg string, args ...interface{}) {
+	Yellow.Fprintf(os.Stderr, "⚠ "+msg+"\n", args...)
+}
+
 // Info prints an info message
 func Info(msg string, args ...interface{}) {
 	Cyan.Printf("ℹ "+msg+"\n", args...)

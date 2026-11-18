@@ -1,10 +1,10 @@
-## Vorzela Migrate vm.yaml/vm.yml + vorm .vorm configuration
+## Vorzela Migrate legacy .vm + vorm .vorm configuration
 syntax vorzela
-header "(\.vm|vm\.ya?ml)$" "\.vm$" "vm\.ya?ml$" "\.vorm$" "\.vorm$"
+header "\.vm$" "\.vm$" "\.vorm$" "\.vorm$"
 
 comment "#"
 
-# vm.yaml known keys
+# .vm known keys
 color brightcyan "\<(DATABASE_URL|MIGRATION_PATH|SQLC_SUPPORT|ENVIRONMENT|ENV|ENHANCED|ONLINE|VERIFY_CHECKSUMS|DETECT_DRIFT|VERBOSE|AUTO_RUN_EXTENSIONS|AUTO_RUN_FUNCTIONS|AUTO_RUN_ENUMS|DRIFT_HANDLING)\>"
 
 # .vorm known keys

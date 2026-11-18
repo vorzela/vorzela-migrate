@@ -179,7 +179,7 @@ func filterCheckReport(report *migration.SafetyReport, hasConnection bool) *migr
 	for _, issue := range report.Issues {
 		// The GUI injects DATABASE_URL from the selected connection, so the
 		// plain-CLI "missing DATABASE_URL" lint warning is noise here.
-		if issue.Code == "config_warning" && strings.Contains(issue.Message, "DATABASE_URL is not set") {
+		if issue.Code == "config_warning" && strings.Contains(strings.ToLower(issue.Message), "database_url is not set") {
 			continue
 		}
 		issues = append(issues, issue)

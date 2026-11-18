@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -202,5 +203,154 @@ func TestClosestKey_Suggestion(t *testing.T) {
 	suggestion := closestKey("DATABSE_URL")
 	if suggestion != "DATABASE_URL" {
 		t.Errorf("closestKey(DATABSE_URL) = %q, want DATABASE_URL", suggestion)
+	}
+}
+
+func writeYAML(t *testing.T, content string) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "vm.yaml")
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("writeYAML: %v", err)
+	}
+	return path
+}
+
+func TestLintYAMLConfig_Valid(t *testing.T) {
+	path := writeYAML(t, `database_url: 'postgres://user:pass@localhost:5432/db'
+environment: development
+drift_handling: prompt
+enhanced: false
+verbose: true
+auto_run_enums: false
+migration_path: './migrations'
+`)
+	issues, err := LintVMFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, iss := range issues {
+		if iss.Severity == LintError {
+			t.Errorf("unexpected error issue: %s", iss)
+		}
+	}
+}
+
+func TestLintYAMLConfig_UnknownKeySuggestion(t *testing.T) {
+	path := writeYAML(t, `database_url: 'postgres://x/db'
+databse_url: 'postgres://typo/db'
+`)
+	issues, err := LintVMFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	found := false
+	for _, iss := range issues {
+		if iss.Key == "databse_url" && iss.Severity == LintError {
+			found = true
+			if !strings.Contains(iss.Message, "database_url") {
+				t.Errorf("suggestion missing from %q", iss.Message)
+			}
+		}
+	}
+	if !found {
+		t.Error("expected LintError for unknown key databse_url")
+	}
+}
+
+func TestLintYAMLConfig_InvalidBoolean(t *testing.T) {
+	path := writeYAML(t, `database_url: 'postgres://x/db'
+enhanced: yes
+`)
+	issues, err := LintVMFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	found := false
+	for _, iss := range issues {
+		if iss.Key == "enhanced" && iss.Severity == LintError {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected LintError for invalid boolean enhanced: yes")
+	}
+}
+
+func TestLintYAMLConfig_InvalidStructure(t *testing.T) {
+	path := writeYAML(t, `database_url: 'postgres://x/db'
+environment: [development]
+`)
+	issues, err := LintVMFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	found := false
+	for _, iss := range issues {
+		if iss.Severity == LintError && strings.Contains(iss.Message, "invalid YAML") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected LintError for non-scalar environment value")
+	}
+}
+
+func TestLintYAMLConfig_LegacyDotenvWarning(t *testing.T) {
+	path := writeYAML(t, `DATABASE_URL=postgres://x/db
+ENVIRONMENT=development
+`)
+	issues, err := LintVMFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	found := false
+	for _, iss := range issues {
+		if iss.Severity == LintWarning && strings.Contains(iss.Message, "legacy KEY=VALUE") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected LintWarning for dotenv content in vm.yaml")
+	}
+}
+
+func TestLintYAMLConfig_DuplicateKey(t *testing.T) {
+	path := writeYAML(t, `database_url: 'postgres://a/db'
+database_url: 'postgres://b/db'
+`)
+	issues, err := LintVMFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	found := false
+	for _, iss := range issues {
+		if iss.Key == "database_url" && iss.Severity == LintWarning {
+			found = true
+			if iss.Line != 2 {
+				t.Errorf("duplicate line = %d, want 2", iss.Line)
+			}
+		}
+	}
+	if !found {
+		t.Error("expected LintWarning for duplicate database_url")
+	}
+}
+
+func TestLintYAMLConfig_MissingDatabaseURL(t *testing.T) {
+	path := writeYAML(t, `environment: development
+`)
+	issues, err := LintVMFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	found := false
+	for _, iss := range issues {
+		if iss.Key == "database_url" && iss.Severity == LintWarning {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected LintWarning for missing database_url")
 	}
 }

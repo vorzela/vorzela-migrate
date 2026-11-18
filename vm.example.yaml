@@ -1,18 +1,22 @@
 # Vorzela Migration Tool Configuration (vm.yaml)
-# This file configures database migrations and auto-applies settings based on environment
+# This file configures database migrations and environment defaults.
+# Validate with: vm lint
 
 # ============================================
-# Database Connection
+# Database Connection (required)
 # ============================================
-DATABASE_URL=postgres://user:password@localhost:5432/myapp
+database_url: 'postgres://user:password@localhost:5432/myapp'
 # Or for MySQL/MariaDB:
-# DATABASE_URL=mysql://user:password@localhost:3306/myapp
+# database_url: 'mysql://user:password@localhost:3306/myapp'
+# MySQL DSN style:
+# database_url: 'user:password@tcp(localhost:3306)/myapp'
+# MariaDB: use mysql:// and include "mariadb" in the host or database name.
 
 # ============================================
 # Environment (Auto-configures migration strategy)
 # ============================================
 # Options: development, dev, production, prod
-ENVIRONMENT=development
+environment: development
 
 # What this does:
 # - development: Enhanced features + verbose logging, no online mode
@@ -25,18 +29,18 @@ ENVIRONMENT=development
 #   auto   - Automatically applies drift fixes in background
 #   prompt - Asks before applying (recommended)
 #   reject - Fails migration if drift detected
-DRIFT_HANDLING=prompt
+drift_handling: prompt
 
 # ============================================
 # Auto-Run Dependencies (Recommended: true)
 # ============================================
-# Automatically runs extensions.sql and functions.sql before migrations
-# This prevents "function does not exist" errors during migrations
-# Execution order: Extensions → Functions → Migrations
+# Automatically runs extensions.sql, functions.sql and enums.sql before
+# migrations. This prevents "function does not exist" errors during migrations.
+# Execution order: Extensions → Functions → Enums → Migrations
 
-AUTO_RUN_EXTENSIONS=true   # Run extensions.sql before migrate (if file exists)
-AUTO_RUN_FUNCTIONS=true    # Run functions.sql before migrate (if file exists)
-AUTO_RUN_ENUMS=true        # Run enums.sql before migrate (if file exists)
+auto_run_extensions: true   # Run extensions.sql before migrate (if file exists)
+auto_run_functions: true    # Run functions.sql before migrate (if file exists)
+auto_run_enums: true        # Run enums.sql before migrate (if file exists)
 
 # Set to false if you want to manually control execution order
 # (Not recommended unless you have a specific reason)
@@ -47,47 +51,47 @@ AUTO_RUN_ENUMS=true        # Run enums.sql before migrate (if file exists)
 # Uncomment these to override environment-based defaults
 
 # Force enhanced mode on/off
-# ENHANCED=true
+# enhanced: true
 
 # Force online migrations (zero-downtime)
-# ONLINE=true
+# online: true
 
 # Force checksum verification
-# VERIFY_CHECKSUMS=true
+# verify_checksums: true
 
 # Force drift detection
-# DETECT_DRIFT=true
+# detect_drift: true
 
 # Force verbose logging
-# VERBOSE=true
+# verbose: true
 
 # Fail on safety warnings (destructive SQL, missing Down section)
-# STRICT=false
+# strict: false
 
 # ============================================
 # Other Settings
 # ============================================
 
 # Migration files directory
-MIGRATION_PATH=./migrations
+migration_path: './migrations'
 
 # Enable goose markers for sqlc compatibility
-SQLC_SUPPORT=false
+sqlc_support: false
 
 # ============================================
 # Example Configurations
 # ============================================
 
 # Local Development:
-# ENVIRONMENT=development
-# DRIFT_HANDLING=auto
+# environment: development
+# drift_handling: auto
 
 # Staging:
-# ENVIRONMENT=production
-# DRIFT_HANDLING=prompt
-# VERBOSE=true
+# environment: production
+# drift_handling: prompt
+# verbose: true
 
 # Production:
-# ENVIRONMENT=production
-# DRIFT_HANDLING=reject
-# ONLINE=true
+# environment: production
+# drift_handling: reject
+# online: true

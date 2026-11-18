@@ -1,8 +1,8 @@
 {
   "name": "vorzela-vm",
-  "displayName": "Vorzela Config (vm.yaml + .vorm)",
-  "description": "Syntax highlighting, hover docs, completions, and live lint for Vorzela vm.yaml/vm.yml and vorm .vorm files",
-  "version": "1.2.0",
+  "displayName": "Vorzela Config (legacy .vm + .vorm)",
+  "description": "Syntax highlighting, hover docs, completions, and live lint for legacy Vorzela .vm and vorm .vorm files. vm.yaml/vm.yml use the built-in YAML support.",
+  "version": "1.3.0",
   "publisher": "vorzela",
   "engines": {
     "vscode": "^1.74.0"
@@ -20,7 +20,7 @@
         "id": "vorzela-vm",
         "aliases": ["Vorzela VM", "vorzela-vm", "vm"],
         "extensions": [".vm"],
-        "filenames": ["vm.yaml", "vm.yml", ".vm"],
+        "filenames": [".vm"],
         "configuration": "./language-configuration.json",
         "icon": {
           "light": "./icons/vm-light.svg",

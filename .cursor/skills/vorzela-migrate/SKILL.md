@@ -1,7 +1,7 @@
 ---
 name: vorzela-migrate
 description: >-
-  Operate the Vorzela `vm` migration CLI — .vm config, make/migrate/rollback,
+  Operate the Vorzela `vm` migration CLI — vm.yaml config, make/migrate/rollback,
   drift, extensions/functions/enums. Use when creating or running migrations,
   editing schema, adding columns, fixing drift, or when the user mentions vm,
   Vorzela, migrations, or LLM.md workflows. Critical: prefer edit create +
@@ -17,7 +17,7 @@ Read **[LLM.md](LLM.md)** §1.1 and §6 for the full decision tree. This skill i
 ## Non-negotiables
 
 1. Prefer **`vm` commands** over hand-writing files.
-2. The only file an agent should create from scratch is **`.vm`** (then `vm lint`).
+2. The only file an agent should create from scratch is **`vm.yaml`** (prefer `vm init`, then `vm lint`).
 3. Never hand-create migration SQL, `extensions.sql`, `functions.sql`, or `enums.sql` — let `vm` generate them, then edit.
 4. Default database is **PostgreSQL**. Use MySQL/MariaDB only when the user asks. See skill `vorzela-dialects`.
 5. **Keep migration history thin** — do not default to `add_` for schema tweaks.
@@ -43,7 +43,7 @@ When the user asks to change an existing table (add column, index, soft-delete, 
 ## Setup checklist (new table / new project)
 
 ```
-- [ ] vm init (or write .vm with DATABASE_URL)
+- [ ] vm init (or write vm.yaml with `database_url: ...`)
 - [ ] vm lint
 - [ ] PostgreSQL only: vm extensions migrate → edit → migrate again
 - [ ] PostgreSQL only: vm functions migrate (needed for --triggers)
@@ -81,11 +81,11 @@ When the user asks to change an existing table (add column, index, soft-delete, 
 
 ## Config priority
 
-CLI flag → `DATABASE_URL` env → `.vm` (cwd/parents) → `.env` → defaults.
+CLI flag → `DATABASE_URL` env → `vm.yaml`/`vm.yml` (cwd/parents, legacy `.vm` last) → `.env` → defaults.
 
 ## MySQL / MariaDB quick rules
 
 - Skip `vm extensions|functions|enums`.
-- Ensure `.vm` `DATABASE_URL` is set before `vm make migration` so scaffolds use MySQL types.
+- Ensure `vm.yaml` has `database_url` set before `vm make migration` so scaffolds use MySQL types.
 - `--triggers` is OK (MySQL `SET NEW.updated_at` trigger; no `functions.sql`).
 - `--online` is OK for MySQL and MariaDB.

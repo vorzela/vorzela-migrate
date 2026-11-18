@@ -171,7 +171,8 @@ func loadVorzelaConfig(cfg *Config) error {
 	return nil
 }
 
-// loadVorzelaFile loads a specific config file.
+// loadVorzelaFile loads a specific config file. vm.yaml/vm.yml use real YAML;
+// the legacy .vm file keeps the original KEY=VALUE syntax.
 func loadVorzelaFile(path string, cfg *Config) error {
 	content, err := os.ReadFile(path)
 	if err != nil {
@@ -181,7 +182,29 @@ func loadVorzelaFile(path string, cfg *Config) error {
 		return fmt.Errorf("failed to read config file: %w", err)
 	}
 	cfg.configDir = filepath.Dir(path)
+	base := filepath.Base(path)
 
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".yaml", ".yml":
+		entries, parseErr := parseYAMLConfig(content)
+		if parseErr != nil {
+			if looksLikeDotenv(content) {
+				output.WarningStderr("%s uses legacy KEY=VALUE syntax; convert it to YAML (key: value) or rename it to .vm", base)
+				loadDotenvContent(content, base, cfg)
+				return nil
+			}
+			return fmt.Errorf("invalid YAML in %s: %w\nconfig files named vm.yaml/vm.yml must use YAML syntax, for example:\n  database_url: postgres://user:pass@localhost:5432/app", base, parseErr)
+		}
+		applyYAMLEntries(base, entries, cfg)
+	default:
+		loadDotenvContent(content, base, cfg)
+	}
+	return nil
+}
+
+// loadDotenvContent applies the legacy KEY=VALUE format used by .vm and by
+// vm.yaml files created with v2.4.0.
+func loadDotenvContent(content []byte, base string, cfg *Config) {
 	lines := strings.Split(string(content), "\n")
 	for lineNum, line := range lines {
 		lineNum++ // 1-based
@@ -204,13 +227,11 @@ func loadVorzelaFile(path string, cfg *Config) error {
 		value := strings.TrimSpace(rawValue)
 
 		if _, known := knownKeys[key]; !known {
-			output.Warning("%s line %d: unknown key '%s' — run 'vm lint' for details", filepath.Base(path), lineNum, key)
+			output.WarningStderr("%s line %d: unknown key '%s' — run 'vm lint' for details", base, lineNum, key)
 			continue
 		}
 		applyConfigValue(cfg, key, value)
 	}
-
-	return nil
 }
 
 // applyConfigValue applies one KEY=VALUE pair from the config file/.env. Unknown keys are

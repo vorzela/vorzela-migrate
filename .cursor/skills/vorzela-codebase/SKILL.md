@@ -21,7 +21,7 @@ description: >-
 main.go                 # urfave/cli app wiring
 cmd/                    # one file per command (make, migrate, rollback, …)
 internal/
-  config/               # .vm / .env loading + lint
+  config/               # vm.yaml / .vm / .env loading + lint
   database/             # Connect() auto-detect → db.DB
   db/                   # DB interface + postgres (pgx) + mysql adapters
   migration/            # create, execute, dialect, drift, lock, online, …
@@ -35,7 +35,7 @@ migrations/             # generated SQL (not source)
 | Task | Start here |
 |------|------------|
 | New CLI command | `main.go` + new `cmd/*.go` |
-| Config / `.vm` keys | `internal/config/config.go`, `lint.go` |
+| Config / `vm.yaml` keys | `internal/config/config.go`, `yaml.go`, `lint.go` |
 | DSN → driver | `internal/database/connection.go` |
 | Dialect enum / detect | `internal/migration/dialect.go` |
 | Scaffold SQL | `internal/migration/create.go`, `relationship.go` |
@@ -56,7 +56,7 @@ migrations/             # generated SQL (not source)
 
 ## Changing behaviour checklist
 
-When adding a `.vm` key or CLI flag:
+When adding a `vm.yaml` key or CLI flag:
 
 - [ ] Parse in `internal/config`
 - [ ] Add to known keys in `lint.go` (+ tests)
@@ -78,6 +78,6 @@ go test ./internal/migration/ -run Dialect
 
 ## Do not
 
-- Commit the `vm` binary or secrets in `.vm`
+- Commit the `vm` binary or secrets in `vm.yaml`
 - Put `CREATE EXTENSION` / `CREATE OR REPLACE FUNCTION` into migration templates (validation rejects them; use dedicated files)
-- Hand-rewrite MySQL types after `vm make` when `.vm` already has a MySQL/MariaDB `DATABASE_URL`
+- Hand-rewrite MySQL types after `vm make` when `vm.yaml` already has a MySQL/MariaDB `database_url`

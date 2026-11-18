@@ -2,6 +2,25 @@
 
 All notable changes to Vorzela Migration Tool are documented in this file.
 
+## [2.4.1] - 2026-11-18
+
+### Fixed
+
+- **`vm.yaml` / `vm.yml` are now real YAML.** The config loader and `vm lint`
+  parse a flat YAML mapping (`database_url: ...`, `environment: ...`) instead
+  of treating every key as a `KEY=VALUE` dotenv line. Invalid YAML now fails
+  with a clear message instead of a scalar-token error.
+- **`vm init` writes YAML.** New files use `database_url`, `environment`,
+  `migration_path` and `drift_handling`, and validate cleanly with `vm lint`.
+- **GUI initialization writes YAML.** The "Initialize vm.yaml" flow now
+  generates valid YAML for both the runtime-credential and plaintext-DSN modes.
+- **Legacy compatibility.** `.vm` files keep the original `KEY=VALUE` format.
+  Existing v2.4.0 `vm.yaml` files written in dotenv style are still read, with
+  a warning from `vm lint` and the loader to convert them.
+- **Examples, docs and editor integrations** now use YAML for
+  `vm.yaml`/`vm.yml`; the Vorzela editor grammars remain for legacy `.vm` and
+  `.vorm` files, while `vm.yaml` uses built-in YAML support.
+
 ## [2.4.0] - 2026-11-17
 
 ### Added

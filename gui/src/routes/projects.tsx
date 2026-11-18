@@ -360,7 +360,7 @@ function ProjectsPage() {
                             <Switch
                               checked={() => writeDsn()}
                               onCheckedChange={setWriteDsn}
-                              label="Write DATABASE_URL into vm.yaml"
+                              label="Write database_url into vm.yaml"
                               description="Off by default: vm gui injects the connection at runtime, so the password stays encrypted in the GUI store. Turn this on only if you also run vm in a terminal."
                             />
                             <Show when={() => writeDsn()}>

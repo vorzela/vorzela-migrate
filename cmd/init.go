@@ -63,11 +63,26 @@ var InitCommand = &cli.Command{
 		content := fmt.Sprintf(`# Vorzela Migration Configuration (%s)
 # Validate with: vm lint
 # Full reference: LLM.md
-DATABASE_URL=%s
-ENVIRONMENT=%s
-MIGRATION_PATH=%s
-DRIFT_HANDLING=prompt
-`, file, c.String("database-url"), c.String("environment"), c.String("path"))
+database_url: %s
+environment: %s
+migration_path: %s
+drift_handling: prompt
+
+# Optional overrides:
+# enhanced: true
+# online: false
+# verify_checksums: true
+# detect_drift: true
+# verbose: false
+# strict: false
+# sqlc_support: false
+# auto_run_extensions: true
+# auto_run_functions: true
+# auto_run_enums: true
+`, file,
+			config.QuoteYAMLValue(c.String("database-url")),
+			config.QuoteYAMLValue(c.String("environment")),
+			config.QuoteYAMLValue(c.String("path")))
 
 		if err := os.WriteFile(file, []byte(content), 0o644); err != nil {
 			output.Error("Failed to write %s: %v", file, err)

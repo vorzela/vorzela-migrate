@@ -244,8 +244,9 @@ function SettingsPage() {
           <CardContent>
             <p class="muted">
               This preference is on. Project <code>vm.yaml</code> files can omit{' '}
-              <code>DATABASE_URL</code>; the GUI supplies it for every action.
-              That keeps the password out of source control.
+              <code>database_url</code>; the GUI supplies{' '}
+              <code>DATABASE_URL</code> for every action. That keeps the
+              password out of source control.
             </p>
           </CardContent>
         </Card>
